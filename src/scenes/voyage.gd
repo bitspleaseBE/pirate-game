@@ -427,8 +427,10 @@ func _run_smoke_test() -> void:
 			)
 			if enemy != null:
 				EventBus.intent_target.emit(enemy)
-			else:
+			elif goal.is_captured:
 				fleet.selected.set_course(goal.anchor_point)
+			else:
+				fleet.selected.set_course(goal.global_position)
 		min_clearance = minf(min_clearance, _min_hull_clearance())
 		await get_tree().create_timer(0.5).timeout
 		elapsed += 0.5
