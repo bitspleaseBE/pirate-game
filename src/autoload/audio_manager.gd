@@ -55,6 +55,37 @@ func _ready() -> void:
 	_build_players()
 
 
+func _exit_tree() -> void:
+	shutdown()
+
+
+## Stops everything and drops every stream reference.
+##
+## Without this, quitting while a cannon is still ringing leaves the
+## AudioStreamPlayback objects alive inside the audio server, which in turn pin
+## the AudioStreamWAV resources they are reading — and Godot reports both as
+## leaked instances at exit.
+##
+## Nothing is actually broken by that, but it prints a leak warning on every run
+## and, worse, it is exactly the noise that a real leak would hide behind later.
+## A shutdown that leaves no references is also simply the correct behaviour when
+## a browser tab closes or a phone backgrounds the app.
+func shutdown() -> void:
+	stop_music()
+	for player: AudioStreamPlayer2D in _spatial:
+		player.stop()
+		player.stream = null
+	for player: AudioStreamPlayer in _ui:
+		player.stop()
+		player.stream = null
+	if _music_a != null:
+		_music_a.stream = null
+	if _music_b != null:
+		_music_b.stream = null
+	_streams.clear()
+	_last_played.clear()
+
+
 func _load_library() -> void:
 	var missing: int = 0
 	for id: StringName in LIBRARY:
