@@ -39,6 +39,20 @@ const COAST_PUSH_WEIGHT: float = 1.5
 const COAST_SLIDE_WEIGHT: float = 1.1
 ## Seconds a ship keeps returning fire after being hit by someone it cannot see.
 const RETALIATE_MEMORY: float = 6.0
+## Fraction of a hull's turn rate still available when it is dead in the water.
+##
+## A rudder is a wing in a moving fluid: no flow, no authority. This is why
+## stopping in a fight is a mistake and why "keep your way on" is the first
+## instinct a player should develop. Oared hulls ignore it — see [method steerage].
+const MIN_STEERAGE: float = 0.18
+## Speed lost while turning at the maximum rate. You cannot corner and keep way.
+const TURN_SPEED_PENALTY: float = 0.28
+## Where the hull pivots, as a fraction of hull radius forward of amidships.
+## Real ships turn about a point roughly a third back from the bow, which throws
+## the stern wide — the most recognisable thing a turning hull does.
+const PIVOT_FORWARD_RATIO: float = 0.55
+## Chain shot against a hull that has almost no rigging to shred.
+const OARED_SAIL_DAMAGE_MUL: float = 0.15
 ## Fraction of gun range a ship tries to hold while engaging.
 const ENGAGE_RANGE_MUL: float = 0.72
 ## How far off the direct line the standoff point sits. Bigger = wider circles.
@@ -81,6 +95,7 @@ var _burn_left: float = 0.0
 var _burn_dps: float = 0.0
 var _retaliate_left: float = 0.0
 var _wake: GPUParticles2D = null
+var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
 
 
@@ -95,7 +110,7 @@ func _ready() -> void:
 	_hull_sprite = get_node_or_null(^"Visual/Hull") as Sprite2D
 	_apply_stats_to_visual()
 	_setup_collision()
-	_build_wake()
+	_build_wake_visuals()
 
 	Grid.add(self, Teams.grid_kind(team), stats.hull_radius)
 	Cull.register(self)
@@ -115,8 +130,9 @@ func set_lod_tier(tier: int) -> void:
 	lod = tier
 	var full: bool = tier == Cull.Lod.FULL
 	if _wake != null:
-		# Wakes are the single biggest particle cost in the game, so they are the
-		# first thing to go when a ship is far away or the device is struggling.
+		# The foam spray is the single biggest particle cost in the game, so it is
+		# the first thing to go when a ship is far away. The trail stays: it is one
+		# draw call and it is the only thing telling the player anything is moving.
 		_wake.emitting = full and _wake_allowed()
 
 
@@ -131,7 +147,7 @@ func sim_step(delta: float) -> void:
 	if to_target.length() <= arrive:
 		has_nav_target = false
 		return
-	var speed: float = stats.max_speed * stats.speed_multiplier(sails_fraction())
+	var speed: float = current_speed_cap()
 	# Off-screen movement bypasses the physics server, so the keep-out ring has to
 	# be applied by hand — otherwise ships sail straight through islands while
 	# nobody is looking and pop back into view sitting on a beach.
@@ -213,7 +229,7 @@ func _choose_orbit_dir(shoot_at: Node2D) -> void:
 
 
 func _steer(delta: float) -> void:
-	var speed_cap: float = stats.max_speed * stats.speed_multiplier(sails_fraction())
+	var speed_cap: float = current_speed_cap()
 
 	if has_nav_target:
 		var to_target: Vector2 = nav_target - global_position
@@ -222,15 +238,66 @@ func _steer(delta: float) -> void:
 		else:
 			var desired: Vector2 = to_target.normalized() + _coast_avoidance()
 			var desired_rotation: float = desired.angle() + PI * 0.5
-			var turn: float = deg_to_rad(stats.turn_rate_deg) * delta
-			rotation = rotate_toward(rotation, desired_rotation, turn)
-			_speed = move_toward(_speed, speed_cap, stats.acceleration * delta)
+
+			var max_turn: float = deg_to_rad(stats.turn_rate_deg) * steerage() * delta
+			var previous_rotation: float = rotation
+			rotation = rotate_toward(rotation, desired_rotation, max_turn)
+			var turn_used: float = absf(angle_difference(previous_rotation, rotation))
+			_apply_pivot(previous_rotation)
+
+			# Hard helm scrubs way. Cornering has to cost something or the fastest
+			# line through a fight is always a series of right angles.
+			var scrub: float = 1.0 - TURN_SPEED_PENALTY * (turn_used / maxf(1e-5, max_turn))
+			_speed = move_toward(_speed, speed_cap * scrub, stats.acceleration * delta)
 	else:
 		# Ships do not stop on a coin. Coasting to a halt is most of what makes
 		# them feel heavy.
 		_speed = move_toward(_speed, 0.0, stats.acceleration * 0.6 * delta)
 
-	velocity = forward() * _speed
+	# Velocity lags heading, so the hull skids through a turn before it bites.
+	# Without this a ship changes direction the instant it changes facing, which
+	# is how a car behaves, not a few hundred tons of timber.
+	velocity = velocity.lerp(forward() * _speed, 1.0 - exp(-stats.hull_grip * delta))
+
+
+## One-line helm state, for the debug overlay and the smoke test.
+func debug_state() -> String:
+	return "spd=%.1f cap=%.1f vel=%.1f nav=%s steerage=%.2f" % [
+		_speed, current_speed_cap(), velocity.length(), has_nav_target, steerage()
+	]
+
+
+## Top speed available right now: rigging damage, then propulsion, then the wind.
+func current_speed_cap() -> float:
+	if stats.is_oared():
+		# Rowers, not rigging. Oars ignore the wind entirely and answer to crew
+		# losses instead — which is precisely why grape shot is the counter to a
+		# skiff swarm and chain shot is very nearly useless against one.
+		return stats.max_speed * lerpf(0.35, 1.0, crew_efficiency)
+
+	var cap: float = stats.max_speed * stats.speed_multiplier(sails_fraction())
+	if WindSystem.instance != null:
+		cap *= WindSystem.instance.speed_multiplier(forward(), stats.rig_tilt())
+	return cap
+
+
+## Fraction of the hull's turn rate currently available.
+func steerage() -> float:
+	if stats.is_oared():
+		# Back one bank of oars and the hull turns on the spot, at any speed.
+		return 1.0
+	var fraction: float = _speed / maxf(1.0, stats.max_speed)
+	return lerpf(MIN_STEERAGE, 1.0, sqrt(clampf(fraction, 0.0, 1.0)))
+
+
+## Rotates the hull about a point forward of amidships rather than its centre, so
+## the stern swings outward through a turn. Two vector ops for most of what makes
+## a hull read as a hull instead of a sprite being spun about its middle.
+func _apply_pivot(previous_rotation: float) -> void:
+	if stats.is_oared():
+		return  # Oars turn a boat about its own centre.
+	var local := Vector2(0.0, -stats.hull_radius * PIVOT_FORWARD_RATIO)
+	global_position += local.rotated(previous_rotation) - local.rotated(rotation)
 
 
 ## Steers to hold clear water off every nearby coast.
@@ -516,6 +583,12 @@ func apply_damage(amount: float, bar: int, source: Node2D) -> void:
 	if not alive or amount <= 0.0:
 		return
 
+	# Chain shot works by shredding rigging. An oared hull has barely any, so the
+	# counters fall out of the physics rather than being bolted on: chain answers
+	# sails, grape answers oars.
+	if bar == AmmoType.Bar.SAILS and stats.is_oared():
+		amount *= OARED_SAIL_DAMAGE_MUL
+
 	match bar:
 		AmmoType.Bar.SAILS:
 			var was_crippled: bool = is_crippled()
@@ -690,7 +763,18 @@ func _setup_collision() -> void:
 	shape_node.shape = circle
 
 
-func _build_wake() -> void:
+## The wake is two things: a ribbon that every device gets, and a spray of foam
+## that only the fast ones do. Splitting them is what stops the cheapest phones
+## from losing all sense of motion — see [WakeTrail].
+func _build_wake_visuals() -> void:
+	_wake_trail = WakeTrail.create_for(self)
+	add_child(_wake_trail)
+
+	if Quality.wake_mode > 0:
+		_build_wake_particles()
+
+
+func _build_wake_particles() -> void:
 	_wake = GPUParticles2D.new()
 	_wake.name = "Wake"
 	_wake.amount = Quality.scaled_particles(18)

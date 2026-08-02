@@ -4,7 +4,7 @@
 
 ## 1. Pitch
 
-A one-thumb naval action game. You start with a single sloop in a hostile archipelago.
+A one-thumb naval action game. You start in a rowed dinghy in a hostile archipelago.
 Tap to sail, tap to fire. Break an island's defences, plant your flag, send a landing
 party ashore to dig up what the map marks with an X — then spend the gold on a bigger,
 meaner fleet. Up to three ships under your command.
@@ -53,6 +53,63 @@ and "see one ship's detail". Ships point bow-up at rotation 0.
 - Auto-reload; auto-anchor at the beach node once an island is cleared.
 - Ships steer around land rather than beaching themselves.
 
+## 4b. Seamanship
+
+Three rules make a hull feel like a hull rather than a sprite being dragged around.
+
+### Steering needs way on
+
+A rudder is a wing in moving water: no flow, no authority. Turn rate scales with speed, so
+a ship that has lost way has lost its helm. Hard helm also scrubs speed — you cannot corner
+and keep way — and the hull pivots about a point forward of amidships, throwing the stern
+wide. Velocity lags heading, so a turning ship skids before it bites.
+
+The lesson the player should absorb without being told: **keep moving**.
+
+### Wind
+
+The wind is a slowly-turning vector that gives the map a permanent tactical axis unrelated
+to where the islands are. Being **upwind of your enemy** — the weather gage, the thing
+age-of-sail captains actually fought over — means you choose when to close and they cannot
+run from you.
+
+| Angle off the wind | Point of sail | Speed |
+|---|---|---|
+| 0–50° | into the wind | 0.55 |
+| 50–75° | close-hauled | 0.72 |
+| 75–105° | beam reach | 0.95 |
+| 105–150° | **broad reach** | **1.00** |
+| 150–180° | running | 0.85 |
+
+The fastest point of sail is a broad reach, not downwind — running dead before the wind,
+the sails blanket each other. That is real, and it is more interesting than the intuition.
+
+**Deliberately soft.** There is no no-go zone and no being caught in irons. You can steer
+anywhere; a bad angle costs time, not control. An unforgiving wind on a one-thumb mobile
+game reads as a broken game rather than a deep one, and the tactical payoff survives the
+softening intact.
+
+**It arrives as a progression beat.** Your first hull is oared, so the opening islands
+teach tap-to-move, broadsides and the capture loop on a still sea. The wind wakes up the
+moment you first command a sailed hull, with a one-time explanation — it is something the
+upgrade gave you to think about, not a rule you were silently failing at while learning
+everything else.
+
+### Sail versus oar
+
+| | Oared (dinghy, skiff, longboat) | Sailed (sloop and up) |
+|---|---|---|
+| Wind | ignores it entirely | governed by it |
+| Top speed | low but constant | high, situational |
+| Steering at low speed | fine — oars give steerage way | poor |
+| Turns in place | yes (back one bank) | no |
+| Slowed by | crew losses | rigging damage |
+
+This makes two ammo types counter each other for free, out of the physics rather than a
+special case: **chain shot** shreds rigging and is nearly useless against oars, while
+**grape shot** kills the rowers an oared hull depends on. It also gives skiff swarms a
+proper reason to exist — they are most dangerous exactly when you are struggling upwind.
+
 ## 5. Combat
 
 ### 5.1 Broadsides, not turrets
@@ -84,8 +141,8 @@ Readable at a glance, and each one changes how the ship plays:
 | **Round shot** | Baseline hull damage | Free, unlimited |
 | **Fire shot** | Burn-over-time, spreads between hulls | Low impact damage |
 | **Explosive shot** | Small AoE — answer to swarms | Slow reload, limited stock |
-| **Chain shot** | Shreds sails; stops runners and chargers | No hull damage |
-| **Grape shot** | Short range, kills crew → cuts enemy fire rate, enables boarding | Very short range |
+| **Chain shot** | Shreds sails; stops runners and chargers | No hull damage; near-useless vs oars |
+| **Grape shot** | Kills crew → cuts fire rate, cripples oared hulls, enables boarding | Very short range |
 
 ### 5.5 Melee
 
@@ -156,12 +213,17 @@ castle. Both doubloon-gated.
 
 Per slot, upgradeable with gold + doubloons. Tiers are **tradeoffs, not strict upgrades**:
 
-| Tier | Hull | Cannons/side | Cargo | Speed | Turn |
-|---|---|---|---|---|---|
-| Dinghy | ▁ | 1 | ▁ | ▆ | ▆ |
-| Sloop | ▃ | 2 | ▃ | ▆ | ▅ |
-| Brig | ▅ | 4 | ▅ | ▄ | ▃ |
-| Galleon | ▇ | 6 | ▇ | ▂ | ▁ |
+| Tier | Drive | Rig | Hull | Cannons/side | Cargo | Speed | Turn |
+|---|---|---|---|---|---|---|---|
+| Dinghy | oars | — | ▁ | 1 | ▁ | ▆ | ▆ |
+| Sloop | sail | fore-and-aft | ▃ | 2 | ▃ | ▆ | ▅ |
+| Brig | sail | mixed | ▅ | 4 | ▅ | ▄ | ▃ |
+| Galleon | sail | square | ▇ | 6 | ▇ | ▂ | ▁ |
+
+Rig is a real tradeoff, not flavour: a fore-and-aft Sloop points higher upwind, while a
+square-rigged Galleon owns the broad reach and is miserable beating into it. And the
+Dinghy is not simply the worst ship — it is the only one that does not care about the
+wind at all, which on the wrong day is worth more than a gun deck.
 
 A three-Sloop fleet and a single Galleon are both valid answers.
 

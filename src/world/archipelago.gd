@@ -149,7 +149,11 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		def.has_castle = is_final
 		def.has_shipyard = tier >= 2 and not is_final
 		def.fort_cannons = 0 if is_final else clampi(tier - 1, 0, 4)
-		def.garrison_ships = clampi(1 + tier, 1, 8)
+		# One defender at tier 1. The opening island is where the player learns
+		# that guns fire sideways; being outnumbered two to one in an oared dinghy
+		# while working that out is a losing first impression, not a difficulty
+		# curve. Reinforcement waves from tier 2 shipyards carry the scaling.
+		def.garrison_ships = clampi(tier, 1, 8)
 		def.alert_radius = 1100.0 + float(tier) * 120.0
 		def.treasure_count = 2 if is_final else 1
 		out.append(def)

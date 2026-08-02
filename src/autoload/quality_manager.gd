@@ -37,7 +37,9 @@ var max_projectiles: int = 160
 var ocean_wave_octaves: int = 4
 var ocean_caustics: bool = true
 var ocean_shore_foam: bool = true
-## 0 = no wakes, 1 = selected ship only, 2 = every ship.
+## Foam-spray particles: 0 = none, 1 = selected ship only, 2 = every ship.
+## The wake *ribbon* is not gated by this — it is one draw call and it is the only
+## thing telling a player on a slow device that anything is moving. See [WakeTrail].
 var wake_mode: int = 2
 ## 0 = no blob shadows, 1 = ships only, 2 = ships and props.
 var shadow_mode: int = 2

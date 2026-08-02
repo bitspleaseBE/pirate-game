@@ -43,6 +43,14 @@ and z-order:
 godot src/scenes/voyage.tscn -- --shot
 ```
 
+Add `--sail` to either flag to start in a Sloop instead of the oared Dinghy, which is the
+only way to exercise the wind, the wake and the compass ring without first playing through
+the opening islands:
+
+```bash
+godot src/scenes/voyage.tscn -- --shot --sail
+```
+
 Regenerate the placeholder sound effects (deterministic; safe to re-run):
 
 ```bash

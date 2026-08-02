@@ -17,8 +17,10 @@ const TOAST_DURATION: float = 2.6
 @onready var _fleet_label: Label = %FleetLabel
 @onready var _toast: Label = %Toast
 @onready var minimap: Minimap = %Minimap
+@onready var _root: Control = $Root
 
 var _toast_left: float = 0.0
+var _wind_indicator: WindIndicator
 
 
 func _ready() -> void:
@@ -32,6 +34,7 @@ func _ready() -> void:
 
 	_ammo_button.pressed.connect(_on_ammo_pressed)
 
+	_build_wind_indicator()
 	_refresh_all()
 	_toast.modulate.a = 0.0
 
@@ -40,8 +43,43 @@ func _ready() -> void:
 func bind(fleet: FleetController, archipelago: Archipelago) -> void:
 	minimap.fleet = fleet
 	minimap.archipelago = archipelago
+	_wind_indicator.fleet = fleet
 	fleet.selection_changed.connect(_on_selection_changed)
 	_refresh_all()
+
+
+func _build_wind_indicator() -> void:
+	_wind_indicator = WindIndicator.new()
+	_wind_indicator.name = "WindIndicator"
+	# Top-right, clear of the counters and out of the thumb's way.
+	_wind_indicator.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_wind_indicator.offset_left = -108.0
+	_wind_indicator.offset_top = 14.0
+	_wind_indicator.offset_right = -16.0
+	_wind_indicator.offset_bottom = 106.0
+	_root.add_child(_wind_indicator)
+
+
+## Shows the one-time wind explanation. `compass` is where the wind blows from.
+func show_wind_intro(compass: String) -> void:
+	var intro := WindIntro.new()
+	intro.name = "WindIntro"
+	# Above the rest of the HUD, and running while the tree is paused so the
+	# panel can stop the world without freezing its own button.
+	intro.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(intro)
+	intro.show_intro(compass)
+
+
+## Closes the wind intro if it is open. Used by the screenshot harness, which
+## needs the world running again after capturing the panel.
+func dismiss_wind_intro() -> bool:
+	var intro: Node = get_node_or_null(^"WindIntro")
+	if intro == null:
+		return false
+	get_tree().paused = false
+	intro.queue_free()
+	return true
 
 
 func _process(delta: float) -> void:

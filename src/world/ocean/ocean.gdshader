@@ -20,6 +20,17 @@ uniform vec4 mid_color : source_color = vec4(0.078, 0.310, 0.435, 1.0);
 uniform vec4 shallow_color : source_color = vec4(0.184, 0.510, 0.596, 1.0);
 uniform vec4 crest_color : source_color = vec4(0.650, 0.850, 0.880, 1.0);
 
+// Rotates the whole wave field so the swell runs with the wind. This is the only
+// thing that makes the wind legible without reading a HUD widget: you glance at
+// the sea and you know which way it is blowing.
+uniform float wind_angle = 0.0;
+
+vec2 rotated(vec2 v, float a) {
+	float c = cos(a);
+	float s = sin(a);
+	return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
 // Each octave is a plane wave travelling in its own direction. The directions are
 // deliberately non-parallel and off-axis: waves aligned to X and Y (or to the
 // diagonal) interfere into an obvious repeating lattice that reads as tiling
@@ -29,13 +40,13 @@ uniform vec4 crest_color : source_color = vec4(0.650, 0.850, 0.880, 1.0);
 // the default zoom — lower and the sea looks like slow cloud, higher and it turns
 // into noise at a phone's pixel density.
 float ocean_height(vec2 p, float t, int octaves) {
-	float w = sin(dot(p, vec2(0.94, 0.34)) * 0.0081 + t * 0.80) * 0.46;
-	w += sin(dot(p, vec2(-0.37, 0.93)) * 0.0117 - t * 0.61) * 0.30;
+	float w = sin(dot(p, rotated(vec2(0.94, 0.34), wind_angle)) * 0.0081 + t * 0.80) * 0.46;
+	w += sin(dot(p, rotated(vec2(-0.37, 0.93), wind_angle)) * 0.0117 - t * 0.61) * 0.30;
 	if (octaves > 2) {
-		w += sin(dot(p, vec2(0.63, -0.78)) * 0.0212 + t * 1.32) * 0.16;
+		w += sin(dot(p, rotated(vec2(0.63, -0.78), wind_angle)) * 0.0212 + t * 1.32) * 0.16;
 	}
 	if (octaves > 3) {
-		w += sin(dot(p, vec2(0.19, 0.98)) * 0.0347 - t * 1.95) * 0.09;
+		w += sin(dot(p, rotated(vec2(0.19, 0.98), wind_angle)) * 0.0347 - t * 1.95) * 0.09;
 	}
 	return w;
 }

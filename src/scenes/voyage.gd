@@ -19,10 +19,17 @@ const FLEET_WIPE_DELAY: float = 2.8
 @onready var input_router: InputRouter = %InputRouter
 @onready var director: SpawnDirector = %SpawnDirector
 @onready var ships_parent: Node2D = %Ships
+@onready var wind: WindSystem = %WindSystem
 @onready var hud: CanvasLayer = %Hud
 
 
 func _ready() -> void:
+	# `--sail` starts in a Sloop instead of the oared Dinghy, so the wind, the
+	# wake and the compass ring can be exercised without first playing through
+	# the opening islands to earn a set of sails.
+	if "--sail" in OS.get_cmdline_user_args():
+		GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+
 	Grid.configure()
 	# Pools must exist before anything can fire a gun, and they need a world-space
 	# parent — this is the handoff described in PoolManager.
@@ -52,6 +59,9 @@ func _ready() -> void:
 
 	if hud.has_method(&"bind"):
 		hud.call(&"bind", fleet, archipelago)
+
+	_update_wind_availability()
+	EventBus.fleet_changed.connect(_update_wind_availability)
 
 	fleet.fleet_emptied.connect(_on_fleet_emptied)
 	EventBus.intent_open_port.connect(_on_open_port)
@@ -108,6 +118,10 @@ func _capture_screenshots() -> void:
 		var image: Image = get_viewport().get_texture().get_image()
 		image.save_png("%s/shot_%02d.png" % [dir, shot])
 		shot += 1
+		# Capture the wind intro on the first frame, then close it — it pauses the
+		# tree, so leaving it up would give us fourteen identical screenshots.
+		if hud.has_method(&"dismiss_wind_intro"):
+			hud.call(&"dismiss_wind_intro")
 
 	print("SHOTS: %s" % ProjectSettings.globalize_path(dir))
 	get_tree().quit(0)
@@ -119,7 +133,9 @@ func _capture_screenshots() -> void:
 ##
 ##   godot --headless src/scenes/voyage.tscn -- --smoke
 func _run_smoke_test() -> void:
-	const SECONDS: float = 60.0
+	# Long enough for a sailed hull beating upwind to still reach an island, since
+	# that is the slowest the game legitimately gets.
+	const SECONDS: float = 80.0
 	## Headless has no vsync, so game time is still wall time. Speed it up rather
 	## than making CI wait a real minute for a ship to sail across the map.
 	const TIME_SCALE: float = 6.0
@@ -187,9 +203,17 @@ func _run_smoke_test() -> void:
 
 		var wall: float = float(Time.get_ticks_msec() - started_msec) / 1000.0
 		if int(elapsed) % 10 == 0 and is_equal_approx(elapsed, floorf(elapsed)):
+			var lead: Ship = fleet.selected
 			print(
-				"SMOKE: t=%ds wall=%.1fs fps=%d shots=%d"
-				% [int(elapsed), wall, Engine.get_frames_per_second(), int(tally["shots"])]
+				"SMOKE: t=%ds wall=%.1fs fps=%d shots=%d to_goal=%d helm[%s]"
+				% [
+					int(elapsed),
+					wall,
+					Engine.get_frames_per_second(),
+					int(tally["shots"]),
+					roundi(goal.distance_to_coast(fleet.centroid())),
+					lead.debug_state() if lead != null else "fleet lost",
+				]
 			)
 		if wall > WALL_CLOCK_LIMIT_SEC:
 			Engine.time_scale = 1.0
@@ -246,13 +270,69 @@ func _run_smoke_test() -> void:
 	for stats: Dictionary in Pools.all_stats():
 		if bool(stats["grew"]):
 			failures.append("pool '%s' outgrew its prewarm" % stats["name"])
+	failures.append_array(_check_wind())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
-		get_tree().quit(0)
+		await _quit_cleanly(0)
 	else:
 		push_error("SMOKE FAIL: " + "; ".join(failures))
-		get_tree().quit(1)
+		await _quit_cleanly(1)
+
+
+## The wind must stay asleep behind an oared hull, and its polar must have the
+## right shape once it is up.
+##
+## Checking the shape rather than exact numbers: the values are balance and will
+## move, but "upwind is worst, a broad reach is best, running is in between" is
+## the design, and inverting it by accident would be very easy and very hard to
+## notice by eye.
+func _check_wind() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var fleet_has_sails: bool = false
+	for ship: Ship in fleet.living_ships():
+		if not ship.stats.is_oared():
+			fleet_has_sails = true
+			break
+
+	if wind.active != fleet_has_sails:
+		out.append(
+			"wind active=%s but fleet_has_sails=%s" % [wind.active, fleet_has_sails]
+		)
+
+	wind.activate()
+	wind.strength = 1.0
+	var into: Vector2 = -wind.direction
+	var upwind: float = wind.speed_multiplier(into)
+	var broad_reach: float = wind.speed_multiplier(into.rotated(deg_to_rad(110.0)))
+	var running: float = wind.speed_multiplier(wind.direction)
+
+	if not (upwind < running and running < broad_reach):
+		out.append(
+			"wind polar is the wrong shape (upwind %.2f, running %.2f, broad reach %.2f)"
+			% [upwind, running, broad_reach]
+		)
+	return out
+
+
+## Quits without leaving audio mid-flight.
+##
+## `AudioServer` releases a playback on its next mix, not on `stop()`, so calling
+## `quit()` in the same frame as the last cannon shot leaves that playback and the
+## stream behind it alive at exit — reported as leaked instances. Stopping
+## everything and yielding a couple of frames lets the server drain, which keeps
+## the leak check in CI meaningful instead of permanently noisy.
+func _quit_cleanly(code: int) -> void:
+	Engine.time_scale = 1.0
+	Audio.shutdown()
+	# A fixed number of frames is not reliable — how many mixes the server needs
+	# depends on where in its buffer the last sound started. A short real-time
+	# wait is, and a second shutdown catches anything that slipped through.
+	await get_tree().create_timer(0.25, true, false, true).timeout
+	Audio.shutdown()
+	await get_tree().process_frame
+	get_tree().quit(code)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -267,6 +347,36 @@ func _apply_render_scale() -> void:
 
 func _on_quality_tier_changed(_tier: int) -> void:
 	_apply_render_scale()
+
+
+## Wakes the wind the moment the fleet contains anything with sails on it, and
+## explains it once.
+##
+## Tying it to the hull rather than to an island count or a timer means the
+## lesson always lands at the moment it becomes true: you bought sails, so now
+## the wind is your problem. Until then the sea is still and the player has one
+## fewer thing to hold in their head.
+func _update_wind_availability() -> void:
+	if wind.active:
+		return
+	var has_sails: bool = false
+	for ship: Ship in fleet.living_ships():
+		if not ship.stats.is_oared():
+			has_sails = true
+			break
+	if not has_sails:
+		return
+
+	wind.activate()
+	# The intro pauses the tree, which an automated run has no way to dismiss —
+	# the whole world would sit frozen behind a modal and the harness would
+	# faithfully report that nothing happened.
+	if "--smoke" in OS.get_cmdline_user_args():
+		return
+	if not GameState.seen_wind_intro and hud.has_method(&"show_wind_intro"):
+		GameState.seen_wind_intro = true
+		hud.call(&"show_wind_intro", wind.compass_name())
+		SaveSystem.request_save()
 
 
 func _on_landing_started(island: Node2D) -> void:

@@ -5,10 +5,25 @@ extends Resource
 ## Authored as `.tres` under `assets/data/ships/`. No balance number belongs in
 ## code — see docs/ARCHITECTURE.md §10.
 
+## How a hull is driven. The single most consequential stat on this resource.
+##
+## Oars ignore the wind entirely, keep steerage way at a standstill, and can turn
+## on the spot by backing one bank. Sails are faster but at the wind's mercy.
+## Downstream this makes the ammo types counter each other for free: chain shot
+## shreds rigging and does almost nothing to an oared hull, while grape kills the
+## rowers an oared hull depends on.
+enum Propulsion { SAIL, OAR }
+
+## Rig character, which bends the wind polar toward one end of it.
+## Fore-and-aft points higher upwind; square rigs own the broad reach.
+enum Rig { FORE_AFT, MIXED, SQUARE }
+
 @export var id: StringName = &"sloop"
 @export var display_name: String = "Sloop"
 ## 1 = Dinghy … 4 = Galleon. Drives shop ordering and enemy scaling.
 @export_range(1, 4) var tier: int = 2
+@export var propulsion: Propulsion = Propulsion.SAIL
+@export var rig: Rig = Rig.FORE_AFT
 
 @export_group("Durability")
 @export var max_hull: float = 100.0
@@ -24,9 +39,15 @@ extends Resource
 @export var max_speed: float = 108.0
 @export var acceleration: float = 46.0
 ## Degrees per second at full speed. Big hulls turn like barns.
+##
+## Only reached *at* full speed: a rudder needs water flowing over it, so turn
+## authority falls away as a ship loses way. See [constant Ship.MIN_STEERAGE].
 @export var turn_rate_deg: float = 62.0
 ## Fraction of turn rate retained when the sails are shredded.
 @export var crippled_speed_mul: float = 0.45
+## How quickly the hull's velocity catches up to its heading. Low values mean a
+## ship skids through a turn before biting — most of what "heavy" feels like.
+@export var hull_grip: float = 3.2
 
 @export_group("Gunnery")
 @export var cannons_per_side: int = 2
@@ -62,3 +83,19 @@ extends Resource
 ## Effective speed given current sail damage, as a 0..1 fraction of max.
 func speed_multiplier(sails_fraction: float) -> float:
 	return lerpf(crippled_speed_mul, 1.0, clampf(sails_fraction, 0.0, 1.0))
+
+
+func is_oared() -> bool:
+	return propulsion == Propulsion.OAR
+
+
+## Feeds [method WindSystem.speed_multiplier]. Positive favours upwind.
+func rig_tilt() -> float:
+	match rig:
+		Rig.FORE_AFT:
+			return 1.0
+		Rig.SQUARE:
+			return -1.0
+		_:
+			return 0.0
+

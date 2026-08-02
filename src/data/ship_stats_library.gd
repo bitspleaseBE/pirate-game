@@ -63,8 +63,13 @@ static func _fallback(id: StringName) -> ShipStats:
 	match id:
 		&"dinghy":
 			s.display_name = "Dinghy"
+			s.propulsion = ShipStats.Propulsion.OAR
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.hull_grip = 4.2
 			s.tier = 1
-			s.max_hull = 60.0
+			# The starting hull. Tough enough that learning the broadside rule the
+			# hard way costs a scare rather than the run.
+			s.max_hull = 85.0
 			s.max_sails = 40.0
 			s.max_cannons_health = 30.0
 			s.max_speed = 122.0
@@ -72,13 +77,16 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.turn_rate_deg = 84.0
 			s.cannons_per_side = 1
 			s.cannon_range = 520.0
-			s.reload_time = 4.2
-			s.base_damage = 18.0
+			s.reload_time = 4.0
+			s.base_damage = 20.0
 			s.hull_radius = 34.0
 			s.tonnage = 45.0
 			s.cargo_capacity = 100
 		&"brig":
 			s.display_name = "Brig"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.MIXED
+			s.hull_grip = 2.4
 			s.tier = 3
 			s.max_hull = 190.0
 			s.max_sails = 90.0
@@ -95,6 +103,9 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.cargo_capacity = 400
 		&"galleon":
 			s.display_name = "Galleon"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.SQUARE
+			s.hull_grip = 1.8
 			s.tier = 4
 			s.max_hull = 300.0
 			s.max_sails = 120.0
@@ -111,6 +122,9 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.cargo_capacity = 700
 		&"skiff":
 			s.display_name = "Skiff"
+			s.propulsion = ShipStats.Propulsion.OAR
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.hull_grip = 4.6
 			s.tier = 1
 			s.max_hull = 34.0
 			s.max_sails = 26.0
@@ -127,6 +141,9 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.accent_color = Color(0.82, 0.62, 0.55)
 		&"enemy_brig":
 			s.display_name = "Navy Brig"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.MIXED
+			s.hull_grip = 2.5
 			s.tier = 3
 			s.max_hull = 170.0
 			s.max_sails = 85.0
@@ -143,6 +160,9 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.accent_color = Color(0.72, 0.74, 0.8)
 		&"enemy_sloop":
 			s.display_name = "Navy Sloop"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.hull_grip = 3.0
 			s.tier = 2
 			s.max_hull = 95.0
 			s.max_sails = 58.0
@@ -160,6 +180,9 @@ static func _fallback(id: StringName) -> ShipStats:
 		_:
 			s.id = &"sloop"
 			s.display_name = "Sloop"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.hull_grip = 3.0
 			s.tier = 2
 			# Field defaults on ShipStats are already the Sloop.
 

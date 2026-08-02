@@ -24,6 +24,10 @@ var voyage_active: bool = false
 ## IslandDef.id -> { discovered: bool, captured: bool, treasure_dug: int }
 var island_progress: Dictionary = {}
 
+## Set the first time the player commands a sailed hull, so the wind is explained
+## exactly once and never again.
+var seen_wind_intro: bool = false
+
 var stats_islands_captured: int = 0
 var stats_ships_sunk: int = 0
 var stats_voyages_completed: int = 0
@@ -39,12 +43,16 @@ func reset_run() -> void:
 	banked_gold = 0
 	doubloons = 0
 	fleet_slots = 1
-	fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+	# You start in an oared boat, so the first islands teach tap-to-move,
+	# broadsides and the capture loop on a still sea. The wind arrives with your
+	# first set of sails — see WindSystem.
+	fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
 	ammo_stock = {&"fire": 6, &"explosive": 4, &"chain": 6, &"grape": 6}
 	selected_ammo = &"round"
 	voyage_seed = 0
 	voyage_active = false
 	island_progress.clear()
+	seen_wind_intro = false
 	stats_islands_captured = 0
 	stats_ships_sunk = 0
 	stats_voyages_completed = 0
@@ -162,6 +170,7 @@ func to_dict() -> Dictionary:
 		"fleet": fleet,
 		"ammo_stock": ammo_stock,
 		"selected_ammo": String(selected_ammo),
+		"seen_wind_intro": seen_wind_intro,
 		"voyage_seed": voyage_seed,
 		"voyage_active": voyage_active,
 		"island_progress": island_progress,
@@ -189,6 +198,7 @@ func from_dict(data: Dictionary) -> void:
 
 	ammo_stock = data.get("ammo_stock", ammo_stock)
 	selected_ammo = StringName(data.get("selected_ammo", "round"))
+	seen_wind_intro = bool(data.get("seen_wind_intro", false))
 	voyage_seed = int(data.get("voyage_seed", 0))
 	voyage_active = bool(data.get("voyage_active", false))
 	island_progress = data.get("island_progress", {})

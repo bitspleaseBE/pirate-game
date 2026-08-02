@@ -52,6 +52,12 @@ func _process(_delta: float) -> void:
 	_material.set_shader_parameter("world_offset", top_left)
 	_material.set_shader_parameter("world_size", world_size)
 
+	# Swell runs with the wind. Doing this in the shader rather than with a HUD
+	# arrow alone means the player can read the wind by glancing at the sea, which
+	# is how you would actually read it.
+	if WindSystem.instance != null and WindSystem.instance.active:
+		_material.set_shader_parameter("wind_angle", WindSystem.instance.direction.angle())
+
 
 func _apply_quality() -> void:
 	_material.set_shader_parameter("wave_octaves", Quality.ocean_wave_octaves)

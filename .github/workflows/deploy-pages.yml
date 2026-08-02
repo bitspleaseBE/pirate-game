@@ -70,10 +70,23 @@ jobs:
       # The gate. Plays a full island loop headless — sail, alert, fight, capture,
       # dig — and fails the build on a broken voyage, a ship run aground, or a pool
       # that outgrew its prewarm. A scene that cannot play must not reach Pages.
-      - name: Smoke test
+      # Both propulsion paths, because they are genuinely different games: the
+      # oared start has no wind at all, and the sailed one is the only run where
+      # the polar, the rig tilt and speed-dependent steerage are exercised.
+      - name: Smoke test (oared start)
         run: |
           set -euo pipefail
           godot --headless src/scenes/voyage.tscn -- --smoke 2>&1 | tee /tmp/smoke.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/smoke.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
+      - name: Smoke test (sailed start)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --smoke --sail 2>&1 | tee /tmp/smoke.log
           # tee swallows godot's status, so check the pipeline's first element.
           test "${PIPESTATUS[0]}" -eq 0
 
