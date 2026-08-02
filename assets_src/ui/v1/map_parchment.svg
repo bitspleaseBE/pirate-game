@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><radialGradient id="p"><stop stop-color="#ead8aa"/><stop offset=".68" stop-color="#d4ba7d"/><stop offset="1" stop-color="#8a6334"/></radialGradient><filter id="n"><feTurbulence baseFrequency=".035" numOctaves="3" seed="12" result="t"/><feBlend in="SourceGraphic" in2="t" mode="soft-light"/></filter></defs>
+  <path d="M14 20Q34 8 55 17q25-12 48 0 26-12 51 0 27-10 48 2 20-8 39 5-8 22-1 42-9 23 1 47-9 23-1 47-8 25 2 48-21 9-43 2-23 11-48 0-24 12-50 0-25 11-48 0-20 8-39-4 9-23 1-45 9-24 0-48 10-25-1-49 8-24-1-44z" fill="#4a331f" opacity=".5"/>
+  <path d="M18 22Q36 13 56 20q23-10 47 0 25-10 50 0 25-9 47 2 18-7 36 4-7 20-1 40-8 22 1 45-8 22-1 45-7 23 2 45-20 8-40 2-22 10-45 0-23 10-47 0-24 10-46 0-18 7-36-4 8-21 1-42 8-23 0-45 9-23-1-45 7-22-1-40z" fill="url(#p)" stroke="#6e4a28" stroke-width="3" filter="url(#n)"/>
+  <path d="M47 64c30-28 48 8 72-9 18-12 33-7 41 10 11 24 38 13 49 35M38 169c25-16 43-7 59 12 17 20 41 17 61 1 19-15 34-11 52 9" fill="none" stroke="#7f8054" stroke-width="8" opacity=".32" stroke-linecap="round"/>
+  <path d="M49 64c30-28 48 8 72-9 18-12 33-7 41 10 11 24 38 13 49 35M38 169c25-16 43-7 59 12 17 20 41 17 61 1 19-15 34-11 52 9" fill="none" stroke="#526c66" stroke-width="3" opacity=".45" stroke-linecap="round"/>
+  <path d="M55 205c20-35 55-30 72-63 16-31 38-25 71-53" fill="none" stroke="#8a3d2e" stroke-width="3" stroke-dasharray="7 8" opacity=".68"/>
+</svg>

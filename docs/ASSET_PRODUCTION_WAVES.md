@@ -3,7 +3,9 @@
 > Wave 0 revision 2 completed on 2026-08-01 in Painterly Tactical Realism. Actual v2 usage:
 > 13 new-image calls, 0 edit calls, and 20 deterministic catalog outputs. Revision 1 used 6
 > additional new-image calls and is archived as a rejected cost record. Wave 1 remains gated on
-> visual approval of the v2 contact sheet and gameplay proof.
+> visual approval of the v2 contact sheet and gameplay proof. Wave 1 static art was generated on
+> 2026-08-02 with 8 approved new-image calls and 75 deterministic catalog outputs; ocean/beach
+> upgrades and Batch 1F audio were intentionally excluded. The static-art review gate remains open.
 
 This document turns [ASSETS.md](ASSETS.md) into a production schedule that can be run
 over multiple occasions. Each batch is deliberately small enough to stop, inspect the

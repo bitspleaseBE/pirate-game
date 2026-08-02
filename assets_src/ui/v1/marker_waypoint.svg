@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <g transform="translate(32 32) scale({{SCALE}}) translate(-32 -32)" opacity="{{ALPHA}}"><circle cx="32" cy="34" r="19" fill="#193847" opacity=".35"/><path d="M32 5c-9 0-16 7-16 16 0 13 16 34 16 34s16-21 16-34c0-9-7-16-16-16z" fill="#b78632" stroke="#3a2819" stroke-width="3"/><circle cx="32" cy="21" r="6" fill="#f1d99a" stroke="#6d4a25" stroke-width="2"/></g>
+</svg>

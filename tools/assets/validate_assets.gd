@@ -5,20 +5,16 @@ var _repo_root: String
 
 func _initialize() -> void:
 	_repo_root = ProjectSettings.globalize_path("res://../..").simplify_path()
-	var text := FileAccess.get_file_as_string(_repo_root.path_join("assets_src/catalog.json"))
-	var parsed: Variant = JSON.parse_string(text)
-	if not parsed is Dictionary:
-		push_error("Catalog is not valid JSON")
+	var catalog := _load_catalog()
+	if catalog.is_empty():
 		quit(1)
 		return
-
-	var catalog: Dictionary = parsed
 	var render_scale := int(catalog.get("render_scale", 2))
 	var failures := 0
 	var checked := 0
 	var ids := {}
 
-	for value: Variant in catalog.get("assets", []):
+	for value: Variant in _expand_assets(catalog):
 		if not value is Dictionary:
 			failures += 1
 			continue
@@ -52,6 +48,14 @@ func _initialize() -> void:
 			push_error("%s does not have a fully transparent outer border" % asset_id)
 			failures += 1
 
+		var tile_mode := String(asset.get("tile_mode", ""))
+		if tile_mode.contains("x") and not _has_matching_x_edges(image):
+			push_error("%s does not have matching horizontal tile edges" % asset_id)
+			failures += 1
+		if tile_mode.contains("y") and not _has_matching_y_edges(image):
+			push_error("%s does not have matching vertical tile edges" % asset_id)
+			failures += 1
+
 		checked += 1
 
 	print("Asset validation complete: %d checked, %d failure(s)" % [checked, failures])
@@ -70,5 +74,58 @@ func _has_transparent_border(image: Image) -> bool:
 	return true
 
 
+func _has_matching_x_edges(image: Image) -> bool:
+	for y in image.get_height():
+		if image.get_pixel(0, y) != image.get_pixel(image.get_width() - 1, y):
+			return false
+	return true
+
+
+func _has_matching_y_edges(image: Image) -> bool:
+	for x in image.get_width():
+		if image.get_pixel(x, 0) != image.get_pixel(x, image.get_height() - 1):
+			return false
+	return true
+
+
 func _repo_path(path: String) -> String:
 	return _repo_root.path_join(path.trim_prefix("res://"))
+
+
+func _load_catalog() -> Dictionary:
+	var main_path := _repo_root.path_join("assets_src/catalog.json")
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(main_path))
+	if not parsed is Dictionary:
+		push_error("Catalog is not valid JSON")
+		return {}
+	var catalog: Dictionary = parsed
+	var assets: Array = catalog.get("assets", []).duplicate(true)
+	var sequences: Array = catalog.get("sequences", []).duplicate(true)
+	for include_path: Variant in catalog.get("includes", []):
+		var included: Variant = JSON.parse_string(FileAccess.get_file_as_string(_repo_path(str(include_path))))
+		if not included is Dictionary:
+			push_error("Included catalog is invalid: %s" % include_path)
+			return {}
+		assets.append_array(included.get("assets", []))
+		sequences.append_array(included.get("sequences", []))
+	catalog["assets"] = assets
+	catalog["sequences"] = sequences
+	return catalog
+
+
+func _expand_assets(catalog: Dictionary) -> Array:
+	var expanded: Array = catalog.get("assets", []).duplicate(true)
+	for value: Variant in catalog.get("sequences", []):
+		if not value is Dictionary:
+			continue
+		var sequence: Dictionary = value
+		var common: Dictionary = sequence.get("common", {})
+		var frames: Array = sequence.get("frames", [])
+		for index in frames.size():
+			var entry: Dictionary = common.duplicate(true)
+			entry["id"] = str(sequence.get("id_pattern", "frame_{frame}")).replace("{frame}", str(index))
+			entry["output"] = str(sequence.get("output_pattern", "")).replace("{frame}", str(index))
+			if frames[index] is Dictionary:
+				entry.merge(frames[index], true)
+			expanded.append(entry)
+	return expanded

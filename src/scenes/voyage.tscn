@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/voyage.gd" id="1_voyage"]
 [ext_resource type="Script" path="res://src/world/ocean/ocean.gd" id="2_ocean"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://src/world/spawn_director.gd" id="9_director"]
 [ext_resource type="PackedScene" path="res://src/ui/hud/hud.tscn" id="10_hud"]
 [ext_resource type="Script" path="res://src/world/wind_system.gd" id="11_wind"]
+[ext_resource type="Script" path="res://src/world/tutorial_director.gd" id="12_tut"]
 
 [node name="Voyage" type="Node"]
 script = ExtResource("1_voyage")
@@ -66,6 +67,10 @@ script = ExtResource("8_input")
 [node name="WindSystem" type="Node" parent="."]
 unique_name_in_owner = true
 script = ExtResource("11_wind")
+
+[node name="Tutorial" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("12_tut")
 
 [node name="SpawnDirector" type="Node" parent="."]
 unique_name_in_owner = true

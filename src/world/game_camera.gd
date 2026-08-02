@@ -40,6 +40,8 @@ var pan_offset: Vector2 = Vector2.ZERO
 
 var _pan_idle: float = 0.0
 var _focus: Vector2 = Vector2.ZERO
+var _point_out_at: Vector2 = Vector2.ZERO
+var _point_out_left: float = 0.0
 
 
 ## Converts an authored zoom into one that frames the same amount of world on
@@ -68,9 +70,26 @@ func set_world_bounds(bounds: Rect2) -> void:
 	limit_bottom = roundi(bounds.end.y)
 
 
+## Swings the camera to look at something for a moment, then drifts back to the
+## fleet on its own.
+##
+## Used after a briefing: telling the player there are enemies is a sentence,
+## showing them the enemies turning to meet you is the actual information. The
+## return trip is automatic and uses the normal follow smoothing, so it reads as
+## the camera looking over rather than as a cutscene.
+func point_out(world_pos: Vector2, hold_sec: float) -> void:
+	_point_out_at = world_pos
+	_point_out_left = hold_sec
+	pan_offset = Vector2.ZERO
+
+
 func _process(delta: float) -> void:
 	if fleet != null and is_instance_valid(fleet):
 		_focus = fleet.centroid()
+
+	if _point_out_left > 0.0:
+		_point_out_left -= delta
+		_focus = _point_out_at
 
 	_pan_idle += delta
 	if _pan_idle > PAN_SNAPBACK_DELAY and pan_offset != Vector2.ZERO:

@@ -72,8 +72,11 @@ func _draw() -> void:
 		draw_line(Vector2(MARGIN, y), Vector2(size.x - MARGIN, y), WATER, 1.0)
 		y += step
 
-	for island: Island in archipelago.islands:
-		if not is_instance_valid(island) or not island.def.discovered:
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if not island.def.discovered:
 			continue
 		_draw_island(island)
 

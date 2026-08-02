@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <defs><radialGradient id="g" cx="35%" cy="28%"><stop stop-color="#fff0a6"/><stop offset=".32" stop-color="#e0b447"/><stop offset=".78" stop-color="#9a621f"/><stop offset="1" stop-color="#5a3515"/></radialGradient></defs>
+  <g transform="translate(12 12) scale({{SCALE_X}} 1) translate(-12 -12)"><circle cx="12" cy="12" r="9" fill="#5a3515"/><circle cx="12" cy="12" r="8" fill="url(#g)"/><circle cx="12" cy="12" r="5.8" fill="none" stroke="#7e4d1b" stroke-width="1"/><path d="M12 7.5l1.4 2.8 3.1.45-2.25 2.2.53 3.1L12 14.6l-2.78 1.46.53-3.1-2.25-2.2 3.1-.45z" fill="#f3cf6a" opacity=".7"/></g>
+  <ellipse cx="{{HIGHLIGHT_X}}" cy="8" rx="1.2" ry="3.2" fill="#fff6c8" opacity="{{HIGHLIGHT_ALPHA}}"/>
+</svg>

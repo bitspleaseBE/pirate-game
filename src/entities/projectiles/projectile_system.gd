@@ -74,10 +74,11 @@ func _physics_process(delta: float) -> void:
 
 	# Iterate backwards so removing a landed shot cannot skip the next one.
 	for i: int in range(_active.size() - 1, -1, -1):
-		var ball: Cannonball = _active[i]
-		if not is_instance_valid(ball):
+		var entry: Variant = _active[i]
+		if not is_instance_valid(entry):
 			_active.remove_at(i)
 			continue
+		var ball: Cannonball = entry
 		if ball.advance(delta):
 			_resolve(ball, true)
 			_active.remove_at(i)

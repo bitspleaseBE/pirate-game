@@ -70,8 +70,11 @@ func _update_escorts() -> void:
 	var leader_right: Vector2 = selected.starboard()
 	var station_index: int = 0
 
-	for ship: Ship in ships:
-		if ship == selected or not is_instance_valid(ship) or not ship.alive:
+	for entry: Variant in ships:
+		if not is_instance_valid(entry):
+			continue
+		var ship: Ship = entry
+		if ship == selected or not ship.alive:
 			continue
 		var station_local: Vector2 = ESCORT_STATIONS[station_index % ESCORT_STATIONS.size()]
 		station_index += 1

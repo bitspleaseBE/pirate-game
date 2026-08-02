@@ -8,6 +8,7 @@ From the repository root:
 godot --headless --path tools/assets --script render_assets.gd
 godot --headless --path tools/assets --script validate_assets.gd
 godot --headless --path tools/assets --script make_wave0_proofs.gd
+godot --headless --path tools/assets --script make_wave1_proofs.gd
 ```
 
 `render_assets.gd` reads `assets_src/catalog.json`, renders SVG sources and converts approved
@@ -20,6 +21,11 @@ limit, and transparent outer borders for sprite entries.
 
 `make_wave0_proofs.gd` generates the contact sheet, 40 px readability comparison, sloop
 rotation proof, and a gameplay composition made only from the rendered canonical PNGs.
+
+`make_wave1_proofs.gd` generates the Wave 1 contact sheet, 40 px readability comparison,
+and composed vertical-slice proof. `catalog.json` schema 3 includes
+`assets_src/catalog_wave1.json`; compact sequence definitions expand to loose deterministic
+frames during rendering and validation.
 
 The source directory contains `.gdignore`; canonical SVG/raster masters and generated concept
 references must not be imported or shipped by the main game project.

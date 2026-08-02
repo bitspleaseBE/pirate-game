@@ -26,6 +26,15 @@ func _ready() -> void:
 	_refresh_quality()
 	_refresh_stats()
 
+	# Automation hooks. Running `voyage.tscn` directly skips boot, the save load
+	# and this menu — which is exactly where entry-path bugs live, so the harness
+	# needs a way in through the real front door.
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	if "--auto-new" in args:
+		call_deferred("_on_new_voyage")
+	elif "--auto-continue" in args:
+		call_deferred("_on_continue")
+
 
 func _refresh_quality() -> void:
 	_quality_button.text = "Quality: %s%s" % [

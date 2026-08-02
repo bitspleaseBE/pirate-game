@@ -189,11 +189,13 @@ func get_cell_count() -> int:
 ## Drops entries whose node was freed without calling [method remove]. Cheap
 ## insurance; the culling manager runs it on its slow tick.
 func prune_invalid() -> int:
-	var dead: Array[Node2D] = []
-	for node: Node2D in _entries.keys():
+	# Untyped throughout: these entries are freed by definition, and a typed
+	# assignment would raise on every one of them.
+	var dead: Array = []
+	for node: Variant in _entries.keys():
 		if not is_instance_valid(node):
 			dead.append(node)
-	for node: Node2D in dead:
+	for node: Variant in dead:
 		_unbucket(_entries[node])
 		_entries.erase(node)
 	return dead.size()

@@ -20,6 +20,7 @@ const FLEET_WIPE_DELAY: float = 2.8
 @onready var director: SpawnDirector = %SpawnDirector
 @onready var ships_parent: Node2D = %Ships
 @onready var wind: WindSystem = %WindSystem
+@onready var tutorial: TutorialDirector = %Tutorial
 @onready var hud: CanvasLayer = %Hud
 
 
@@ -60,6 +61,14 @@ func _ready() -> void:
 	if hud.has_method(&"bind"):
 		hud.call(&"bind", fleet, archipelago)
 
+	tutorial.hud = hud
+	tutorial.camera = camera
+	tutorial.fleet = fleet
+	# Briefings pause the tree, which an automated run has no way to dismiss —
+	# the world would sit frozen behind a modal and the harness would faithfully
+	# report that nothing happened.
+	tutorial.enabled = not ("--smoke" in OS.get_cmdline_user_args())
+
 	_update_wind_availability()
 	EventBus.fleet_changed.connect(_update_wind_availability)
 
@@ -71,6 +80,8 @@ func _ready() -> void:
 	GameState.voyage_active = true
 	EventBus.voyage_started.emit(GameState.voyage_seed)
 	SaveSystem.request_save()
+
+	tutorial.begin()
 
 	Log.info("Voyage ready — seed %d" % GameState.voyage_seed, "Voyage")
 
@@ -120,8 +131,8 @@ func _capture_screenshots() -> void:
 		shot += 1
 		# Capture the wind intro on the first frame, then close it — it pauses the
 		# tree, so leaving it up would give us fourteen identical screenshots.
-		if hud.has_method(&"dismiss_wind_intro"):
-			hud.call(&"dismiss_wind_intro")
+		if hud.has_method(&"dismiss_briefing"):
+			hud.call(&"dismiss_briefing")
 
 	print("SHOTS: %s" % ProjectSettings.globalize_path(dir))
 	get_tree().quit(0)
@@ -155,6 +166,15 @@ func _run_smoke_test() -> void:
 	)
 	EventBus.ship_sunk.connect(func(_a: Node2D, _b: Node2D) -> void:
 		tally["sunk"] += 1
+	)
+
+	# Bail out the moment the fleet dies. Otherwise the wipe handler routes to the
+	# main menu, which frees this node mid-`await` — the coroutine simply stops,
+	# nothing ever calls quit(), and CI hangs until the job times out with no
+	# output explaining why.
+	fleet.fleet_emptied.connect(func() -> void:
+		push_error("SMOKE FAIL: player fleet was wiped out")
+		get_tree().quit(1)
 	)
 
 	var start: Vector2 = fleet.centroid()
@@ -368,15 +388,7 @@ func _update_wind_availability() -> void:
 		return
 
 	wind.activate()
-	# The intro pauses the tree, which an automated run has no way to dismiss —
-	# the whole world would sit frozen behind a modal and the harness would
-	# faithfully report that nothing happened.
-	if "--smoke" in OS.get_cmdline_user_args():
-		return
-	if not GameState.seen_wind_intro and hud.has_method(&"show_wind_intro"):
-		GameState.seen_wind_intro = true
-		hud.call(&"show_wind_intro", wind.compass_name())
-		SaveSystem.request_save()
+	tutorial.wind_came_up(wind.compass_name())
 
 
 func _on_landing_started(island: Node2D) -> void:

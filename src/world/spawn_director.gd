@@ -14,8 +14,16 @@ const ENEMY_SCENE: PackedScene = preload("res://src/entities/ships/enemy_ship.ts
 
 const TICK_HZ: float = 2.0
 ## Seconds between reinforcement waves while a shipyard lives.
-const REINFORCE_INTERVAL: float = 16.0
+const REINFORCE_INTERVAL: float = 22.0
 const REINFORCE_WAVE_SIZE: int = 2
+## Total reinforcement waves an island will ever send.
+##
+## Unbounded reinforcement is only fair if the player can stop it, and the
+## destructible shipyard that is supposed to do that is not built yet. Until it
+## is, an island has to be finite: an endless trickle against a starting hull is
+## not difficulty, it is a wall with no door. Remove this cap when killing the
+## shipyard actually cuts the supply.
+const MAX_REINFORCEMENT_WAVES: int = 2
 ## Garrison ships spawn this far outside the island's coast.
 const SPAWN_STANDOFF: float = 420.0
 ## How close a ship must be to the anchor point to send the landing party.
@@ -35,6 +43,7 @@ var ships_parent: Node2D = null
 var _accum: float = 0.0
 var _garrisons: Dictionary = {}       # Island -> Array[EnemyShip]
 var _reinforce_left: Dictionary = {}   # Island -> float
+var _waves_sent: Dictionary = {}       # Island -> int
 var _landing_left: Dictionary = {}     # Island -> float
 var _rng := RandomNumberGenerator.new()
 
@@ -53,10 +62,10 @@ func _process(delta: float) -> void:
 	_accum = 0.0
 
 	var focus: Vector2 = fleet.centroid()
-	for island: Island in archipelago.islands:
-		if not is_instance_valid(island):
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
 			continue
-		_tick_island(island, focus, tick_delta)
+		_tick_island(raw, focus, tick_delta)
 
 
 func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
@@ -83,10 +92,11 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 			_begin_landing_approach(island)
 		return
 
-	if island.def.has_shipyard:
+	if island.def.has_shipyard and int(_waves_sent.get(island, 0)) < MAX_REINFORCEMENT_WAVES:
 		var left: float = float(_reinforce_left.get(island, REINFORCE_INTERVAL)) - delta
 		if left <= 0.0:
 			_spawn_wave(island, REINFORCE_WAVE_SIZE)
+			_waves_sent[island] = int(_waves_sent.get(island, 0)) + 1
 			left = REINFORCE_INTERVAL
 		_reinforce_left[island] = left
 
@@ -95,6 +105,7 @@ func _alert(island: Island) -> void:
 	island.alert()
 	_garrisons[island] = [] as Array[EnemyShip]
 	_reinforce_left[island] = REINFORCE_INTERVAL
+	_waves_sent[island] = 0
 	_spawn_wave(island, island.def.garrison_ships)
 	Log.info(
 		"%s alerted: %d defenders" % [island.def.display_name, island.def.garrison_ships],
@@ -143,8 +154,12 @@ func _hull_for_tier(tier: int, index: int) -> StringName:
 func _prune_garrison(island: Island) -> void:
 	var garrison: Array = _garrisons.get(island, [])
 	for i: int in range(garrison.size() - 1, -1, -1):
-		var enemy: EnemyShip = garrison[i]
-		if not is_instance_valid(enemy) or not enemy.alive:
+		# Read untyped first: assigning an already-freed object to a *typed*
+		# variable raises "Trying to assign invalid previously freed instance"
+		# before the validity check below can ever run. Every dead defender would
+		# spam the console once per tick until the garrison was emptied.
+		var entry: Variant = garrison[i]
+		if not is_instance_valid(entry) or not (entry as EnemyShip).alive:
 			garrison.remove_at(i)
 	_garrisons[island] = garrison
 

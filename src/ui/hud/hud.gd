@@ -60,34 +60,31 @@ func _build_wind_indicator() -> void:
 	_root.add_child(_wind_indicator)
 
 
-## Shows the one-time wind explanation. `compass` is where the wind blows from.
-func show_wind_intro(compass: String) -> void:
-	var intro := WindIntro.new()
-	intro.name = "WindIntro"
-	# Above the rest of the HUD, and running while the tree is paused so the
-	# panel can stop the world without freezing its own button.
-	intro.process_mode = Node.PROCESS_MODE_ALWAYS
-	add_child(intro)
-	intro.show_intro(compass)
+## Shows a briefing modal and returns it, so the caller can await `dismissed`.
+## Returns null if one is already up — two modals at once is worse than either.
+func show_briefing(
+	title: String, lines: PackedStringArray, button_text: String = "GOT IT"
+) -> BriefingPanel:
+	if get_node_or_null(^"Briefing") != null:
+		return null
+	var panel := BriefingPanel.new()
+	panel.name = "Briefing"
+	# Runs while the tree is paused, so its own button still works when it has
+	# stopped the world.
+	panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(panel)
+	panel.present(title, lines, button_text)
+	return panel
 
 
-## Closes the wind intro if it is open. Used by the screenshot harness, which
-## needs the world running again after capturing the panel.
-func dismiss_wind_intro() -> bool:
-	var intro: Node = get_node_or_null(^"WindIntro")
-	if intro == null:
+## Closes any open briefing. Used by the screenshot harness, and as a guarantee
+## that nothing can leave the game paused behind a modal.
+func dismiss_briefing() -> bool:
+	var panel: BriefingPanel = get_node_or_null(^"Briefing") as BriefingPanel
+	if panel == null:
 		return false
-	get_tree().paused = false
-	intro.queue_free()
+	panel.force_dismiss()
 	return true
-
-
-func _process(delta: float) -> void:
-	if _toast_left <= 0.0:
-		return
-	_toast_left -= delta
-	# Hold at full opacity, then fade over the last half second.
-	_toast.modulate.a = clampf(_toast_left / 0.5, 0.0, 1.0)
 
 
 func _refresh_all() -> void:

@@ -1,0 +1,223 @@
+{
+  "wave": 1,
+  "exclusions": [
+    "water_flow_tile", "water_detail_tile", "water_caustic_tile",
+    "ramp_water_depth", "ramp_foam", "shore_foam_strip",
+    "fill_sand", "edge_shore"
+  ],
+  "assets": [
+    {
+      "id": "wake_strip", "source": "res://assets_src/ships/wake/v1/wake_strip_master.png",
+      "source_type": "raster", "process": "fit", "output": "res://assets/wave1/ships/wake_strip.png",
+      "nominal": [64, 256], "pivot": [32, 0], "atlas": "ships", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "ship_shadow", "source": "res://assets_src/ships/wake/v1/ship_shadow.svg",
+      "output": "res://assets/wave1/ships/ship_shadow.png", "nominal": [96, 160], "pivot": [48, 80],
+      "atlas": "ships", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "fill_grass", "source": "generated://grass_tile", "source_type": "generated", "process": "grass_tile",
+      "output": "res://assets/wave1/terrain/fill_grass.png", "nominal": [256, 256], "pivot": [0, 0],
+      "atlas": "terrain", "master_revision": 1, "padding": false, "tile_mode": "xy"
+    },
+    {
+      "id": "palm_1", "source": "res://assets_src/props/palm/v2/palm_1_master.png",
+      "source_type": "raster", "process": "fit", "output": "res://assets/wave1/props/palm_1.png",
+      "nominal": [64, 96], "pivot": [32, 94], "atlas": "props", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "rock_1", "source": "res://assets_src/props/rock/v2/rock_1_master.png",
+      "source_type": "raster", "process": "fit", "output": "res://assets/wave1/props/rock_1.png",
+      "nominal": [64, 64], "pivot": [32, 62], "atlas": "props", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "ball_round", "source": "res://assets_src/vfx/v1/ball_round.svg",
+      "output": "res://assets/wave1/vfx/ball_round.png", "nominal": [12, 12], "pivot": [6, 6],
+      "atlas": "vfx", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "ball_shadow", "source": "res://assets_src/vfx/v1/ball_shadow.svg",
+      "output": "res://assets/wave1/vfx/ball_shadow.png", "nominal": [16, 16], "pivot": [8, 8],
+      "atlas": "vfx", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "treasure_mound", "source": "res://assets_src/props/treasure/v1/treasure_mound_master.png",
+      "source_type": "raster", "process": "fit", "output": "res://assets/wave1/props/treasure_mound.png",
+      "nominal": [64, 64], "pivot": [32, 62], "atlas": "props", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "x_marks_spot", "source": "res://assets_src/props/treasure/v1/x_marks_spot.svg",
+      "output": "res://assets/wave1/props/x_marks_spot.png", "nominal": [48, 48], "pivot": [24, 24],
+      "atlas": "props", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "chest_closed", "source": "res://assets_src/props/treasure/v1/chest_closed.svg",
+      "output": "res://assets/wave1/props/chest_closed.png", "nominal": [48, 48], "pivot": [24, 44],
+      "atlas": "props", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "chest_open", "source": "res://assets_src/props/treasure/v1/chest_open.svg",
+      "output": "res://assets/wave1/props/chest_open.png", "nominal": [48, 48], "pivot": [24, 44],
+      "atlas": "props", "derived_from": "chest_closed@1", "padding": true
+    },
+    {
+      "id": "button_brass_up", "source": "res://assets_src/ui/v1/button_brass.svg",
+      "replacements": {"{{TOP}}": "#d3a950", "{{BOTTOM}}": "#8b5d27", "{{EDGE}}": "#e1c276", "{{OFFSET}}": "0", "{{SHINE}}": "0.58"},
+      "output": "res://assets/wave1/ui/button_brass_up.png", "nominal": [160, 56], "pivot": [80, 28], "atlas": "ui", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "button_brass_down", "source": "res://assets_src/ui/v1/button_brass.svg",
+      "replacements": {"{{TOP}}": "#9a6a2f", "{{BOTTOM}}": "#6c431f", "{{EDGE}}": "#b68d49", "{{OFFSET}}": "3", "{{SHINE}}": "0.25"},
+      "output": "res://assets/wave1/ui/button_brass_down.png", "nominal": [160, 56], "pivot": [80, 28], "atlas": "ui", "derived_from": "button_brass_up@1", "padding": true
+    },
+    {
+      "id": "button_brass_disabled", "source": "res://assets_src/ui/v1/button_brass.svg",
+      "replacements": {"{{TOP}}": "#8c8069", "{{BOTTOM}}": "#5f574c", "{{EDGE}}": "#aaa18d", "{{OFFSET}}": "0", "{{SHINE}}": "0.15"},
+      "output": "res://assets/wave1/ui/button_brass_disabled.png", "nominal": [160, 56], "pivot": [80, 28], "atlas": "ui", "derived_from": "button_brass_up@1", "padding": true
+    },
+    {
+      "id": "bar_frame", "source": "res://assets_src/ui/v1/bar_frame.svg",
+      "output": "res://assets/wave1/ui/bar_frame.png", "nominal": [192, 24], "pivot": [96, 12], "atlas": "ui", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "bar_fill_hull", "source": "res://assets_src/ui/v1/bar_fill.svg",
+      "replacements": {"{{LIGHT}}": "#b75a49", "{{DARK}}": "#682b28"}, "output": "res://assets/wave1/ui/bar_fill_hull.png",
+      "nominal": [176, 8], "pivot": [0, 4], "atlas": "ui", "master_revision": 1, "padding": false
+    },
+    {
+      "id": "bar_fill_sail", "source": "res://assets_src/ui/v1/bar_fill.svg",
+      "replacements": {"{{LIGHT}}": "#e9ddb9", "{{DARK}}": "#a69271"}, "output": "res://assets/wave1/ui/bar_fill_sail.png",
+      "nominal": [176, 8], "pivot": [0, 4], "atlas": "ui", "derived_from": "bar_fill_hull@1", "padding": false
+    },
+    {
+      "id": "bar_fill_cannon", "source": "res://assets_src/ui/v1/bar_fill.svg",
+      "replacements": {"{{LIGHT}}": "#89939a", "{{DARK}}": "#3f474d"}, "output": "res://assets/wave1/ui/bar_fill_cannon.png",
+      "nominal": [176, 8], "pivot": [0, 4], "atlas": "ui", "derived_from": "bar_fill_hull@1", "padding": false
+    },
+    {
+      "id": "bar_fill_xp", "source": "res://assets_src/ui/v1/bar_fill.svg",
+      "replacements": {"{{LIGHT}}": "#e1bd60", "{{DARK}}": "#9a651f"}, "output": "res://assets/wave1/ui/bar_fill_xp.png",
+      "nominal": [176, 8], "pivot": [0, 4], "atlas": "ui", "derived_from": "bar_fill_hull@1", "padding": false
+    },
+    {
+      "id": "map_parchment", "source": "res://assets_src/ui/v1/map_parchment.svg",
+      "output": "res://assets/wave1/map/map_parchment.png", "nominal": [256, 256], "pivot": [128, 128], "atlas": "map", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "map_x", "source": "res://assets_src/props/treasure/v1/x_marks_spot.svg",
+      "output": "res://assets/wave1/map/map_x.png", "nominal": [48, 48], "pivot": [24, 24], "atlas": "map", "derived_from": "x_marks_spot@1", "padding": true
+    },
+    {
+      "id": "map_ship_icon", "source": "res://assets_src/icons/v1/icon_template.svg",
+      "replacements": {"{{PATH}}": "M32 6C21 13 16 25 18 42l14 15 14-15c2-17-3-29-14-36zm0 8l7 29-7 6-7-6z"},
+      "output": "res://assets/wave1/map/map_ship_icon.png", "nominal": [64, 64], "pivot": [32, 32], "atlas": "map", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_gold", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M32 7a25 25 0 1 0 0 50 25 25 0 1 0 0-50zm0 10l5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2z"},
+      "output": "res://assets/wave1/icons/icon_gold.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_chest", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M10 18q2-9 10-10h24q8 1 10 10v34H10zm5 10h34M27 23h10v17H27z"},
+      "output": "res://assets/wave1/icons/icon_chest.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_hull", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M32 5C19 14 15 31 19 47l13 11 13-11c4-16 0-33-13-42zm0 11v32M22 36h20"},
+      "output": "res://assets/wave1/icons/icon_hull.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_sail", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M30 6h5v52h-5zM27 12C15 18 11 31 14 45l13 5zm11 0c12 6 16 19 13 33l-13 5z"},
+      "output": "res://assets/wave1/icons/icon_sail.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_cannon_wave1", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M8 25h36l11 7-11 7H8zm9 14-5 12h10l5-12zm22 0 5 12h10L49 39z"},
+      "output": "res://assets/wave1/icons/icon_cannon.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_anchor", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M32 6a9 9 0 1 0 0 18 9 9 0 1 0 0-18zm-4 18h8v22c7-2 11-7 13-14l8 5c-4 14-13 21-25 21S11 51 7 37l8-5c2 7 6 12 13 14z"},
+      "output": "res://assets/wave1/icons/icon_anchor.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_wheel", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M29 5h6l2 12 7 3 10-7 4 5-9 8 2 7 11 5-2 6-12-3-5 6 7 10-5 4-8-9-7 2-5 11-6-2 3-12-6-5-7 8-4-5 9-8-2-7-11-5 2-6 12 3 5-6-7-10 5-4 8 9 7-2zM32 24a8 8 0 1 0 0 16 8 8 0 1 0 0-16z"},
+      "output": "res://assets/wave1/icons/icon_wheel.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_shot_round", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M32 9a23 23 0 1 0 0 46 23 23 0 1 0 0-46zM23 19a6 4 0 1 0 0 8 6 4 0 1 0 0-8z"},
+      "output": "res://assets/wave1/icons/icon_shot_round.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_fire", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M35 5c4 13-5 15 2 25 7-5 8-10 8-14 10 10 12 19 8 29-4 9-12 14-21 14S12 53 10 43c-2-11 6-20 15-29-1 9 3 13 7 16 4-8-2-14 3-25z"},
+      "output": "res://assets/wave1/icons/icon_fire.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_repair", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M12 9c8-4 16 1 16 9l22 22c7 0 11 7 8 13l-7-7-5 5 7 7c-6 3-13-1-13-8L18 28C10 28 5 20 9 12l8 8 5-5z"},
+      "output": "res://assets/wave1/icons/icon_repair.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_map", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M6 13l16-7 20 7 16-7v45l-16 7-20-7-16 7zm16-7v45m20-38v45M12 20l8-4m24 28 8-4"},
+      "output": "res://assets/wave1/icons/icon_map.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
+      "id": "icon_settings", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M27 5h10l2 9 7 4 9-3 5 9-7 6v8l7 6-5 9-9-3-7 4-2 9H27l-2-9-7-4-9 3-5-9 7-6v-8l-7-6 5-9 9 3 7-4zm5 19a8 8 0 1 0 0 16 8 8 0 1 0 0-16z"},
+      "output": "res://assets/wave1/icons/icon_settings.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    }
+  ],
+  "sequences": [
+    {
+      "id_pattern": "wake_foam_{frame}", "output_pattern": "res://assets/wave1/ships/wake_foam_{frame}.png",
+      "common": {"source": "res://assets_src/ships/wake/v1/wake_foam_master.png", "source_type": "raster", "process": "effect_variant", "nominal": [48,48], "pivot": [24,24], "atlas": "ships", "padding": true},
+      "frames": [{"content_scale": 0.48, "alpha": 0.55}, {"content_scale": 0.74, "alpha": 0.82}, {"content_scale": 1.0, "alpha": 1.0}, {"content_scale": 0.82, "alpha": 0.55, "flip_x": true}]
+    },
+    {
+      "id_pattern": "fx_splash_small_{frame}", "output_pattern": "res://assets/wave1/vfx/fx_splash_small_{frame}.png",
+      "common": {"source": "res://assets_src/vfx/v1/fx_splash_small_master.png", "source_type": "raster", "process": "effect_variant", "nominal": [48,48], "pivot": [24,24], "atlas": "vfx", "padding": true},
+      "frames": [{"content_scale": 0.3, "alpha": 0.45}, {"content_scale": 0.5, "alpha": 0.72}, {"content_scale": 0.72, "alpha": 0.9}, {"content_scale": 1.0, "alpha": 1.0}, {"content_scale": 0.9, "alpha": 0.62, "flip_x": true}, {"content_scale": 0.72, "alpha": 0.28}]
+    },
+    {
+      "id_pattern": "fx_impact_wood_{frame}", "output_pattern": "res://assets/wave1/vfx/fx_impact_wood_{frame}.png",
+      "common": {"source": "res://assets_src/vfx/v1/fx_impact_wood_master.png", "source_type": "raster", "process": "effect_variant", "nominal": [64,64], "pivot": [12,32], "orientation": "fires_positive_x", "atlas": "vfx", "padding": true},
+      "frames": [{"content_scale": 0.3, "alpha": 0.48}, {"content_scale": 0.52, "alpha": 0.78}, {"content_scale": 0.78, "alpha": 0.95}, {"content_scale": 1.0, "alpha": 1.0}, {"content_scale": 0.82, "alpha": 0.38}]
+    },
+    {
+      "id_pattern": "fx_explosion_{frame}", "output_pattern": "res://assets/wave1/vfx/fx_explosion_{frame}.png",
+      "common": {"source": "res://assets_src/vfx/v1/fx_explosion_master.png", "source_type": "raster", "process": "effect_variant", "nominal": [128,128], "pivot": [64,64], "atlas": "vfx", "padding": true},
+      "frames": [{"content_scale": 0.2, "alpha": 0.52}, {"content_scale": 0.34, "alpha": 0.75}, {"content_scale": 0.5, "alpha": 0.9}, {"content_scale": 0.7, "alpha": 1.0}, {"content_scale": 0.88, "alpha": 1.0}, {"content_scale": 1.0, "alpha": 0.88}, {"content_scale": 0.94, "alpha": 0.55, "flip_x": true}, {"content_scale": 0.82, "alpha": 0.25}]
+    },
+    {
+      "id_pattern": "coin_spin_{frame}", "output_pattern": "res://assets/wave1/props/coin_spin_{frame}.png",
+      "common": {"source": "res://assets_src/props/treasure/v1/coin.svg", "nominal": [24,24], "pivot": [12,12], "atlas": "props", "padding": true},
+      "frames": [
+        {"replacements": {"{{SCALE_X}}": "1", "{{HIGHLIGHT_X}}": "8", "{{HIGHLIGHT_ALPHA}}": ".65"}},
+        {"replacements": {"{{SCALE_X}}": ".62", "{{HIGHLIGHT_X}}": "10", "{{HIGHLIGHT_ALPHA}}": ".5"}},
+        {"replacements": {"{{SCALE_X}}": ".2", "{{HIGHLIGHT_X}}": "12", "{{HIGHLIGHT_ALPHA}}": ".22"}},
+        {"replacements": {"{{SCALE_X}}": ".62", "{{HIGHLIGHT_X}}": "14", "{{HIGHLIGHT_ALPHA}}": ".42"}},
+        {"replacements": {"{{SCALE_X}}": "1", "{{HIGHLIGHT_X}}": "16", "{{HIGHLIGHT_ALPHA}}": ".65"}},
+        {"replacements": {"{{SCALE_X}}": ".62", "{{HIGHLIGHT_X}}": "12", "{{HIGHLIGHT_ALPHA}}": ".38"}}
+      ]
+    },
+    {
+      "id_pattern": "reticle_target_{frame}", "output_pattern": "res://assets/wave1/ui/reticle_target_{frame}.png",
+      "common": {"source": "res://assets_src/ui/v1/reticle_target.svg", "nominal": [64,64], "pivot": [32,32], "atlas": "ui", "padding": true},
+      "frames": [
+        {"replacements": {"{{ROT}}":"0", "{{ALPHA}}":".72"}}, {"replacements": {"{{ROT}}":"15", "{{ALPHA}}":".9"}},
+        {"replacements": {"{{ROT}}":"30", "{{ALPHA}}":"1"}}, {"replacements": {"{{ROT}}":"45", "{{ALPHA}}":".86"}}
+      ]
+    },
+    {
+      "id_pattern": "marker_waypoint_{frame}", "output_pattern": "res://assets/wave1/ui/marker_waypoint_{frame}.png",
+      "common": {"source": "res://assets_src/ui/v1/marker_waypoint.svg", "nominal": [64,64], "pivot": [32,55], "atlas": "ui", "padding": true},
+      "frames": [
+        {"replacements": {"{{SCALE}}":".82", "{{ALPHA}}":".65"}}, {"replacements": {"{{SCALE}}":".92", "{{ALPHA}}":".82"}},
+        {"replacements": {"{{SCALE}}":"1", "{{ALPHA}}":"1"}}, {"replacements": {"{{SCALE}}":".92", "{{ALPHA}}":".8"}}
+      ]
+    },
+    {
+      "id_pattern": "ring_selection_{frame}", "output_pattern": "res://assets/wave1/ui/ring_selection_{frame}.png",
+      "common": {"source": "res://assets_src/ui/v1/ring_selection.svg", "nominal": [96,96], "pivot": [48,48], "atlas": "ui", "padding": true},
+      "frames": [
+        {"replacements": {"{{ROT}}":"0", "{{ALPHA}}":".72"}}, {"replacements": {"{{ROT}}":"12", "{{ALPHA}}":".86"}},
+        {"replacements": {"{{ROT}}":"24", "{{ALPHA}}":"1"}}, {"replacements": {"{{ROT}}":"36", "{{ALPHA}}":".84"}}
+      ]
+    }
+  ]
+}

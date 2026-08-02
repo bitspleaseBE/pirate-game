@@ -21,6 +21,9 @@ var current: StringName = &""
 
 var _fade: ColorRect
 var _busy: bool = false
+## A transition asked for while one was already running. Queued rather than
+## dropped — see [method goto].
+var _pending: StringName = &""
 
 
 func _ready() -> void:
@@ -42,11 +45,19 @@ func _ready() -> void:
 
 
 func goto(key: StringName) -> void:
-	if _busy:
-		return
 	if not SCENES.has(key):
 		Log.error("Unknown scene key '%s'" % key, "Router")
 		return
+
+	# Queue rather than drop. A scene's `_ready` runs *inside* the previous
+	# transition, so anything that routes on load — an auto-start flag, a
+	# "continue" that lands straight in the world — would be silently swallowed.
+	# So would a player double-tapping a menu button. Silently ignoring a
+	# navigation request is the kind of bug that looks like a frozen game.
+	if _busy:
+		_pending = key
+		return
+
 	_transition(key)
 
 
@@ -85,6 +96,11 @@ func _transition(key: StringName) -> void:
 
 	_busy = false
 	transition_finished.emit(key)
+
+	if _pending != &"":
+		var queued: StringName = _pending
+		_pending = &""
+		_transition(queued)
 
 
 func _teardown_world_state() -> void:

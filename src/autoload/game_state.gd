@@ -27,6 +27,12 @@ var island_progress: Dictionary = {}
 ## Set the first time the player commands a sailed hull, so the wind is explained
 ## exactly once and never again.
 var seen_wind_intro: bool = false
+## Briefing ids already shown, so no explanation ever repeats. See
+## [TutorialDirector].
+var seen_briefings: Dictionary = {}
+
+## The hull a player always has, however badly things went.
+const STARTING_HULL: StringName = &"dinghy"
 
 var stats_islands_captured: int = 0
 var stats_ships_sunk: int = 0
@@ -53,9 +59,39 @@ func reset_run() -> void:
 	voyage_active = false
 	island_progress.clear()
 	seen_wind_intro = false
+	seen_briefings.clear()
 	stats_islands_captured = 0
 	stats_ships_sunk = 0
 	stats_voyages_completed = 0
+
+
+func has_seen(briefing_id: StringName) -> bool:
+	return bool(seen_briefings.get(briefing_id, false))
+
+
+func mark_seen(briefing_id: StringName) -> void:
+	seen_briefings[briefing_id] = true
+
+
+## Guarantees the player owns at least one hull.
+##
+## Losing your fleet costs you the ships you were sailing, not the ability to
+## play — you always get a dinghy back. This is also the backstop against a save
+## whose fleet entry is empty or malformed: without it the voyage loads a world
+## with no player ship in it, which presents as a game that boots to an empty sea
+## and is deeply confusing to diagnose.
+func ensure_fleet() -> void:
+	var valid: Array[Dictionary] = []
+	for entry: Dictionary in fleet:
+		if String(entry.get("stats_id", "")).is_empty():
+			continue
+		valid.append(entry)
+
+	if valid.is_empty():
+		valid.append({"stats_id": STARTING_HULL, "upgrades": {}})
+		Log.warn("Fleet was empty — issuing a %s" % STARTING_HULL, "GameState")
+
+	fleet = valid
 
 
 func total_gold() -> int:
@@ -171,6 +207,7 @@ func to_dict() -> Dictionary:
 		"ammo_stock": ammo_stock,
 		"selected_ammo": String(selected_ammo),
 		"seen_wind_intro": seen_wind_intro,
+		"seen_briefings": seen_briefings,
 		"voyage_seed": voyage_seed,
 		"voyage_active": voyage_active,
 		"island_progress": island_progress,
@@ -199,9 +236,12 @@ func from_dict(data: Dictionary) -> void:
 	ammo_stock = data.get("ammo_stock", ammo_stock)
 	selected_ammo = StringName(data.get("selected_ammo", "round"))
 	seen_wind_intro = bool(data.get("seen_wind_intro", false))
+	seen_briefings = data.get("seen_briefings", {})
 	voyage_seed = int(data.get("voyage_seed", 0))
 	voyage_active = bool(data.get("voyage_active", false))
 	island_progress = data.get("island_progress", {})
+
+	ensure_fleet()
 
 	var stats: Dictionary = data.get("stats", {})
 	stats_islands_captured = int(stats.get("islands_captured", 0))

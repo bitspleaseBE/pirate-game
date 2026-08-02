@@ -27,6 +27,8 @@ const TICK_HZ: float = 6.0
 const SIM_HZ: float = 4.0
 ## Beyond this multiple of the culled rect's half-extent, entities go DORMANT.
 const DORMANT_DISTANCE_FACTOR: float = 4.0
+## A viewport smaller than this in either axis is not a real viewport yet.
+const MIN_VALID_VIEWPORT: float = 8.0
 
 signal tick_completed()
 
@@ -117,6 +119,18 @@ func _process(delta: float) -> void:
 
 
 func _do_tick() -> void:
+	# Refuse to classify anything against a viewport that has no size yet.
+	#
+	# A SubViewport created by `change_scene_to_file` reports 0x0 until its
+	# container lays it out on the following frame. Ticking then computes a
+	# zero-area camera rect, decides every entity in the world is DORMANT, and
+	# hides all of them — and if anything pauses the tree before the next tick
+	# (the wind intro does exactly that), they never come back. The symptom is a
+	# game that loads to an empty sea with a working HUD, which looks nothing like
+	# a culling bug.
+	if not _viewport_is_ready():
+		return
+
 	var started: int = Time.get_ticks_usec()
 
 	_update_rects()
@@ -129,11 +143,14 @@ func _do_tick() -> void:
 	var dormant_distance: float = _outer_rect.size.length() * 0.5 * DORMANT_DISTANCE_FACTOR
 	var dormant_distance_sq: float = dormant_distance * dormant_distance
 
-	var dead: Array[Node2D] = []
-	for entity: Node2D in _entities:
-		if not is_instance_valid(entity):
-			dead.append(entity)
+	# Untyped read: a freed entity assigned to a typed variable raises before we
+	# can test it, and this loop exists precisely to find freed entities.
+	var dead: Array = []
+	for raw: Variant in _entities:
+		if not is_instance_valid(raw):
+			dead.append(raw)
 			continue
+		var entity: Node2D = raw
 
 		var pos: Vector2 = entity.global_position
 		var radius: float = 0.0
@@ -155,8 +172,9 @@ func _do_tick() -> void:
 
 		_set_tier(entity, want)
 
-	for entity: Node2D in dead:
-		unregister(entity)
+	# `dead` holds freed objects by construction, so it too must stay untyped.
+	for gone: Variant in dead:
+		unregister(gone)
 
 	_enforce_visible_budget()
 	_recount()
@@ -185,9 +203,10 @@ func _enforce_visible_budget() -> void:
 
 
 func _do_sim_step(delta: float) -> void:
-	for entity: Node2D in _entities:
-		if not is_instance_valid(entity):
+	for raw: Variant in _entities:
+		if not is_instance_valid(raw):
 			continue
+		var entity: Node2D = raw
 		if _tiers.get(entity) != Lod.SIMULATED:
 			continue
 		if entity.has_method(&"sim_step"):
@@ -223,6 +242,13 @@ func _recount() -> void:
 				count_simulated += 1
 			_:
 				count_dormant += 1
+
+
+func _viewport_is_ready() -> bool:
+	if camera == null or not is_instance_valid(camera) or not camera.is_inside_tree():
+		return false
+	var size: Vector2 = camera.get_viewport_rect().size
+	return size.x >= MIN_VALID_VIEWPORT and size.y >= MIN_VALID_VIEWPORT
 
 
 func _update_rects() -> void:

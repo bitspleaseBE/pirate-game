@@ -14,6 +14,7 @@ auditable cost measure; local rendering and post-processing add no generation ca
 | 0C-v2 | 2026-08-01 | Built-in + local alpha/tiling | 6 | 0 | 0 | Palm, rock, UI, terrain, VFX | Not exposed | Complete |
 | 0D-v2 | 2026-08-01 | Local Godot tooling | 0 | 0 | 0 | 20 deterministic outputs | 0 calls | Complete |
 | **Cumulative Wave 0** |  |  | **19** | **0** | **0** | v2 active; v1 archived | **Not exposed** | Awaiting visual approval |
+| 1A-1E static art | 2026-08-02 | Built-in + deterministic Godot/SVG | 8 | 0 | 0 | 75 catalog outputs + 3 proofs | Not exposed | Ready for visual approval |
 
 ## Revision notes
 
@@ -24,3 +25,7 @@ auditable cost measure; local rendering and post-processing add no generation ca
 - Three faction hull proofs, five rotation views, four muzzle frames, masks, exact-size exports,
   terrain seam fixes, and proof sheets are deterministic local derivatives.
 - No image-edit calls or audio generations were used.
+- Wave 1 used 8 successful new-image calls for wake, prop, VFX, and treasure masters.
+  Non-returning grass/chest invocations produced no artifact and are not counted as approved
+  generation calls; the service exposed no billing detail for them.
+- Wave 1 ocean and beach upgrades and Batch 1F audio were explicitly excluded.

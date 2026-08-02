@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs><linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#b07a3e"/><stop offset="1" stop-color="#55331f"/></linearGradient><radialGradient id="gold"><stop stop-color="#f3d27b"/><stop offset=".5" stop-color="#bf8b32"/><stop offset="1" stop-color="#6f441c"/></radialGradient></defs>
+  <path d="M8 21L11 7q13-5 26 0l3 14z" fill="#241812"/><path d="M10 19l3-10q11-4 22 0l3 10z" fill="url(#wood)"/><path d="M13 9v10M35 9v10" stroke="#252a2e" stroke-width="3"/>
+  <path d="M6 20h36v20q-2 4-6 5H12q-5-1-6-5z" fill="#2b1a11"/><rect x="8" y="22" width="32" height="19" rx="2" fill="url(#wood)"/>
+  <ellipse cx="24" cy="25" rx="13" ry="6" fill="#4a2b15"/><circle cx="16" cy="25" r="3.2" fill="url(#gold)"/><circle cx="23" cy="23" r="3.4" fill="url(#gold)"/><circle cx="30" cy="26" r="3.6" fill="url(#gold)"/><circle cx="25" cy="28" r="3" fill="#ba7630"/><path d="M13 22v19M35 22v19" stroke="#252a2e" stroke-width="4"/><rect x="21" y="33" width="6" height="8" rx="1" fill="#9b7435"/>
+</svg>

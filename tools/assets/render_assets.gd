@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 	var render_scale := int(catalog.get("render_scale", 2))
 	var failures := 0
-	for value: Variant in catalog.get("assets", []):
+	for value: Variant in _expand_assets(catalog):
 		if not value is Dictionary:
 			push_error("Catalog asset entry is not an object")
 			failures += 1
@@ -48,6 +48,13 @@ func _render_asset(asset: Dictionary, expected: Vector2i, render_scale: int) -> 
 	var source: String = asset.get("source", "")
 	var asset_id: String = asset.get("id", source)
 	var source_absolute := _repo_path(source)
+	if asset.get("source_type", "svg") == "generated":
+		match String(asset.get("process", "")):
+			"grass_tile":
+				return _make_grass_tile(expected)
+			_:
+				push_error("Unknown generated process for %s" % asset_id)
+				return Image.new()
 	if asset.get("source_type", "svg") == "raster":
 		var source_image := Image.new()
 		var error := source_image.load(source_absolute)
@@ -71,6 +78,15 @@ func _render_asset(asset: Dictionary, expected: Vector2i, render_scale: int) -> 
 				return _make_mirror_x(source_image, expected)
 			"muzzle_variant":
 				return _make_muzzle_variant(source_image, expected, float(asset.get("content_scale", 1.0)), float(asset.get("alpha", 1.0)))
+			"effect_variant":
+				return _make_effect_variant(
+					source_image,
+					expected,
+					float(asset.get("content_scale", 1.0)),
+					float(asset.get("alpha", 1.0)),
+					bool(asset.get("flip_x", false)),
+					bool(asset.get("flip_y", false))
+				)
 			"cannon_icon":
 				return _make_cannon_icon(source_image, expected)
 			_:
@@ -181,6 +197,31 @@ func _make_muzzle_variant(source: Image, expected: Vector2i, content_scale: floa
 	return fitted
 
 
+func _make_effect_variant(source: Image, expected: Vector2i, content_scale: float, alpha_multiplier: float, flip_x: bool, flip_y: bool) -> Image:
+	var fitted := _fit_raster(source, expected, 3)
+	if flip_x:
+		fitted.flip_x()
+	if flip_y:
+		fitted.flip_y()
+	if not is_equal_approx(content_scale, 1.0):
+		var size := Vector2i(
+			maxi(1, roundi(expected.x * content_scale)),
+			maxi(1, roundi(expected.y * content_scale))
+		)
+		fitted.resize(size.x, size.y, Image.INTERPOLATE_LANCZOS)
+		var centered := Image.create(expected.x, expected.y, false, Image.FORMAT_RGBA8)
+		centered.fill(Color(0, 0, 0, 0))
+		centered.blend_rect(fitted, Rect2i(Vector2i.ZERO, size), (expected - size) / 2)
+		fitted = centered
+	if alpha_multiplier < 0.999:
+		for y in fitted.get_height():
+			for x in fitted.get_width():
+				var color := fitted.get_pixel(x, y)
+				color.a *= alpha_multiplier
+				fitted.set_pixel(x, y, color)
+	return fitted
+
+
 func _make_cannon_icon(source: Image, expected: Vector2i) -> Image:
 	var result := Image.create(expected.x, expected.y, false, Image.FORMAT_RGBA8)
 	result.fill(Color(0, 0, 0, 0))
@@ -202,6 +243,63 @@ func _make_cannon_icon(source: Image, expected: Vector2i) -> Image:
 	return result
 
 
+func _make_grass_tile(expected: Vector2i) -> Image:
+	var result := Image.create(expected.x, expected.y, false, Image.FORMAT_RGBA8)
+	var base_dark := Color("#465638")
+	var base_light := Color("#6C7549")
+	for y in expected.y:
+		for x in expected.x:
+			var ux := TAU * float(x) / expected.x
+			var uy := TAU * float(y) / expected.y
+			var broad := (sin(ux * 3.0 + sin(uy * 2.0)) + cos(uy * 4.0 - ux) + 2.0) * 0.25
+			var fine := (sin(ux * 19.0 + uy * 11.0) + 1.0) * 0.5
+			result.set_pixel(x, y, base_dark.lerp(base_light, 0.18 + broad * 0.42 + fine * 0.06))
+
+	var blade_colors := [Color("#31442E"), Color("#4B6038"), Color("#7F874E"), Color("#A09859")]
+	for index in 760:
+		var start := Vector2i(posmod(index * 83 + index * index * 7, expected.x), posmod(index * 131 + index * index * 3, expected.y))
+		var length := 5 + posmod(index * 17, 12)
+		var lean := posmod(index * 29, 9) - 4
+		var color: Color = blade_colors[posmod(index * 11, blade_colors.size())]
+		color.a = 0.42 + float(posmod(index * 13, 31)) / 100.0
+		_draw_wrapped_line(result, start, start + Vector2i(lean, -length), color, 1 if index % 5 else 2)
+
+	for index in 95:
+		var point := Vector2i(posmod(index * 157 + 19, expected.x), posmod(index * 97 + 31, expected.y))
+		var dirt := Color("#6A5738")
+		dirt.a = 0.24
+		_draw_wrapped_disc(result, point, 1 + posmod(index, 3), dirt)
+	for y in result.get_height():
+		result.set_pixel(result.get_width() - 1, y, result.get_pixel(0, y))
+	for x in result.get_width():
+		result.set_pixel(x, result.get_height() - 1, result.get_pixel(x, 0))
+	return result
+
+
+func _draw_wrapped_line(image: Image, start: Vector2i, finish: Vector2i, color: Color, width: int) -> void:
+	var delta := finish - start
+	var steps := maxi(1, maxi(absi(delta.x), absi(delta.y)))
+	for step in range(steps + 1):
+		var ratio := float(step) / steps
+		var point := Vector2i(roundi(lerpf(start.x, finish.x, ratio)), roundi(lerpf(start.y, finish.y, ratio)))
+		for oy in range(-width + 1, width):
+			for ox in range(-width + 1, width):
+				_blend_wrapped_pixel(image, point + Vector2i(ox, oy), color)
+
+
+func _draw_wrapped_disc(image: Image, center: Vector2i, radius: int, color: Color) -> void:
+	for y in range(-radius, radius + 1):
+		for x in range(-radius, radius + 1):
+			if x * x + y * y <= radius * radius:
+				_blend_wrapped_pixel(image, center + Vector2i(x, y), color)
+
+
+func _blend_wrapped_pixel(image: Image, point: Vector2i, color: Color) -> void:
+	var wrapped := Vector2i(posmod(point.x, image.get_width()), posmod(point.y, image.get_height()))
+	var current := image.get_pixelv(wrapped)
+	image.set_pixelv(wrapped, current.lerp(Color(color.r, color.g, color.b, 1.0), color.a))
+
+
 func _load_catalog() -> Dictionary:
 	var catalog_path := _repo_root.path_join("assets_src/catalog.json")
 	var text := FileAccess.get_file_as_string(catalog_path)
@@ -212,7 +310,39 @@ func _load_catalog() -> Dictionary:
 	if not parsed is Dictionary:
 		push_error("Catalog is not valid JSON")
 		return {}
-	return parsed
+	var catalog: Dictionary = parsed
+	var assets: Array = catalog.get("assets", []).duplicate(true)
+	var sequences: Array = catalog.get("sequences", []).duplicate(true)
+	for include_path: Variant in catalog.get("includes", []):
+		var include_absolute := _repo_path(str(include_path))
+		var include_text := FileAccess.get_file_as_string(include_absolute)
+		var included: Variant = JSON.parse_string(include_text)
+		if not included is Dictionary:
+			push_error("Included catalog is invalid: %s" % include_path)
+			return {}
+		assets.append_array(included.get("assets", []))
+		sequences.append_array(included.get("sequences", []))
+	catalog["assets"] = assets
+	catalog["sequences"] = sequences
+	return catalog
+
+
+func _expand_assets(catalog: Dictionary) -> Array:
+	var expanded: Array = catalog.get("assets", []).duplicate(true)
+	for value: Variant in catalog.get("sequences", []):
+		if not value is Dictionary:
+			continue
+		var sequence: Dictionary = value
+		var common: Dictionary = sequence.get("common", {})
+		var frames: Array = sequence.get("frames", [])
+		for index in frames.size():
+			var entry: Dictionary = common.duplicate(true)
+			entry["id"] = str(sequence.get("id_pattern", "frame_{frame}")).replace("{frame}", str(index))
+			entry["output"] = str(sequence.get("output_pattern", "")).replace("{frame}", str(index))
+			if frames[index] is Dictionary:
+				entry.merge(frames[index], true)
+			expanded.append(entry)
+	return expanded
 
 
 func _repo_path(path: String) -> String:

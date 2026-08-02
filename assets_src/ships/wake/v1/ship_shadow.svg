@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="160" viewBox="0 0 96 160">
+  <defs><filter id="b"><feGaussianBlur stdDeviation="5"/></filter><linearGradient id="a" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#06131a" stop-opacity=".2"/><stop offset=".5" stop-color="#06131a" stop-opacity=".34"/><stop offset="1" stop-color="#06131a" stop-opacity=".12"/></linearGradient></defs>
+  <path d="M48 8C25 18 15 48 14 79c-1 37 12 61 34 73 22-12 35-36 34-73C81 48 71 18 48 8z" fill="url(#a)" filter="url(#b)"/>
+</svg>

@@ -505,9 +505,10 @@ func _tick_volley(delta: float) -> void:
 
 
 func _fire_one(shot: Dictionary) -> void:
-	var shoot_at: Node2D = shot["target"]
-	if not is_instance_valid(shoot_at) or ProjectileSystem.instance == null:
+	var raw_target: Variant = shot["target"]
+	if not is_instance_valid(raw_target) or ProjectileSystem.instance == null:
 		return
+	var shoot_at: Node2D = raw_target
 
 	var ammo: AmmoType = loaded_ammo
 	if ammo == null:

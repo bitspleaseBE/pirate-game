@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="176" height="8" viewBox="0 0 176 8">
+  <defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop stop-color="{{LIGHT}}"/><stop offset="1" stop-color="{{DARK}}"/></linearGradient></defs><rect width="176" height="8" rx="4" fill="url(#f)"/><path d="M5 2h164" stroke="#fff" stroke-width="1" opacity=".28"/>
+</svg>
