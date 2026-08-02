@@ -33,8 +33,6 @@ const ROCK_TEXTURES: Array[String] = [
 	"res://assets/wave0/props/rock_0.png",
 	"res://assets/wave1/props/rock_1.png",
 ]
-const TREASURE_MOUND: String = "res://assets/wave1/props/treasure_mound.png"
-const TREASURE_X: String = "res://assets/wave1/props/x_marks_spot.png"
 ## Wave 0 masters are 2x nominal.
 const PROP_SCALE: float = 0.5
 ## Props per 1000px of island radius.
@@ -45,8 +43,13 @@ signal alerted()
 
 var def: IslandDef
 var outline: PackedVector2Array
+## Where this island's treasure sits: on the quay, inside the [Port].
 var treasure_local: Vector2 = Vector2.ZERO
+## The mooring buoy off the end of the jetty. Everything that wants to bring a
+## ship to this island steers for this.
 var anchor_point: Vector2 = Vector2.ZERO
+## The harbour. Every island has one, including home.
+var port: Port = null
 
 var is_alerted: bool = false
 var is_captured: bool = false
@@ -62,7 +65,10 @@ var outer_radius: float = 0.0
 
 var _flag: Polygon2D
 var _props: Node2D
-var _treasure_marker: Node2D
+## Local position of the sheltered shore the harbour is built on. Props and
+## shore batteries are laid out around it, so nothing is scattered on top of the
+## one structure the player has to sail to.
+var _shore_local: Vector2 = Vector2.ZERO
 
 
 func setup(island_def: IslandDef) -> void:
@@ -72,6 +78,7 @@ func setup(island_def: IslandDef) -> void:
 	outline = def.build_outline()
 	for point: Vector2 in outline:
 		outer_radius = maxf(outer_radius, point.length())
+	_shore_local = def.sheltered_shore(outline)
 	anchor_point = def.beach_anchor(outline)
 	# An island can start captured two ways: the generator said so (the home port
 	# always does), or the player took it on an earlier visit.
@@ -82,7 +89,7 @@ func setup(island_def: IslandDef) -> void:
 
 	_build_visuals()
 	_build_collision()
-	_place_treasure()
+	_build_port()
 	_build_forts()
 	_build_flag()
 
@@ -180,10 +187,16 @@ func _scatter_props() -> void:
 		var angle: float = rng.randf() * TAU
 		# Keep props off the waterline so none of them appear to float.
 		var dist: float = def.radius * rng.randf_range(0.12, INTERIOR_INSET * 0.85)
+		var at: Vector2 = Vector2(cos(angle), sin(angle)) * dist
+		# And off the harbour. A palm growing through the roof of a warehouse is
+		# the one place scattered scenery can land on something the player has to
+		# read, so the port simply wins the ground it stands on.
+		if at.distance_to(_shore_local) < Port.CLEARANCE:
+			continue
 
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
-		sprite.position = Vector2(cos(angle), sin(angle)) * dist
+		sprite.position = at
 		# Pivot at the base, per the prop convention in docs/ASSETS.md §0.
 		sprite.offset = Vector2(0, -texture.get_height() * 0.5)
 		sprite.scale = Vector2.ONE * PROP_SCALE * rng.randf_range(0.82, 1.15)
@@ -216,37 +229,18 @@ func _build_collision() -> void:
 	body.add_child(shape)
 
 
-func _place_treasure() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(def.id) + 7717
-	var angle: float = rng.randf() * TAU
-	var dist: float = def.radius * rng.randf_range(0.15, INTERIOR_INSET * 0.7)
-	treasure_local = Vector2(cos(angle), sin(angle)) * dist
-
-	if not def.is_treasure_remaining():
-		return
-
-	_treasure_marker = Node2D.new()
-	var marker: Node2D = _treasure_marker
-	marker.name = "TreasureMarker"
-	marker.position = treasure_local
-	add_child(marker)
-
-	if ResourceLoader.exists(TREASURE_MOUND):
-		var mound := Sprite2D.new()
-		mound.name = "Mound"
-		mound.texture = load(TREASURE_MOUND)
-		mound.offset = Vector2(0.0, -mound.texture.get_height() * 0.5)
-		mound.scale = Vector2.ONE * PROP_SCALE
-		marker.add_child(mound)
-
-	if ResourceLoader.exists(TREASURE_X):
-		var mark := Sprite2D.new()
-		mark.name = "XMarksSpot"
-		mark.texture = load(TREASURE_X)
-		mark.scale = Vector2.ONE * PROP_SCALE
-		mark.position = Vector2(0.0, -8.0)
-		marker.add_child(mark)
+## Builds the harbour, and puts this island's treasure on its quay.
+##
+## The treasure used to be buried at a random point inland, which meant the one
+## mark the player could see sat on ground the game gives them no way to walk on,
+## while collection actually happened out at sea wherever the landing party
+## happened to trigger. Cargo on the quay makes the mark, the place you sail to
+## and the place you are paid the same place. See [Port].
+func _build_port() -> void:
+	port = Port.new()
+	add_child(port)
+	port.setup(self, _shore_local, anchor_point)
+	treasure_local = port.cargo_local()
 
 
 ## Rings the coast with shore batteries.
@@ -257,6 +251,17 @@ func _place_treasure() -> void:
 ## a player who works out that the far side is undefended has found a real approach
 ## rather than a bug, and a ring is what makes circling the island worth doing.
 ##
+## The ring is keyed to the harbour rather than to a random compass point. The
+## first gun sits just round the headland from the jetty and the rest follow at
+## the even spacing, which does two things: nothing is ever built on top of the
+## quay, and the battery that matters is the one covering the water a ship has to
+## cross to reach the mooring. A random offset gave a single-gun island a
+## one-in-two chance of putting its only battery on the blind side, where it
+## never fires at anything.
+##
+## Which side of the harbour it starts on is still random, so the approach is not
+## the same picture on every island.
+##
 ## A captured island keeps no guns — capture requires silencing them all, and an
 ## island the player took on an earlier visit must not rebuild its defences behind
 ## their back.
@@ -266,11 +271,16 @@ func _build_forts() -> void:
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(def.id) + 9133
-	# A random start angle, so forts are not always at the same compass points.
-	var offset: float = rng.randf() * TAU
+	var count: int = def.fort_cannons
+	# Never closer to the harbour than half a step, so a dense ring cannot creep
+	# back onto the jetty from the other side.
+	const HARBOUR_CLEARANCE: float = 0.85
+	var clear: float = minf(HARBOUR_CLEARANCE, PI / float(count))
+	var side: float = 1.0 if rng.randf() < 0.5 else -1.0
+	var offset: float = _shore_local.angle() + clear * side
 
-	for i: int in def.fort_cannons:
-		var bearing: float = offset + TAU * float(i) / float(def.fort_cannons)
+	for i: int in count:
+		var bearing: float = offset + TAU * float(i) / float(count)
 		var fort := Fort.new()
 		add_child(fort)
 		fort.setup(self, bearing)
@@ -338,6 +348,10 @@ func capture() -> void:
 	def.captured = true
 	if _flag != null:
 		_flag.color = _flag_color()
+	# The harbour changes hands with the island: its flag, and the buoy that
+	# starts calling the player in to collect.
+	if port != null:
+		port.refresh()
 	GameState.mark_island(def.id, true, true)
 	Audio.play_at(&"island_captured", global_position)
 	EventBus.island_captured.emit(self)
@@ -356,9 +370,8 @@ func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 	else:
 		loot = _fallback_loot()
 
-	if not def.is_treasure_remaining() and _treasure_marker != null:
-		_treasure_marker.queue_free()
-		_treasure_marker = null
+	if port != null:
+		port.refresh()
 
 	GameState.apply_loot(loot)
 	EventBus.treasure_dug.emit(self, loot)

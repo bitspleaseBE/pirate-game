@@ -138,9 +138,9 @@ func _draw_objective(camera: Camera2D, s: float) -> void:
 ## have yet to take.
 ##
 ## Unclaimed treasure outranks the next fight. It is a reward already earned and
-## sitting on a beach the player may have sailed away from, and nothing else on
-## screen points back at it — the X is only visible once you are close enough to
-## see the island itself.
+## sitting on a quay the player may have sailed away from, and nothing else on
+## screen points back at it — the harbour is only visible once you are close
+## enough to see the island itself.
 func _objective_position() -> Vector2:
 	if fleet == null or not is_instance_valid(fleet):
 		return Vector2.INF
@@ -164,8 +164,8 @@ func _objective_position() -> Vector2:
 		var island: Island = raw
 		var distance: float = island.distance_to_coast(from)
 		if island.is_captured:
-			# The anchor, not the X: the beach off the coast is where the player has
-			# to steer, and the X is a hundred metres inland of it.
+			# The mooring buoy, not the quay: the buoy is the water the player has to
+			# steer for, and the cargo is a jetty's length inshore of it.
 			if island.def.is_treasure_remaining() and distance < best_distance:
 				best_distance = distance
 				best = island.anchor_point

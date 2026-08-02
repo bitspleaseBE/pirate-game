@@ -28,9 +28,9 @@ const MAX_REINFORCEMENT_WAVES: int = 2
 const SPAWN_STANDOFF: float = 420.0
 ## Half-width of the arc defenders spawn within, centred on the player's bearing.
 const SPAWN_ARC: float = 1.0
-## How close a ship must be to the anchor point to send the landing party.
+## How close a ship must be to the mooring buoy for the port to send a boat out.
 const LANDING_DISTANCE: float = 260.0
-## Seconds the landing party takes to row ashore, dig and row back.
+## Seconds the boat takes to bring the cargo out from the quay.
 const LANDING_DURATION: float = 3.5
 
 signal landing_started(island: Island)
@@ -184,9 +184,10 @@ func _garrison_count(island: Island) -> int:
 	return (_garrisons.get(island, []) as Array).size()
 
 
-## The player asked for the treasure on an island they hold. Same approach the
-## capture triggers automatically — this is the way back to it after the player
-## has sailed off and the automatic course was cancelled.
+## The player asked for the treasure waiting on an island they hold. Same
+## approach the capture triggers automatically — this is the way back to the
+## harbour after the player has sailed off and the automatic course was
+## cancelled.
 func _on_intent_dig(node: Node2D) -> void:
 	var island := node as Island
 	if island == null or fleet == null or not is_instance_valid(fleet):
@@ -196,9 +197,9 @@ func _on_intent_dig(node: Node2D) -> void:
 	_begin_landing_approach(island)
 
 
-## Send a ship to the beach so the landing party can go ashore. The player can
-## override it — tapping elsewhere cancels the approach, and the treasure stays
-## buried until they come back.
+## Send a ship to the island's mooring buoy so the port can bring the cargo out.
+## The player can override it — tapping elsewhere cancels the approach, and the
+## treasure stays on the quay until they come back.
 ##
 ## The order goes to the *selected* hull, not to whichever one happens to be
 ## nearest: an unselected ship is station-keeping on the leader, so
@@ -226,21 +227,27 @@ func _tick_landing(island: Island, delta: float) -> void:
 			return
 		_landing_left.erase(island)
 		var loot: Dictionary = island.dig_treasure(_rng)
+		if island.port != null:
+			island.port.finish_unloading()
 		Audio.play_ui(&"coin_pickup")
 		landing_finished.emit(island, loot)
 		return
 
-	# Any single hull at the anchor launches the boat. Measuring the fleet
+	# Any single hull at the mooring launches the boat. Measuring the fleet
 	# centroid instead means two escorts trailing astern can hold the average out
 	# past the trigger while the ship the player actually steered is sitting on
-	# top of the beach, waiting for nothing.
+	# top of the buoy, waiting for nothing.
 	var nearest: Ship = _nearest_ship(island.anchor_point)
 	if nearest == null:
 		return
 	if nearest.global_position.distance_to(island.anchor_point) <= LANDING_DISTANCE:
 		_landing_left[island] = LANDING_DURATION
+		# The boat rows to the ship that actually moored, not to the buoy, so the
+		# cargo is delivered to the hull the player steered in.
+		if island.port != null:
+			island.port.begin_unloading(nearest.global_position, LANDING_DURATION)
 		landing_started.emit(island)
-		Log.info("Landing party ashore at %s" % island.def.display_name, "Spawn")
+		Log.info("Boat away from the quay at %s" % island.def.display_name, "Spawn")
 
 
 func _nearest_ship(at: Vector2) -> Ship:
