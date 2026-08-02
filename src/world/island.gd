@@ -51,6 +51,10 @@ var anchor_point: Vector2 = Vector2.ZERO
 var is_alerted: bool = false
 var is_captured: bool = false
 
+## Living shore batteries. An island is not taken until this is empty — see
+## [SpawnDirector].
+var forts: Array[Fort] = []
+
 ## Distance from the centre to the furthest point of the coastline. Registered as
 ## the island's grid radius so that a proximity query cannot miss a headland that
 ## reaches well beyond the mean radius.
@@ -79,6 +83,7 @@ func setup(island_def: IslandDef) -> void:
 	_build_visuals()
 	_build_collision()
 	_place_treasure()
+	_build_forts()
 	_build_flag()
 
 	Grid.add(self, SpatialGrid.KIND_ISLAND, outer_radius)
@@ -244,6 +249,49 @@ func _place_treasure() -> void:
 		marker.add_child(mark)
 
 
+## Rings the coast with shore batteries.
+##
+## `fort_cannons` has been authored per island since the generator was written and
+## read by nothing, so tier only ever changed how many ships came out to meet you.
+## Spread evenly around the whole coast rather than clustered on the seaward side:
+## a player who works out that the far side is undefended has found a real approach
+## rather than a bug, and a ring is what makes circling the island worth doing.
+##
+## A captured island keeps no guns — capture requires silencing them all, and an
+## island the player took on an earlier visit must not rebuild its defences behind
+## their back.
+func _build_forts() -> void:
+	if is_captured or def.fort_cannons <= 0:
+		return
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(def.id) + 9133
+	# A random start angle, so forts are not always at the same compass points.
+	var offset: float = rng.randf() * TAU
+
+	for i: int in def.fort_cannons:
+		var bearing: float = offset + TAU * float(i) / float(def.fort_cannons)
+		var fort := Fort.new()
+		add_child(fort)
+		fort.setup(self, bearing)
+		fort.destroyed.connect(_on_fort_destroyed.bind(fort))
+		forts.append(fort)
+
+
+func _on_fort_destroyed(fort: Fort) -> void:
+	forts.erase(fort)
+
+
+## Shore batteries still firing. Read every tick by the spawn director, so it
+## prunes freed entries rather than trusting the signal alone.
+func forts_remaining() -> int:
+	for i: int in range(forts.size() - 1, -1, -1):
+		var entry: Variant = forts[i]
+		if not is_instance_valid(entry) or not (entry as Fort).alive:
+			forts.remove_at(i)
+	return forts.size()
+
+
 func _build_flag() -> void:
 	var pole := Line2D.new()
 	pole.points = PackedVector2Array([Vector2.ZERO, Vector2(0, -54)])
@@ -306,8 +354,7 @@ func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 	if def.loot_table != null:
 		loot = def.loot_table.roll(rng, def.tier)
 	else:
-		# No table authored yet — still give something, so the loop is testable.
-		loot = {&"gold": 50 * def.tier}
+		loot = _fallback_loot()
 
 	if not def.is_treasure_remaining() and _treasure_marker != null:
 		_treasure_marker.queue_free()
@@ -316,6 +363,31 @@ func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 	GameState.apply_loot(loot)
 	EventBus.treasure_dug.emit(self, loot)
 	SaveSystem.request_save()
+	return loot
+
+
+## What a chest pays while no [LootTable] has been authored.
+##
+## Until the `.tres` tables land this is the whole treasure economy, so it is
+## worth stating what it is balanced against: the first hull up from a Dinghy
+## costs 260 gold. At the old 50-per-tier a captured opening island paid 50, which
+## put the shop five more islands away and left a new player holding a currency
+## that visibly did nothing. Together with prize money from the garrison
+## ([method Ship._pay_bounty]) this pays the first hull off by the second island,
+## which is where the loop starts teaching itself.
+##
+## Doubloons only come from the outer islands and the castle, per the design: they
+## buy fleet slots, so a second ship should be something you sail *out* for rather
+## than something the opening island hands you.
+func _fallback_loot() -> Dictionary:
+	const CHEST_GOLD_PER_TIER: int = 140
+	const CASTLE_DOUBLOONS: int = 4
+
+	var loot: Dictionary = {&"gold": CHEST_GOLD_PER_TIER * def.tier}
+	if def.has_castle:
+		loot[&"doubloon"] = CASTLE_DOUBLOONS
+	elif def.tier >= 2:
+		loot[&"doubloon"] = 1
 	return loot
 
 

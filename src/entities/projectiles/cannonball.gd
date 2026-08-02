@@ -14,8 +14,14 @@ extends Node2D
 const SHADOW_SCALE_GROUND: float = 1.0
 const SHADOW_SCALE_APEX: float = 0.45
 const SHADOW_ALPHA: float = 0.28
-## Shipping PNGs are rendered at 2x nominal size.
-const ART_SCALE: float = 0.5
+## Shipping PNGs are rendered at 2x nominal size, so 0.5 is nominal.
+##
+## Held above nominal deliberately. Ballistic shot is the game's most-repeated
+## read — you are meant to watch a ball travel and see whether you led the target
+## correctly — and at 0.5 the 24px master lands as a ~10px dark speck that is
+## genuinely hard to follow over the ocean shader. The ball is a gameplay
+## indicator first and a physical object second.
+const ART_SCALE: float = 0.95
 
 var origin: Vector2 = Vector2.ZERO
 var impact_point: Vector2 = Vector2.ZERO
@@ -33,6 +39,10 @@ var crew_kill: float = 0.0
 var impact_pool: StringName = &"impact"
 var shooter: Node2D = null
 var shooter_team: int = 0
+## Colour of the streak [ProjectileSystem] draws behind this ball. Taken from the
+## ammo's own tint, so the trail carries the same "what is in the air" information
+## the ball does, at a size that is readable while it is still moving.
+var trail_color: Color = Color(1, 1, 1, 0)
 ## Scale the ball was launched at, so altitude does not fight the ammo's size.
 var _visual_scale: float = 1.0
 
@@ -79,6 +89,10 @@ func launch(
 		_ball.self_modulate = ammo.tint
 		_ball.scale = Vector2.ONE * ammo.visual_scale * ART_SCALE
 	_visual_scale = ammo.visual_scale
+	# `AmmoType.trail_color` is authored transparent and nothing sets it yet, so
+	# fall back to the tint. That way all five shot types get a colour-matched
+	# streak for free and none of them can be authored into invisibility by accident.
+	trail_color = ammo.trail_color if ammo.trail_color.a > 0.0 else Color(ammo.tint, 0.7)
 
 	global_position = from
 	_apply_altitude(0.0)
@@ -113,7 +127,33 @@ func _apply_altitude(height01: float) -> void:
 		)
 
 
+## How far along the flight this ball is, 0 to 1.
+func progress() -> float:
+	return clampf(elapsed / maxf(0.001, flight_time), 0.0, 1.0)
+
+
+func ground_distance() -> float:
+	return origin.distance_to(impact_point)
+
+
+## Where the *sprite* is at normalised flight time `t`: the ground track plus the
+## faked altitude.
+##
+## The trail has to be drawn through this rather than through `global_position`.
+## The node itself sits on the ground track — that is where the shadow belongs and
+## where the hit is resolved — while the ball is offset upward by as much as the
+## full arc height. A streak along the ground reads as a line the ball is nowhere
+## near, which looks like a rendering fault rather than like a shot.
+func visual_position_at(t: float) -> Vector2:
+	var clamped: float = clampf(t, 0.0, 1.0)
+	return (
+		origin.lerp(impact_point, clamped)
+		+ Vector2(0.0, -arc_height * sin(clamped * PI))
+	)
+
+
 func _pool_release() -> void:
 	shooter = null
 	elapsed = 0.0
 	_visual_scale = 1.0
+	trail_color = Color(1, 1, 1, 0)

@@ -94,8 +94,16 @@ func _think(delta: float) -> void:
 
 	# Inside engagement range the base class takes the helm and works the ship
 	# onto a beam. Player and enemy hulls manoeuvre by the same rules.
+	#
+	# Also pin a course here. While FULL/REDUCED, `_tick_engagement` refreshes it;
+	# while SIMULATED, physics is off and `sim_step` only walks toward an existing
+	# nav target. Without one the ship freezes in place — which is exactly the
+	# "fight silently stops off-camera" bug culling exists to prevent. Spawning
+	# just outside the camera's outer rect is common for a garrison meeting the
+	# player, so this is not a rare edge case.
 	state = AiState.BROADSIDE
 	suppress_engage_steering = false
+	set_course(broadside_station(quarry))
 
 
 ## Keeps the current target if it is still alive and in range, so the ship does

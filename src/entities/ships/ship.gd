@@ -102,6 +102,10 @@ var _volley: Array[Dictionary] = []
 var _burn_left: float = 0.0
 var _burn_dps: float = 0.0
 var _retaliate_left: float = 0.0
+## Last thing to land a hit on this hull. Burn damage arrives with no source —
+## it is a fire, not a shot — so without remembering the ship that started it a
+## kill by fire would credit nobody and pay no prize money. See [method _sink].
+var _last_attacker: Node2D = null
 var _wake: GPUParticles2D = null
 var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
@@ -616,9 +620,11 @@ func apply_damage(amount: float, bar: int, source: Node2D) -> void:
 			hull = maxf(0.0, hull - amount)
 
 	_retaliate_left = RETALIATE_MEMORY
-	# Being shot at by someone we are not engaging makes them the new problem.
-	if target == null and source != null and is_instance_valid(source):
-		target = source
+	if source != null and is_instance_valid(source):
+		_last_attacker = source
+		# Being shot at by someone we are not engaging makes them the new problem.
+		if target == null:
+			target = source
 
 	bars_changed.emit()
 	EventBus.ship_damaged.emit(self, amount, _bar_name(bar))
@@ -683,6 +689,7 @@ func _sink(killer: Node2D) -> void:
 	Pools.spawn_effect(&"explosion", global_position, 0.0, 1.4)
 	if team == Teams.ENEMY:
 		GameState.stats_ships_sunk += 1
+		_pay_bounty(killer if killer != null else _last_attacker)
 
 	died.emit(killer)
 	EventBus.ship_sunk.emit(self, killer)
@@ -695,6 +702,24 @@ func _sink(killer: Node2D) -> void:
 	tween.tween_property(self, "modulate:a", 0.0, 1.6)
 	tween.tween_property(self, "rotation", rotation + 0.9, 1.6)
 	tween.chain().tween_callback(queue_free)
+
+
+## Hands the player prize money for sinking this hull.
+##
+## Only when the player actually did it: an enemy that burns down after the fleet
+## has sailed away still counts, because the fire was theirs, but one sunk by a
+## fort's stray shot or by scuttling itself is not a payday.
+##
+## Paid into *carried* gold like every other coin, so it goes down with the hull
+## that earned it. A hold full of prize money is exactly the situation the
+## push-on-or-sail-home decision is made of.
+func _pay_bounty(credit: Node2D) -> void:
+	if stats.bounty_gold <= 0 or credit == null or not is_instance_valid(credit):
+		return
+	var ship := credit as Ship
+	if ship == null or ship.team != Teams.PLAYER:
+		return
+	GameState.add_gold(stats.bounty_gold)
 
 
 func _spawn_damage_number(amount: float) -> void:

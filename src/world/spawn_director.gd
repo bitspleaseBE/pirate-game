@@ -87,7 +87,10 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 
 	_prune_garrison(island)
 
-	if _garrison_count(island) == 0:
+	# Both, not either. Clearing the garrison and leaving the batteries firing is
+	# not holding an island, and it is the fort that makes the last stretch of the
+	# fight about position rather than about who reloads faster.
+	if _garrison_count(island) == 0 and island.forts_remaining() == 0:
 		island.capture()
 		_reinforce_left.erase(island)
 		if island.def.is_treasure_remaining():
@@ -110,7 +113,8 @@ func _alert(island: Island) -> void:
 	_waves_sent[island] = 0
 	_spawn_wave(island, island.def.garrison_ships)
 	Log.info(
-		"%s alerted: %d defenders" % [island.def.display_name, island.def.garrison_ships],
+		"%s alerted: %d defenders, %d batteries"
+		% [island.def.display_name, island.def.garrison_ships, island.forts_remaining()],
 		"Spawn"
 	)
 

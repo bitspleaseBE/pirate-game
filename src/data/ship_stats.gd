@@ -70,6 +70,16 @@ enum Rig { FORE_AFT, MIXED, SQUARE }
 @export var tonnage: float = 100.0
 @export var cargo_capacity: int = 200
 
+@export_group("Economy")
+## Prize money the player carries away for sinking this hull. Zero on the
+## player's own hulls, which are never a payday for anyone.
+##
+## This is half the game's income and the reason a fight is worth having on its
+## own terms. Without it an island pays only its buried chest, so the reward for
+## beating a garrison is "you may now dig" and the shop stays out of reach for
+## most of a voyage. See [method Ship._pay_bounty].
+@export var bounty_gold: int = 0
+
 @export_group("Presentation")
 @export var hull_texture: Texture2D
 @export var sail_texture: Texture2D
