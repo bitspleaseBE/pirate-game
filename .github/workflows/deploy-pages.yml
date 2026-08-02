@@ -93,6 +93,22 @@ jobs:
             exit 1
           fi
 
+      # The state a fleet wipe leaves behind. "New Voyage" reuses live state rather
+      # than reloading the save, so an emptied roster went straight back onto the
+      # water and spawned no player ship at all — and with nothing alive to die,
+      # no game-over could fire to get the player out of it. Every assertion in
+      # the smoke run needs a living hull, so running it from this entry state is
+      # the regression test.
+      - name: Smoke test (entering from a wiped fleet)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --smoke --wiped 2>&1 | tee /tmp/smoke.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/smoke.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       # Through the real front door: boot, load the save, main menu, then play.
       # The two runs above load voyage.tscn directly and so never exercise any of
       # that — which is exactly where the "loads to an empty sea" bug lived.

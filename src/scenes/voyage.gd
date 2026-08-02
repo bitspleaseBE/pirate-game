@@ -31,6 +31,17 @@ func _ready() -> void:
 	if "--sail" in OS.get_cmdline_user_args():
 		GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
 
+	# `--wiped` enters the voyage with an empty roster: exactly the state a fleet
+	# wipe leaves behind, and exactly what "New Voyage" then reused, because it does
+	# not reload the save. That shipped a voyage containing no player ship — and
+	# with nothing alive to die, no game-over could fire to get the player out of
+	# it. Running the whole smoke test on top of this flag is the regression test:
+	# every assertion downstream needs a living hull to be true.
+	if "--wiped" in OS.get_cmdline_user_args():
+		GameState.fleet.clear()
+		GameState.fleet_slots = 0
+		Log.info("Entering voyage with a wiped roster (--wiped)", "Voyage")
+
 	Grid.configure()
 	# Pools must exist before anything can fire a gun, and they need a world-space
 	# parent — this is the handoff described in PoolManager.
@@ -354,6 +365,7 @@ func _run_smoke_test() -> void:
 	failures.append_array(_check_lethality())
 	failures.append_array(_check_economy())
 	failures.append_array(_check_forts())
+	failures.append_array(_check_fleet_backstop())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
@@ -503,6 +515,12 @@ func _on_fleet_emptied() -> void:
 	input_router.enabled = false
 	_toast("Your fleet is lost…")
 	GameState.voyage_active = false
+	# Reissue the starting hull *before* writing the save, so the file on disk
+	# always describes a playable game rather than a fleet of nobody. The spawn path
+	# guards this too — see [method FleetController.spawn_fleet] — but a save that
+	# needs repairing every time it is read is a bug waiting to be reintroduced by
+	# whoever next adds a path that trusts it.
+	GameState.ensure_fleet()
 	SaveSystem.save_now()
 
 	var timer: SceneTreeTimer = get_tree().create_timer(FLEET_WIPE_DELAY)
@@ -711,6 +729,54 @@ func _check_forts() -> PackedStringArray:
 
 	if with_forts == 0:
 		out.append("no island in this voyage has a single shore battery")
+	return out
+
+
+## The player must always have a ship and a slot to put it in.
+##
+## This is the one failure the game cannot recover from on its own. A voyage with
+## an empty roster spawns nothing; with nothing alive, nothing can die, so
+## `fleet_emptied` never fires, there is no game-over and no route back to the
+## menu — the player sits at the home island commanding an empty sea. It is also
+## easy to reach: a wipe empties the roster and "New Voyage" reuses live state
+## rather than reloading the save.
+##
+## Checked here as a unit, and end-to-end by the `--wiped` flag, which enters the
+## voyage from exactly that state and lets every other assertion in this file
+## stand as the proof.
+func _check_fleet_backstop() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var saved_fleet: Array[Dictionary] = GameState.fleet.duplicate(true)
+	var saved_slots: int = GameState.fleet_slots
+
+	GameState.fleet = []
+	GameState.fleet_slots = 0
+	GameState.ensure_fleet()
+	if GameState.fleet.size() != 1:
+		out.append(
+			"an emptied roster came back with %d hulls, expected 1" % GameState.fleet.size()
+		)
+	elif String(GameState.fleet[0].get("stats_id", "")) != String(GameState.STARTING_HULL):
+		out.append("the reissued hull was not a %s" % GameState.STARTING_HULL)
+	if GameState.fleet_slots < 1:
+		out.append("an emptied roster came back with %d slots" % GameState.fleet_slots)
+
+	# And slots must never sit below the number of hulls, or the HUD reads "2 / 1".
+	GameState.fleet = [
+		{"stats_id": GameState.STARTING_HULL, "upgrades": {}},
+		{"stats_id": GameState.STARTING_HULL, "upgrades": {}},
+	]
+	GameState.fleet_slots = 1
+	GameState.ensure_fleet()
+	if GameState.fleet_slots < 2:
+		out.append(
+			"two hulls but only %d slots — the fleet readout would be nonsense"
+			% GameState.fleet_slots
+		)
+
+	GameState.fleet = saved_fleet
+	GameState.fleet_slots = saved_slots
 	return out
 
 

@@ -73,13 +73,21 @@ func mark_seen(briefing_id: StringName) -> void:
 	seen_briefings[briefing_id] = true
 
 
-## Guarantees the player owns at least one hull.
+## Guarantees the player owns at least one hull, and at least one slot to put it
+## in.
 ##
 ## Losing your fleet costs you the ships you were sailing, not the ability to
 ## play — you always get a dinghy back. This is also the backstop against a save
 ## whose fleet entry is empty or malformed: without it the voyage loads a world
 ## with no player ship in it, which presents as a game that boots to an empty sea
 ## and is deeply confusing to diagnose.
+##
+## Call this from anywhere that is about to *use* the roster, not only from
+## wherever it was last written. It is idempotent and costs a loop over at most
+## three entries, and the failure it prevents is unrecoverable from inside the
+## game: a voyage with no player ship never emits `fleet_emptied` — nothing is
+## alive to die — so there is no game-over, no route back to the menu, and the
+## player is left sitting at the home island with nothing to command.
 func ensure_fleet() -> void:
 	var valid: Array[Dictionary] = []
 	for entry: Dictionary in fleet:
@@ -92,6 +100,9 @@ func ensure_fleet() -> void:
 		Log.warn("Fleet was empty — issuing a %s" % STARTING_HULL, "GameState")
 
 	fleet = valid
+	# Slots are the *capacity* the player has paid for, so they only ever grow to
+	# fit the roster — a hull with nowhere to sit would read as "2 / 1" in the HUD.
+	fleet_slots = clampi(maxi(fleet_slots, fleet.size()), 1, 3)
 
 
 func total_gold() -> int:
