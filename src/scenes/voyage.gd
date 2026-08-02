@@ -138,6 +138,18 @@ func _capture_screenshots() -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
 	Engine.time_scale = 3.0
 
+	# Bail out if the fleet dies, exactly as the smoke test does. Otherwise the wipe
+	# handler routes to the main menu, which frees this node in the middle of the
+	# await below — the coroutine simply stops, nothing ever calls quit(), and the
+	# harness hangs with no output saying why. Cheap insurance, and the capture run
+	# is far more likely to die than the smoke run: it sails straight at whatever is
+	# nearest with no regard for its own hull.
+	fleet.fleet_emptied.connect(func() -> void:
+		print("SHOTS: fleet lost — stopping early. %s" % ProjectSettings.globalize_path(dir))
+		get_tree().quit(0)
+	)
+
+	var shot: int = 0
 	var goal: Island = null
 	var nearest: float = INF
 	for island: Island in archipelago.islands:
@@ -148,7 +160,6 @@ func _capture_screenshots() -> void:
 			nearest = d
 			goal = island
 
-	var shot: int = 0
 	for step: int in 14:
 		if fleet.selected != null and is_instance_valid(fleet.selected) and goal != null:
 			var enemy: Node2D = Grid.query_nearest(
@@ -341,6 +352,8 @@ func _run_smoke_test() -> void:
 	failures.append_array(_check_upgrades())
 	failures.append_array(_check_opening_island())
 	failures.append_array(_check_lethality())
+	failures.append_array(_check_economy())
+	failures.append_array(_check_forts())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
@@ -624,6 +637,80 @@ func _check_lethality() -> PackedStringArray:
 				"one %s ball does %.0f to a %.0f-hull %s — no single ball may sink one"
 				% [ammo.display_name, hull_damage, weakest.max_hull, weakest.display_name]
 			)
+	return out
+
+
+## The shop has to be reachable from one island's takings.
+##
+## This is the loop's whole payoff, and it is the easiest thing in the game to
+## break by accident: every number involved lives in a different file — the chest
+## in [method Island._fallback_loot], prize money on each [ShipStats], the hull
+## price in [ShipStatsLibrary] — so nothing errors when they drift apart. It just
+## quietly becomes a grind, which no test would notice and a player would feel
+## within five minutes.
+func _check_economy() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var cheapest_upgrade: int = -1
+	for id: StringName in UpgradeLibrary.ORDER:
+		var cost: int = UpgradeLibrary.next_cost({}, id)
+		if cost > 0 and (cheapest_upgrade < 0 or cost < cheapest_upgrade):
+			cheapest_upgrade = cost
+
+	# What the opening island actually paid this run. Banked, because the run
+	# captured it, so this is real income rather than a projection.
+	var takings: int = GameState.total_gold()
+	if takings <= 0:
+		out.append("capturing an island paid nothing at all")
+	elif cheapest_upgrade > 0 and takings < cheapest_upgrade:
+		out.append(
+			"one island paid %d gold but the cheapest upgrade is %d — the first payday buys nothing"
+			% [takings, cheapest_upgrade]
+		)
+
+	# And prize money has to exist, or a garrison is worth nothing but the right to dig.
+	for hull: StringName in [&"skiff", &"enemy_sloop", &"enemy_brig"]:
+		if ShipStatsLibrary.get_stats(hull).bounty_gold <= 0:
+			out.append("%s carries no prize money" % hull)
+
+	return out
+
+
+## Forts have to exist, defend, and stay off the opening island.
+##
+## `fort_cannons` was authored per island from the day the generator was written
+## and read by nothing at all, so the check that matters is simply that some island
+## in a voyage actually builds a battery. The tier-1 exemption is the same promise
+## [method _check_opening_island] makes: the first island a player meets teaches
+## the broadside rule, and it cannot do that while something out-ranging them by
+## two to one is shelling the approach.
+func _check_forts() -> PackedStringArray:
+	var out: PackedStringArray = []
+	var with_forts: int = 0
+
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if island.def.fort_cannons > 0:
+			with_forts += 1
+		if island == archipelago.home and island.def.fort_cannons > 0:
+			out.append("the home port has shore batteries")
+		if island.def.tier == 1 and island.def.fort_cannons > 0:
+			out.append(
+				"tier-1 %s fields %d batteries — the opening island must stay gentle"
+				% [island.def.display_name, island.def.fort_cannons]
+			)
+		# A captured island must never be holding guns: capture requires silencing
+		# them, so one still standing means the capture condition let it through.
+		if island.is_captured and island.forts_remaining() > 0:
+			out.append(
+				"%s was captured with %d batteries still firing"
+				% [island.def.display_name, island.forts_remaining()]
+			)
+
+	if with_forts == 0:
+		out.append("no island in this voyage has a single shore battery")
 	return out
 
 

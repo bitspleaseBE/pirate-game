@@ -34,6 +34,23 @@ const MAX_PAN_SCREENS: float = 1.5
 ## framing identical from a 720p phone to a 1600p tablet.
 const REFERENCE_HEIGHT: float = 720.0
 
+## Shake amplitudes, in screen pixels at the reference height.
+##
+## Per *gun*, not per volley: a broadside is fired as a staggered line of shots
+## (see [constant Ship.gun_stagger]), so a four-gun Brig rolls four small kicks
+## down its length instead of one flat thump. That is the whole reason the stagger
+## exists, and until now none of it was felt.
+const SHAKE_PER_GUN: float = 1.5
+## Taking a hit shakes harder than giving one, and scales with the damage.
+const SHAKE_HIT_BASE: float = 2.2
+const SHAKE_HIT_PER_DAMAGE: float = 0.09
+const SHAKE_SINK: float = 7.0
+## Ceiling, so a Galleon broadside landing in a burning melee cannot make the
+## screen unreadable. Shake is seasoning.
+const MAX_SHAKE: float = 9.0
+## Higher = the kick dies away faster. Exponential, so it is frame-rate independent.
+const SHAKE_DECAY: float = 7.5
+
 var fleet: FleetController = null
 var target_zoom: float = DEFAULT_ZOOM
 var pan_offset: Vector2 = Vector2.ZERO
@@ -42,6 +59,7 @@ var _pan_idle: float = 0.0
 var _focus: Vector2 = Vector2.ZERO
 var _point_out_at: Vector2 = Vector2.ZERO
 var _point_out_left: float = 0.0
+var _shake: float = 0.0
 
 
 ## Converts an authored zoom into one that frames the same amount of world on
@@ -59,6 +77,14 @@ func _ready() -> void:
 	# the culling rect, so we drive position directly.
 	position_smoothing_enabled = false
 	make_current()
+
+	# Only the player's own guns and hulls shake the screen. An enemy broadside
+	# fired across the map is not something the player feels, and shaking for it
+	# would turn a busy archipelago into permanent low-level rumble.
+	EventBus.shot_fired.connect(_on_shot_fired)
+	EventBus.ship_damaged.connect(_on_ship_damaged)
+	EventBus.ship_sunk.connect(_on_ship_sunk)
+
 	EventBus.camera_registered.emit(self)
 
 
@@ -103,6 +129,52 @@ func _process(delta: float) -> void:
 		_focus + pan_offset, 1.0 - exp(-FOLLOW_SHARPNESS * delta)
 	)
 	zoom = zoom.lerp(Vector2.ONE * _resolved_zoom(), 1.0 - exp(-ZOOM_SHARPNESS * delta))
+	_apply_shake(delta)
+
+
+## Shake goes on `offset`, never on `global_position`.
+##
+## `global_position` is the camera's logical focus: the culling rect is built from
+## it and the follow lerp chases it. Jittering it would make the cull rect twitch
+## and would fight the smoothing. `offset` displaces only the view, which is what
+## a shake is.
+func _apply_shake(delta: float) -> void:
+	if _shake <= 0.01:
+		if offset != Vector2.ZERO:
+			offset = Vector2.ZERO
+		return
+	_shake *= exp(-SHAKE_DECAY * delta)
+	# Scaled the same way zoom is, so the kick is the same size on a phone as on a
+	# tablet rather than shrinking with the world.
+	var amplitude: float = _shake * (get_viewport_rect().size.y / REFERENCE_HEIGHT) / zoom.x
+	offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * amplitude
+
+
+## Adds a kick. Amplitudes accumulate up to [constant MAX_SHAKE] so overlapping
+## events build rather than the loudest one winning.
+func shake(amount: float) -> void:
+	_shake = minf(_shake + amount, MAX_SHAKE)
+
+
+func _on_shot_fired(from: Node2D, _ammo: StringName, _origin: Vector2, _at: Vector2) -> void:
+	var ship := from as Ship
+	if ship != null and ship.team == Teams.PLAYER:
+		shake(SHAKE_PER_GUN)
+
+
+func _on_ship_damaged(ship: Node2D, amount: float, _bar: StringName) -> void:
+	var hull := ship as Ship
+	if hull != null and hull.team == Teams.PLAYER:
+		shake(SHAKE_HIT_BASE + amount * SHAKE_HIT_PER_DAMAGE)
+
+
+func _on_ship_sunk(ship: Node2D, killed_by: Node2D) -> void:
+	# Either end of it is worth feeling: losing a hull, or being alongside one that
+	# goes down.
+	var hull := ship as Ship
+	var killer := killed_by as Ship
+	if (hull != null and hull.team == Teams.PLAYER) or (killer != null and killer.team == Teams.PLAYER):
+		shake(SHAKE_SINK)
 
 
 ## `screen_delta` is the drag in screen pixels; the camera moves the opposite way

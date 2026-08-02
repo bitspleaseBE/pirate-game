@@ -35,6 +35,7 @@ const TOAST_DURATION: float = 2.6
 
 var _toast_left: float = 0.0
 var _wind_indicator: WindIndicator
+var _fleet: FleetController = null
 
 
 func _ready() -> void:
@@ -56,6 +57,7 @@ func _ready() -> void:
 
 ## Called by the voyage scene once the world exists.
 func bind(fleet: FleetController, archipelago: Archipelago) -> void:
+	_fleet = fleet
 	minimap.fleet = fleet
 	minimap.archipelago = archipelago
 	_wind_indicator.fleet = fleet
@@ -149,11 +151,19 @@ func _refresh_ammo() -> void:
 		_ammo_count.text = "%d left" % stock
 
 
+## "hulls afloat / slots owned".
+##
+## Counted off the fleet controller, not off `GameState.fleet`. The roster is the
+## ships you own; only the controller knows which of them are still floating, and
+## the whole point of the readout is to tell you when one is not. Counting the
+## roster made this a constant "1 / 1" that could never report a loss — harmless
+## while the fleet was capped at one hull, wrong the moment a second one exists.
 func _refresh_fleet() -> void:
-	var alive: int = 0
-	for entry: Dictionary in GameState.fleet:
-		alive += 1
-	_fleet_label.text = "%d / %d" % [alive, GameState.fleet_slots]
+	var afloat: int = GameState.fleet.size()
+	if _fleet != null and is_instance_valid(_fleet):
+		afloat = _fleet.living_ships().size()
+	var slots: int = maxi(GameState.fleet_slots, GameState.fleet.size())
+	_fleet_label.text = "%d / %d" % [afloat, slots]
 
 
 func show_toast(text: String) -> void:

@@ -13,11 +13,29 @@ extends Control
 ##   * arriving repairs and banks automatically, because forgetting to do either
 ##     is a punishment for not knowing the interface, not for playing badly
 
-const FONT: String = "res://assets/fonts/KenneyFuture.ttf"
+## Alegreya, matching the HUD. The port was still wholly on Kenney Future after
+## the HUD moved off it, so the one screen made entirely of prose the player has to
+## read closely was in the wide geometric display face that was retired for being
+## unreadable at small sizes. See the note at the top of hud.gd.
+const FONT: String = "res://assets/fonts/Alegreya.ttf"
 const PANEL_WIDTH: float = 620.0
 const AMMO_RESTOCK_COST: int = 45
 ## Rounds of each limited shot type a restock buys.
 const AMMO_RESTOCK_AMOUNT: int = 5
+
+## Price of the second and third hull in the fleet, indexed by the slot being
+## bought minus two.
+##
+## Doubloon-gated per the design, and this is the only thing in the game that
+## spends them — which is the point. Doubloons drop from tier-2-and-up chests and
+## the castle (see [method Island._fallback_loot]), so a second ship lands around
+## the third island rather than being grindable out of the opening one, and the
+## counter in the HUD stops being a permanent zero.
+const FLEET_SLOT_GOLD: Array[int] = [300, 800]
+const FLEET_SLOT_DOUBLOONS: Array[int] = [1, 3]
+const MAX_FLEET_SLOTS: int = 3
+
+const ICON_WHEEL_ROW: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
 
 const GOLD: Color = Color("d9a12c")
 const TEXT: Color = Color("e6e2d3")
@@ -107,7 +125,9 @@ func _refresh() -> void:
 	var upgrades: Dictionary = entry.get("upgrades", {})
 	var stats: ShipStats = ShipStatsLibrary.build(hull_id, upgrades)
 
-	_gold_label.text = "%d gold in the bank" % GameState.banked_gold
+	_gold_label.text = "%d gold in the bank  ·  %d doubloons" % [
+		GameState.banked_gold, GameState.doubloons
+	]
 	_ship_label.text = "%s · hull %d · %s · %s" % [
 		stats.display_name,
 		roundi(stats.max_hull),
@@ -133,6 +153,8 @@ func _refresh() -> void:
 			_buy_hull.bind(next_hull),
 			ICON_HULL
 		)
+
+	_add_fleet_slot_row(hull_id)
 
 	for id: StringName in UpgradeLibrary.ORDER:
 		var level: int = UpgradeLibrary.level_of(upgrades, id)
@@ -166,20 +188,34 @@ func _guns_phrase(count: int) -> String:
 
 
 func _add_row(
-	title: String, blurb: String, cost: int, action: Callable, icon: Texture2D = null
+	title: String,
+	blurb: String,
+	cost: int,
+	action: Callable,
+	icon: Texture2D = null,
+	doubloon_cost: int = 0
 ) -> void:
 	var button := Button.new()
-	button.custom_minimum_size = Vector2(0, 62)
+	# Two lines of Alegreya at 13px plus the stylebox's content margins. The old 62
+	# was cut for Kenney Future, which is a shorter face — every row's second line
+	# was clipped mid-descender after the font change.
+	button.custom_minimum_size = Vector2(0, 76)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# Unaffordable rows stay visible but dead, so the player can see what to save
 	# for. Hiding them would make the shop look empty and the loop look broken.
-	button.disabled = cost < 0 or GameState.banked_gold < cost
+	button.disabled = (
+		cost < 0
+		or GameState.banked_gold < cost
+		or GameState.doubloons < doubloon_cost
+	)
 	_apply_font(button)
 	Wave1UI.apply_brass(button)
 	if icon != null:
 		Wave1UI.set_icon(button, icon, 42)
 
 	var price: String = "MAXED" if cost < 0 else "%d g" % cost
+	if doubloon_cost > 0:
+		price = "%d g + %d dbl" % [cost, doubloon_cost]
 	button.text = "%s          %s\n%s" % [title, price, blurb]
 	button.add_theme_font_size_override("font_size", 13)
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -190,6 +226,67 @@ func _add_row(
 	if action.is_valid() and not button.disabled:
 		button.pressed.connect(action)
 	_rows.add_child(button)
+
+
+## Offers the next hull in the fleet, if there is a slot left to buy.
+##
+## Placed directly under the new-hull row because it is the same *kind* of
+## decision — spend everything on one better ship, or spread it across two — and
+## the design says a three-Sloop fleet and a single Galleon are both valid answers.
+## The player cannot weigh that if the two options are in different parts of a
+## scrolling list.
+##
+## The new hull matches the flagship rather than starting as a Dinghy: an escort
+## two tiers below the ship it is escorting dies to the first thing it meets, and
+## upgrades still only apply to the flagship (see [method _buy_upgrade]), so a
+## cheap second hull would never catch up.
+func _add_fleet_slot_row(flagship_hull: StringName) -> void:
+	var owned: int = GameState.fleet.size()
+	if owned >= MAX_FLEET_SLOTS:
+		return
+
+	var index: int = owned - 1
+	if index < 0 or index >= FLEET_SLOT_GOLD.size():
+		return
+
+	var stats: ShipStats = ShipStatsLibrary.get_stats(flagship_hull)
+	_add_row(
+		"ANOTHER SHIP: %s" % stats.display_name,
+		"Sails beside you, holds station, and fires on whatever you target.",
+		FLEET_SLOT_GOLD[index],
+		_buy_fleet_slot.bind(flagship_hull),
+		ICON_WHEEL_ROW,
+		FLEET_SLOT_DOUBLOONS[index]
+	)
+
+
+func _buy_fleet_slot(flagship_hull: StringName) -> void:
+	var index: int = GameState.fleet.size() - 1
+	if index < 0 or index >= FLEET_SLOT_GOLD.size():
+		return
+	var gold: int = FLEET_SLOT_GOLD[index]
+	var doubloons: int = FLEET_SLOT_DOUBLOONS[index]
+
+	# Both prices checked before either is debited. Spending one and failing on the
+	# other would quietly eat the player's doubloons and hand back nothing, and
+	# doubloons are rare enough that it would be unrecoverable.
+	if GameState.banked_gold < gold or GameState.doubloons < doubloons:
+		Audio.play_ui(&"ui_cancel")
+		return
+	if not GameState.spend_doubloons(doubloons):
+		Audio.play_ui(&"ui_cancel")
+		return
+	if not GameState.spend_gold(gold):
+		GameState.add_doubloons(doubloons)
+		Audio.play_ui(&"ui_cancel")
+		return
+
+	GameState.fleet.append({"stats_id": flagship_hull, "upgrades": {}})
+	GameState.fleet_slots = maxi(GameState.fleet_slots, GameState.fleet.size())
+	Audio.play_ui(&"ui_confirm")
+	EventBus.fleet_changed.emit()
+	SaveSystem.request_save()
+	_refresh()
 
 
 func _upgrade_icon(id: StringName) -> Texture2D:

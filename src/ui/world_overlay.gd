@@ -25,7 +25,11 @@ const COLOR_SELECT: Color = Color("f0c04a")
 const COLOR_TARGET: Color = Color("e2564a")
 const COLOR_COURSE: Color = Color(0.95, 0.95, 0.85, 0.55)
 
-const FONT: String = "res://assets/fonts/KenneyFuture.ttf"
+## Alegreya, matching the HUD's counters. The overlay was still on Kenney Future
+## after the HUD moved off it, so the one piece of text drawn over the world — the
+## range to the objective, on screen in almost every frame — was in a typeface
+## that appears nowhere else in the game. See the note at the top of hud.gd.
+const FONT: String = "res://assets/fonts/Alegreya.ttf"
 ## How far inside the screen edge the objective arrow sits, in screen pixels.
 const OBJECTIVE_INSET: float = 62.0
 const COLOR_OBJECTIVE: Color = Color("e8d9a8")
@@ -68,6 +72,7 @@ func _draw() -> void:
 	var s: float = 1.0 / maxf(0.01, camera.zoom.x)
 
 	_draw_enemies(s)
+	_draw_structures(s)
 	_draw_fleet(s)
 	_draw_objective(camera, s)
 
@@ -168,6 +173,30 @@ func _draw_enemies(s: float) -> void:
 		if ship.hull_fraction() >= 0.999 and ship.sails_fraction() >= 0.999:
 			continue
 		_draw_bars(ship, s, false)
+
+
+## One bar per shore battery, on the same "damage is information" rule as ships:
+## an untouched fort shows nothing, a fort you have been working on shows how much
+## is left. Without it there is no way to tell a battery two hits from silence from
+## one you have barely scratched, and forts are what gate an island's capture.
+func _draw_structures(s: float) -> void:
+	for node: Node2D in Grid.query_rect(Cull.get_cull_rect(), SpatialGrid.KIND_STRUCTURE):
+		var fort := node as Fort
+		if fort == null or not fort.alive or fort.health_fraction() >= 0.999:
+			continue
+
+		var width: float = BAR_WIDTH * s
+		var height: float = BAR_HEIGHT * s
+		var rect := Rect2(
+			fort.global_position + Vector2(-width * 0.5, -(Fort.HIT_RADIUS + BAR_MARGIN * s)),
+			Vector2(width, height)
+		)
+		draw_rect(rect, COLOR_BAR_BG, true)
+		draw_rect(
+			Rect2(rect.position, Vector2(width * fort.health_fraction(), height)),
+			COLOR_HULL,
+			true
+		)
 
 
 func _draw_fleet(s: float) -> void:

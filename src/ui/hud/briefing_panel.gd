@@ -15,7 +15,11 @@ extends Control
 ## Optionally pans the camera to something after dismissal, because "there are
 ## enemies now" is far better shown than described.
 
-const FONT: String = "res://assets/fonts/KenneyFuture.ttf"
+## Alegreya, matching the HUD. The briefing is the longest prose in the game and
+## the only screen a new player is asked to actually read — and it was the last
+## thing still set in Kenney Future, the wide all-caps display face the HUD was
+## moved off for being unreadable at body sizes. See the note at the top of hud.gd.
+const FONT: String = "res://assets/fonts/Alegreya.ttf"
 const PANEL_WIDTH: float = 560.0
 
 signal dismissed()

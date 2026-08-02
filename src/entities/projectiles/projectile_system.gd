@@ -19,6 +19,11 @@ static var instance: ProjectileSystem = null
 ## reloads never resolves and the player just watches splashes.
 const HIT_TOLERANCE: float = 44.0
 
+## Longest streak drawn behind a ball, in world units. Shortened near the muzzle
+## and near the impact so a shot grows a tail as it leaves and loses it as it
+## arrives, rather than a fixed dash sliding across the water.
+const TRAIL_LENGTH: float = 74.0
+
 ## Shots beyond the quality budget are dropped at the muzzle. Dropping the
 ## newest is wrong (the player just fired it), so the oldest in flight is
 ## recycled instead.
@@ -83,6 +88,47 @@ func _physics_process(delta: float) -> void:
 			_resolve(ball, true)
 			_active.remove_at(i)
 
+	# Every trail in one canvas item, on the same reasoning as [WorldOverlay]: a
+	# Line2D per ball would be up to `Quality.max_projectiles` extra canvas items
+	# being transformed and batched, for a two-point streak each.
+	queue_redraw()
+
+
+## Draws a short streak behind every ball in flight.
+##
+## Ballistic shot only pays off if the player can actually follow a ball and see
+## whether they led the target. The ball itself is a small dark dot by necessity —
+## it is iron — so the streak is what makes the trajectory legible over a moving
+## ocean, and it is colour-matched to the shot type so a chain shot in the air is
+## tellable from a grape at a glance.
+##
+## Drawn through the ball's *rendered* position, arc and all — see
+## [method Cannonball.visual_position_at] for why the ground track is the wrong
+## line even though it is where the shot really is.
+func _draw() -> void:
+	for entry: Variant in _active:
+		if not is_instance_valid(entry):
+			continue
+		var ball: Cannonball = entry
+		if ball.trail_color.a <= 0.0:
+			continue
+
+		# Fade in off the muzzle and out into the impact, so the streak has ends.
+		var t: float = ball.progress()
+		var taper: float = minf(1.0, minf(t, 1.0 - t) * 6.0)
+		if taper <= 0.01:
+			continue
+
+		# Trail length converted into flight-time, so a short lob and a long shot both
+		# carry the same length of streak instead of it scaling with range.
+		var span: float = TRAIL_LENGTH * taper / maxf(1.0, ball.ground_distance())
+		draw_line(
+			ball.visual_position_at(t - span),
+			ball.visual_position_at(t),
+			Color(ball.trail_color, ball.trail_color.a * taper),
+			3.0
+		)
+
 
 func _resolve(ball: Cannonball, spawn_effects: bool) -> void:
 	var point: Vector2 = ball.impact_point
@@ -131,13 +177,19 @@ func _apply_damage(ball: Cannonball, victim: Node2D) -> void:
 		var d: float = ball.impact_point.distance_to(victim.global_position)
 		falloff = clampf(1.0 - d / ball.aoe_radius, 0.25, 1.0)
 
-	victim.call(&"apply_damage", ball.damage * falloff, int(ball.primary_bar), ball.shooter)
+	# A ball outlives the gun that fired it. If the shooter sank during the shot's
+	# flight it has already been freed, and handing a freed instance to a typed
+	# `Node2D` parameter fails the *whole* call — so a dying ship's last broadside
+	# landed, splashed, played its impact sound and dealt no damage at all. Silent,
+	# intermittent, and only in the one situation where the shot mattered most.
+	var credit: Node2D = ball.shooter if is_instance_valid(ball.shooter) else null
+	victim.call(&"apply_damage", ball.damage * falloff, int(ball.primary_bar), credit)
 
 	if ball.splash_bar_mul > 0.0:
 		var splash: float = ball.damage * ball.splash_bar_mul * falloff
 		for bar: int in [AmmoType.Bar.HULL, AmmoType.Bar.SAILS, AmmoType.Bar.CANNONS]:
 			if bar != int(ball.primary_bar):
-				victim.call(&"apply_damage", splash, bar, ball.shooter)
+				victim.call(&"apply_damage", splash, bar, credit)
 
 	if ball.burn_dps > 0.0 and victim.has_method(&"apply_burn"):
 		victim.call(&"apply_burn", ball.burn_dps, ball.burn_duration)

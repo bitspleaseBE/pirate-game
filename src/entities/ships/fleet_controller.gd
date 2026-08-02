@@ -195,6 +195,16 @@ func refit() -> void:
 		if i < placements.size():
 			at = placements[i].origin
 			facing = placements[i].get_rotation()
+		elif not placements.is_empty():
+			# A hull the fleet did not arrive with — a slot bought in this port. It has
+			# to appear *here*, alongside the flagship, not at `_spawn_origin`, which is
+			# where the voyage began and may be the far side of the archipelago. Buying a
+			# second ship and watching it fail to exist is the worst possible payoff for
+			# the most expensive thing in the shop.
+			var lead: Transform2D = placements[0]
+			facing = lead.get_rotation()
+			var abeam: Vector2 = Vector2.RIGHT.rotated(facing) * 240.0
+			at = lead.origin + abeam * (1.0 if i % 2 == 1 else -1.0) - Vector2.UP.rotated(facing) * 120.0
 		var ship: Ship = _spawn_ship(
 			entry.get("stats_id", GameState.STARTING_HULL), entry.get("upgrades", {}), at
 		)
@@ -211,6 +221,17 @@ func repair_all() -> void:
 
 
 func _on_ship_died(_killer: Node2D, ship: Ship) -> void:
+	# Drop the hull from the roster as well as from the world. `ships` and
+	# `GameState.fleet` are built in lockstep by spawn_fleet and refit, so the index
+	# is shared — and it has to be taken *before* the erase below.
+	#
+	# Without this a sunk ship is only cosmetically lost: the entry survives in the
+	# save, and the next call to refit (any port visit) hands it back, free. That was
+	# invisible while the fleet was capped at one hull, because losing your only ship
+	# ends the voyage before any port can rebuild it.
+	var slot: int = ships.find(ship)
+	if slot >= 0 and slot < GameState.fleet.size():
+		GameState.fleet.remove_at(slot)
 	ships.erase(ship)
 	# Unbanked gold goes down with the hull that carried it. That is the whole
 	# reason banking at a port is a decision.

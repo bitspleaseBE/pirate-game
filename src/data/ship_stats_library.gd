@@ -165,6 +165,7 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.base_damage = 12.0
 			s.hull_radius = 28.0
 			s.tonnage = 30.0
+			s.bounty_gold = 14
 			s.accent_color = Color(0.82, 0.62, 0.55)
 		&"enemy_brig":
 			s.display_name = "Navy Brig"
@@ -184,6 +185,7 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.base_damage = 26.0
 			s.hull_radius = 56.0
 			s.tonnage = 230.0
+			s.bounty_gold = 85
 			s.accent_color = Color(0.72, 0.74, 0.8)
 		&"enemy_sloop":
 			s.display_name = "Navy Sloop"
@@ -203,6 +205,7 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.base_damage = 22.0
 			s.hull_radius = 46.0
 			s.tonnage = 100.0
+			s.bounty_gold = 38
 			s.accent_color = Color(0.78, 0.8, 0.86)
 		_:
 			s.id = &"sloop"
