@@ -87,6 +87,26 @@ func dismiss_briefing() -> bool:
 	return true
 
 
+## Opens the port. Returns null if a modal is already up.
+func show_port(island_name: String) -> PortScreen:
+	if get_node_or_null(^"Port") != null or get_node_or_null(^"Briefing") != null:
+		return null
+	var screen := PortScreen.new()
+	screen.name = "Port"
+	screen.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(screen)
+	screen.present(island_name)
+	return screen
+
+
+func dismiss_port() -> bool:
+	var screen: PortScreen = get_node_or_null(^"Port") as PortScreen
+	if screen == null:
+		return false
+	screen.force_close()
+	return true
+
+
 func _refresh_all() -> void:
 	_on_gold_changed(GameState.total_gold(), 0)
 	_on_doubloons_changed(GameState.doubloons, 0)

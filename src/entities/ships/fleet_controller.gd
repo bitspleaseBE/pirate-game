@@ -38,18 +38,19 @@ func spawn_fleet(origin: Vector2) -> void:
 	_spawn_origin = origin
 	for i: int in GameState.fleet.size():
 		var entry: Dictionary = GameState.fleet[i]
-		var stats_id: StringName = entry.get("stats_id", &"sloop")
+		var stats_id: StringName = entry.get("stats_id", GameState.STARTING_HULL)
+		var upgrades: Dictionary = entry.get("upgrades", {})
 		var offset := Vector2(float(i) * 260.0 - float(GameState.fleet.size() - 1) * 130.0, 0.0)
-		_spawn_ship(stats_id, origin + offset)
+		_spawn_ship(stats_id, upgrades, origin + offset)
 
 	if not ships.is_empty():
 		_select(ships[0])
 	EventBus.fleet_changed.emit()
 
 
-func _spawn_ship(stats_id: StringName, at: Vector2) -> Ship:
+func _spawn_ship(stats_id: StringName, upgrades: Dictionary, at: Vector2) -> Ship:
 	var ship: Ship = SHIP_SCENE.instantiate() as Ship
-	ship.stats = ShipStatsLibrary.get_stats(stats_id)
+	ship.stats = ShipStatsLibrary.build(stats_id, upgrades)
 	ship.team = Teams.PLAYER
 	ship.global_position = at
 	add_child(ship)
@@ -108,8 +109,11 @@ func _on_intent_target(entity: Node2D) -> void:
 	selected.set_target(entity)
 	# The rest of the fleet concentrates fire on the same enemy, which is the
 	# only fleet-level tactic a one-thumb interface can express.
-	for ship: Ship in ships:
-		if ship != selected and is_instance_valid(ship) and ship.alive:
+	for entry: Variant in ships:
+		if not is_instance_valid(entry):
+			continue
+		var ship: Ship = entry
+		if ship != selected and ship.alive:
 			ship.set_target(entity)
 
 
@@ -121,9 +125,9 @@ func _on_intent_select(ship: Node2D) -> void:
 func _on_intent_cycle_ammo() -> void:
 	GameState.selected_ammo = AmmoLibrary.next_available(GameState.selected_ammo)
 	var ammo: AmmoType = AmmoLibrary.get_ammo(GameState.selected_ammo)
-	for ship: Ship in ships:
-		if is_instance_valid(ship):
-			ship.loaded_ammo = ammo
+	for entry: Variant in ships:
+		if is_instance_valid(entry):
+			(entry as Ship).loaded_ammo = ammo
 	Audio.play_ui(&"ui_tap")
 
 
@@ -136,9 +140,9 @@ func select_next() -> void:
 
 
 func _select(ship: Ship) -> void:
-	for other: Ship in ships:
-		if is_instance_valid(other):
-			other.selected = other == ship
+	for entry: Variant in ships:
+		if is_instance_valid(entry):
+			(entry as Ship).selected = entry == ship
 	selected = ship
 	selection_changed.emit(ship)
 
@@ -146,10 +150,12 @@ func _select(ship: Ship) -> void:
 # --- Queries ---------------------------------------------------------------
 
 func living_ships() -> Array[Ship]:
+	# Untyped read: a freed hull assigned to a typed variable raises before the
+	# validity check, and this is the hottest such loop in the game.
 	var out: Array[Ship] = []
-	for ship: Ship in ships:
-		if is_instance_valid(ship) and ship.alive:
-			out.append(ship)
+	for entry: Variant in ships:
+		if is_instance_valid(entry) and (entry as Ship).alive:
+			out.append(entry)
 	return out
 
 
@@ -162,6 +168,41 @@ func centroid() -> Vector2:
 	for ship: Ship in alive_ships:
 		sum += ship.global_position
 	return sum / float(alive_ships.size())
+
+
+## Rebuilds every hull from [GameState], keeping each one where it was.
+##
+## Called when leaving a port. Without it, buying a Sloop leaves you sailing the
+## Dinghy you arrived in until the next voyage — the reward is invisible at exactly
+## the moment the player is looking for it, which is the worst possible moment for
+## a reward to be invisible.
+##
+## Replacing the node rather than editing its stats in place is deliberate: a new
+## hull changes sprite, scale, collision radius and propulsion, and rebuilding is
+## far less error-prone than remembering to re-derive all of it.
+func refit() -> void:
+	var placements: Array[Transform2D] = []
+	for ship: Ship in living_ships():
+		placements.append(ship.global_transform)
+		ship.queue_free()
+	ships.clear()
+	selected = null
+
+	for i: int in GameState.fleet.size():
+		var entry: Dictionary = GameState.fleet[i]
+		var at: Vector2 = _spawn_origin
+		var facing: float = 0.0
+		if i < placements.size():
+			at = placements[i].origin
+			facing = placements[i].get_rotation()
+		var ship: Ship = _spawn_ship(
+			entry.get("stats_id", GameState.STARTING_HULL), entry.get("upgrades", {}), at
+		)
+		ship.rotation = facing
+
+	if not ships.is_empty():
+		_select(ships[0])
+	EventBus.fleet_changed.emit()
 
 
 func repair_all() -> void:

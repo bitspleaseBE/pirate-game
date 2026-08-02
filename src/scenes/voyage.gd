@@ -90,6 +90,41 @@ func _ready() -> void:
 		_run_smoke_test()
 	elif "--shot" in args:
 		_capture_screenshots()
+	elif "--shot-port" in args:
+		_capture_port()
+
+
+## Screenshots the port screen on the home island. The port is a modal over a
+## paused world, so the normal `--shot` loop never sees it.
+##
+##   godot src/scenes/voyage.tscn -- --shot-port
+func _capture_port() -> void:
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(0.6).timeout
+
+	var port: Island = archipelago.home
+	for island: Island in archipelago.islands:
+		if island.is_captured:
+			port = island
+			break
+	if port == null:
+		push_error("--shot-port: no captured island to open a port on")
+		get_tree().quit(1)
+		return
+
+	# Clear any briefing first — show_port refuses to stack modals, correctly.
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+	await get_tree().process_frame
+
+	EventBus.intent_open_port.emit(port)
+	await get_tree().create_timer(0.6).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/port_00.png" % dir)
+
+	print("PORT SHOT: %s" % ProjectSettings.globalize_path(dir))
+	get_tree().quit(0)
 
 
 ## Sails to the nearest hostile island and writes frames to `user://shots/`.
@@ -133,6 +168,8 @@ func _capture_screenshots() -> void:
 		# tree, so leaving it up would give us fourteen identical screenshots.
 		if hud.has_method(&"dismiss_briefing"):
 			hud.call(&"dismiss_briefing")
+		if hud.has_method(&"dismiss_port"):
+			hud.call(&"dismiss_port")
 
 	print("SHOTS: %s" % ProjectSettings.globalize_path(dir))
 	get_tree().quit(0)
@@ -291,6 +328,7 @@ func _run_smoke_test() -> void:
 		if bool(stats["grew"]):
 			failures.append("pool '%s' outgrew its prewarm" % stats["name"])
 	failures.append_array(_check_wind())
+	failures.append_array(_check_upgrades())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
@@ -411,17 +449,29 @@ func _on_island_captured(island: Node2D) -> void:
 		_toast("Fort Diablo has fallen. Voyage complete!")
 
 
+## Opens the port on a captured island.
+##
+## Repairing and banking happen on arrival rather than as things to buy. Both are
+## strictly good and always affordable, so making them purchases would only
+## punish a player who had not yet worked out the interface.
 func _on_open_port(island: Node2D) -> void:
-	# Placeholder for the port screen: repair, bank, restock. The real screen is
-	# a separate scene and needs the UI art from docs/ASSETS.md §9.
+	var port_name: String = (island as Island).def.display_name
 	var banked: int = GameState.bank_carried_gold()
 	fleet.repair_all()
-	_toast(
-		"%s: repaired%s"
-		% [(island as Island).def.display_name, "" if banked == 0 else ", %d gold banked" % banked]
-	)
-	Audio.play_ui(&"ui_confirm")
+	if banked > 0:
+		_toast("%d gold banked at %s" % [banked, port_name])
 	SaveSystem.request_save()
+
+	if not hud.has_method(&"show_port"):
+		Audio.play_ui(&"ui_confirm")
+		return
+
+	var screen: PortScreen = hud.call(&"show_port", port_name)
+	if screen == null:
+		return
+	await screen.closed
+	# Whatever they bought has to be under them when they sail out.
+	fleet.refit()
 
 
 func _on_fleet_emptied() -> void:
@@ -433,6 +483,55 @@ func _on_fleet_emptied() -> void:
 	var timer: SceneTreeTimer = get_tree().create_timer(FLEET_WIPE_DELAY)
 	await timer.timeout
 	Router.goto(&"main_menu")
+
+
+## Checks that upgrades apply, and — more importantly — that buying one does not
+## leak into anybody else's ship.
+##
+## [method ShipStatsLibrary.get_stats] hands out one shared cached resource per
+## hull id. If upgrades were applied to that instead of to a duplicate, plating on
+## the player's Sloop would silently buff every Navy Sloop in the archipelago. That
+## failure is invisible in play — the game just gets mysteriously harder as you get
+## stronger — so it has to be asserted rather than eyeballed.
+func _check_upgrades() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var base_hull: float = ShipStatsLibrary.get_stats(&"dinghy").max_hull
+	var upgraded: ShipStats = ShipStatsLibrary.build(&"dinghy", {&"plating": 2})
+	var expected: float = base_hull + float(UpgradeLibrary.DEFS[&"plating"]["per_level"]["max_hull"]) * 2.0
+
+	if not is_equal_approx(upgraded.max_hull, expected):
+		out.append(
+			"plating 2 gave %.0f hull, expected %.0f" % [upgraded.max_hull, expected]
+		)
+	if not is_equal_approx(ShipStatsLibrary.get_stats(&"dinghy").max_hull, base_hull):
+		out.append("applying upgrades mutated the shared cached ShipStats")
+
+	# Costs must rise, or there is no saving-up decision.
+	var wallet: Dictionary = {}
+	var first: int = UpgradeLibrary.next_cost(wallet, &"plating")
+	var second: int = UpgradeLibrary.next_cost({&"plating": 1}, &"plating")
+	if second <= first:
+		out.append("upgrade cost does not increase with level (%d then %d)" % [first, second])
+
+	# And a maxed upgrade must report as unbuyable rather than free.
+	var maxed: Dictionary = {&"plating": UpgradeLibrary.max_level(&"plating")}
+	if UpgradeLibrary.next_cost(maxed, &"plating") != -1:
+		out.append("a maxed upgrade still reports a price")
+
+	# Purchasing must actually debit, and must refuse when the wallet is short.
+	var before: int = GameState.banked_gold
+	GameState.banked_gold = first
+	var bought: Dictionary = {}
+	if not UpgradeLibrary.purchase(bought, &"plating"):
+		out.append("could not buy an upgrade with exactly enough gold")
+	elif GameState.banked_gold != 0 or int(bought.get(&"plating", 0)) != 1:
+		out.append("purchase did not debit the gold or record the level")
+	if UpgradeLibrary.purchase(bought, &"plating"):
+		out.append("bought an upgrade with an empty wallet")
+	GameState.banked_gold = before
+
+	return out
 
 
 ## Smallest gap between any living hull and any coastline, in world units.

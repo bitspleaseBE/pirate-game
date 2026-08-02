@@ -44,6 +44,33 @@ static func get_stats(id: StringName) -> ShipStats:
 	return stats
 
 
+## A hull with its upgrades folded in, ready to hand to a [Ship].
+##
+## Always a duplicate when upgrades are present. [method get_stats] returns one
+## shared cached resource per hull id, so applying upgrades to it directly would
+## buff every other ship of that type in the world — including the enemy's.
+## Un-upgraded hulls share the cached copy, which is safe because a Ship only ever
+## reads its stats, and matters because enemies spawn in waves.
+static func build(stats_id: StringName, upgrades: Dictionary) -> ShipStats:
+	var base: ShipStats = get_stats(stats_id)
+	if upgrades == null or upgrades.is_empty():
+		return base
+	var owned: ShipStats = base.duplicate(true) as ShipStats
+	UpgradeLibrary.apply(owned, upgrades)
+	return owned
+
+
+## Gold price of the next hull up from `id`, or -1 if there is none.
+static func upgrade_cost(id: StringName) -> int:
+	var idx: int = PLAYER_ORDER.find(id)
+	if idx < 0 or idx >= PLAYER_ORDER.size() - 1:
+		return -1
+	# Steep, because a new hull is a bigger jump than any single upgrade and
+	# should feel like the thing you save up for.
+	const HULL_PRICES: Array[int] = [260, 700, 1600]
+	return HULL_PRICES[idx]
+
+
 ## The hull one tier above `id`, or an empty StringName at the top of the tree.
 static func next_tier(id: StringName) -> StringName:
 	var idx: int = PLAYER_ORDER.find(id)

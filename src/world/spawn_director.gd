@@ -26,6 +26,8 @@ const REINFORCE_WAVE_SIZE: int = 2
 const MAX_REINFORCEMENT_WAVES: int = 2
 ## Garrison ships spawn this far outside the island's coast.
 const SPAWN_STANDOFF: float = 420.0
+## Half-width of the arc defenders spawn within, centred on the player's bearing.
+const SPAWN_ARC: float = 1.0
 ## How close a ship must be to the anchor point to send the landing party.
 const LANDING_DISTANCE: float = 260.0
 ## Seconds the landing party takes to row ashore, dig and row back.
@@ -113,13 +115,22 @@ func _alert(island: Island) -> void:
 	)
 
 
+## Spawns defenders on the side of the island the player is approaching from.
+##
+## A random bearing puts a small garrison behind the island as often as not, where
+## it may never notice the player at all — you sail up to your first island and
+## nothing happens, which reads as the game being broken rather than as bad luck.
+## Coming out to meet you is also simply what a garrison would do.
 func _spawn_wave(island: Island, count: int) -> void:
 	if ships_parent == null:
 		return
 	var garrison: Array = _garrisons.get(island, [])
 
+	var toward_player: float = (fleet.centroid() - island.global_position).angle()
+
 	for i: int in count:
-		var angle: float = _rng.randf() * TAU
+		# Spread across the near quarter so a wave is not a single-file column.
+		var angle: float = toward_player + _rng.randf_range(-SPAWN_ARC, SPAWN_ARC)
 		var radius: float = island.def.radius + SPAWN_STANDOFF + _rng.randf_range(0.0, 240.0)
 		var at: Vector2 = island.global_position + Vector2(cos(angle), sin(angle)) * radius
 
@@ -128,7 +139,7 @@ func _spawn_wave(island: Island, count: int) -> void:
 		enemy.global_position = at
 		ships_parent.add_child(enemy)
 		enemy.assign_station(
-			island.global_position, island.def.radius + 600.0, island.def.alert_radius * 1.3
+			island.global_position, island.def.radius + 600.0, island.def.alert_radius * 2.0
 		)
 		garrison.append(enemy)
 

@@ -122,14 +122,25 @@ func _on_island_captured(island: Node2D) -> void:
 func _on_treasure_dug(_island: Node2D, _loot: Dictionary) -> void:
 	if GameState.has_seen(&"first_treasure"):
 		return
+	if not enabled:
+		return
 	_show(
 		&"first_treasure",
 		"TREASURE",
 		[
 			"Gold buys bigger hulls and more guns, and a bigger hull is how you take on a harder island.",
-			"That is the loop: fight, take, dig, upgrade, pick a tougher island. The map's outer islands are the dangerous ones.",
-		]
+			"Tap any island you have taken to visit its port and spend it. Opening one now.",
+		],
+		"OPEN THE PORT"
 	)
+	# Open it *for* them, once. Every other reward in the game announces itself, so
+	# a shop the player has to guess is behind an unlabelled tap on some scenery is
+	# the one place the loop can silently fail to close. After this they know it is
+	# there, and tapping the island is enough.
+	if not GameState.has_seen(&"first_port_opened"):
+		GameState.mark_seen(&"first_port_opened")
+		await get_tree().create_timer(0.4).timeout
+		EventBus.intent_open_port.emit(_island)
 
 
 ## Shows a briefing once, optionally panning the camera to `point_at` afterwards.
