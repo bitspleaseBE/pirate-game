@@ -8,7 +8,7 @@ extends Node
 var carried_gold: int = 0
 ## Gold safely banked at a port. This is the real score.
 var banked_gold: int = 0
-var doubloons: int = 0
+var diamonds: int = 0
 
 ## How many ships the player may field. 1 to 3.
 var fleet_slots: int = 1
@@ -47,7 +47,7 @@ func _ready() -> void:
 func reset_run() -> void:
 	carried_gold = 0
 	banked_gold = 0
-	doubloons = 0
+	diamonds = 0
 	fleet_slots = 1
 	# You start in an oared boat, so the first islands teach tap-to-move,
 	# broadsides and the capture loop on a still sea. The wind arrives with your
@@ -105,11 +105,11 @@ func add_gold(amount: int) -> void:
 	EventBus.gold_changed.emit(total_gold(), amount)
 
 
-func add_doubloons(amount: int) -> void:
+func add_diamonds(amount: int) -> void:
 	if amount == 0:
 		return
-	doubloons = maxi(0, doubloons + amount)
-	EventBus.doubloons_changed.emit(doubloons, amount)
+	diamonds = maxi(0, diamonds + amount)
+	EventBus.diamonds_changed.emit(diamonds, amount)
 
 
 ## Called on arrival at a port. Moving gold from carried to banked is the
@@ -143,11 +143,11 @@ func spend_gold(amount: int) -> bool:
 	return true
 
 
-func spend_doubloons(amount: int) -> bool:
-	if doubloons < amount:
+func spend_diamonds(amount: int) -> bool:
+	if diamonds < amount:
 		return false
-	doubloons -= amount
-	EventBus.doubloons_changed.emit(doubloons, -amount)
+	diamonds -= amount
+	EventBus.diamonds_changed.emit(diamonds, -amount)
 	return true
 
 
@@ -176,8 +176,8 @@ func apply_loot(loot: Dictionary) -> void:
 		match kind:
 			&"gold":
 				add_gold(amount)
-			&"doubloon":
-				add_doubloons(amount)
+			&"diamond":
+				add_diamonds(amount)
 			_:
 				if String(kind).begins_with("ammo_"):
 					add_ammo(StringName(String(kind).trim_prefix("ammo_")), amount)
@@ -201,7 +201,7 @@ func to_dict() -> Dictionary:
 	return {
 		"banked_gold": banked_gold,
 		"carried_gold": carried_gold,
-		"doubloons": doubloons,
+		"diamonds": diamonds,
 		"fleet_slots": fleet_slots,
 		"fleet": fleet,
 		"ammo_stock": ammo_stock,
@@ -223,7 +223,10 @@ func from_dict(data: Dictionary) -> void:
 	reset_run()
 	banked_gold = int(data.get("banked_gold", 0))
 	carried_gold = int(data.get("carried_gold", 0))
-	doubloons = int(data.get("doubloons", 0))
+	# Diamonds were called doubloons until the rename. Reading the old key keeps
+	# anyone mid-voyage from having the one currency they cannot grind back reset
+	# to zero — they only drop from outer islands and the castle.
+	diamonds = int(data.get("diamonds", data.get("doubloons", 0)))
 	fleet_slots = clampi(int(data.get("fleet_slots", 1)), 1, 3)
 
 	var loaded_fleet: Array = data.get("fleet", [])
@@ -249,5 +252,5 @@ func from_dict(data: Dictionary) -> void:
 	stats_voyages_completed = int(stats.get("voyages_completed", 0))
 
 	EventBus.gold_changed.emit(total_gold(), 0)
-	EventBus.doubloons_changed.emit(doubloons, 0)
+	EventBus.diamonds_changed.emit(diamonds, 0)
 	EventBus.fleet_changed.emit()

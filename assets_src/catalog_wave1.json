@@ -122,6 +122,10 @@
       "output": "res://assets/wave1/icons/icon_chest.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
     },
     {
+      "id": "icon_diamond", "source": "res://assets_src/icons/v1/icon_template_gem.svg", "replacements": {"{{PATH}}": "M20 12h24l11 15-23 27-23-27z M9 27h46"},
+      "output": "res://assets/wave1/icons/icon_diamond.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
+    },
+    {
       "id": "icon_hull", "source": "res://assets_src/icons/v1/icon_template.svg", "replacements": {"{{PATH}}": "M32 5C19 14 15 31 19 47l13 11 13-11c4-16 0-33-13-42zm0 11v32M22 36h20"},
       "output": "res://assets/wave1/icons/icon_hull.png", "nominal": [64,64], "pivot": [32,32], "atlas": "icons", "master_revision": 1, "padding": true
     },

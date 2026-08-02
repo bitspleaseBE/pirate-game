@@ -25,7 +25,7 @@ extends CanvasLayer
 const TOAST_DURATION: float = 2.6
 
 @onready var _gold_label: Label = %GoldLabel
-@onready var _doubloon_label: Label = %DoubloonLabel
+@onready var _diamond_label: Label = %DiamondLabel
 @onready var _ammo_button: Button = %AmmoButton
 @onready var _ammo_count: Label = %AmmoCount
 @onready var _fleet_label: Label = %FleetLabel
@@ -40,7 +40,7 @@ var _fleet: FleetController = null
 
 func _ready() -> void:
 	EventBus.gold_changed.connect(_on_gold_changed)
-	EventBus.doubloons_changed.connect(_on_doubloons_changed)
+	EventBus.diamonds_changed.connect(_on_diamonds_changed)
 	EventBus.fleet_changed.connect(_refresh_fleet)
 	EventBus.island_captured.connect(_on_island_captured)
 	EventBus.island_discovered.connect(_on_island_discovered)
@@ -126,7 +126,7 @@ func dismiss_port() -> bool:
 
 func _refresh_all() -> void:
 	_on_gold_changed(GameState.total_gold(), 0)
-	_on_doubloons_changed(GameState.doubloons, 0)
+	_on_diamonds_changed(GameState.diamonds, 0)
 	_refresh_ammo()
 	_refresh_fleet()
 
@@ -176,8 +176,8 @@ func _on_gold_changed(total: int, _delta: int) -> void:
 	_gold_label.text = str(total)
 
 
-func _on_doubloons_changed(total: int, _delta: int) -> void:
-	_doubloon_label.text = str(total)
+func _on_diamonds_changed(total: int, _delta: int) -> void:
+	_diamond_label.text = str(total)
 
 
 func _on_ammo_pressed() -> void:
