@@ -112,6 +112,21 @@ jobs:
             exit 1
           fi
 
+      # The losing path. Every run above treats a fleet wipe as a failure and
+      # quits, so the code that runs *after* the player dies had no coverage at
+      # all — and a wipe left the roster empty, which handed the next voyage an
+      # archipelago with no player ship in it. Sinks the fleet on purpose, then
+      # sails the voyage the player gets afterwards.
+      - name: Game-over test (wipe and sail again)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --wipe --auto-new 2>&1 | tee /tmp/wipe.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/wipe.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       - name: Export web build
         run: |
           set -euo pipefail

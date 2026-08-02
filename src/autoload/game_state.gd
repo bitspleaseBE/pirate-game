@@ -94,6 +94,31 @@ func ensure_fleet() -> void:
 	fleet = valid
 
 
+## Puts the player back on the water after the last hull afloat goes down.
+##
+## A wipe costs the ships and everything unbanked on them. It does not cost the
+## bank, and it does not cost the ability to sail — see docs/GAME_DESIGN.md
+## §Economy. [FleetController] drops each entry from [member fleet] as its hull
+## sinks, so by the time the fleet is emptied the roster is empty too, and until
+## this ran nothing put a hull back before the game returned to the menu.
+##
+## That is not a cosmetic gap. [method FleetController.spawn_fleet] spawns one
+## ship per entry, so the next voyage began with no ship at all: no hull to
+## steer, no centroid for the camera, and a HUD bound to nothing. It only
+## reproduced through the live wipe path, because a save reloaded from disk goes
+## through [method from_dict] and [method ensure_fleet] and heals itself on the
+## way in — which is exactly why quitting and relaunching appeared to "fix" it.
+func wipe_fleet() -> void:
+	fleet = [{"stats_id": STARTING_HULL, "upgrades": {}}]
+	# Belt and braces: the sinking hull already dropped its cargo, but a wipe is
+	# the one moment the player must be certain nothing unbanked came home.
+	lose_carried_gold()
+	# Slots are a permanent purchase and survive; only the hulls in them are
+	# consumable. PortScreen prices the next hull off `fleet.size()`, so a
+	# rebuilt fleet costs the same as the first one did.
+	EventBus.fleet_changed.emit()
+
+
 func total_gold() -> int:
 	return carried_gold + banked_gold
 

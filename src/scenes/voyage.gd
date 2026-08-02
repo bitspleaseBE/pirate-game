@@ -10,6 +10,12 @@ extends Node
 
 const FLEET_WIPE_DELAY: float = 2.8
 
+## Set by the first half of the `--wipe` harness so the voyage it comes back to
+## runs the second half instead of sinking itself again. Static because Router
+## frees this node on the way to the menu — nothing instance-side survives the
+## trip, and the check is only meaningful across two voyages in one process.
+static var _wipe_harness_ran: bool = false
+
 @onready var _viewport_container: SubViewportContainer = $GameViewport
 @onready var _world: Node2D = %World
 @onready var archipelago: Archipelago = %Archipelago
@@ -67,8 +73,11 @@ func _ready() -> void:
 	tutorial.fleet = fleet
 	# Briefings pause the tree, which an automated run has no way to dismiss —
 	# the world would sit frozen behind a modal and the harness would faithfully
-	# report that nothing happened.
-	tutorial.enabled = not ("--smoke" in OS.get_cmdline_user_args())
+	# report that nothing happened. `--wipe` is excluded for a second reason: a
+	# fleet is only ever lost well after the opening briefing is done with, so a
+	# run that dies behind it is not testing the moment a player actually sees.
+	var harness_args: PackedStringArray = OS.get_cmdline_user_args()
+	tutorial.enabled = not ("--smoke" in harness_args or "--wipe" in harness_args)
 
 	_update_wind_availability()
 	EventBus.fleet_changed.connect(_update_wind_availability)
@@ -94,6 +103,94 @@ func _ready() -> void:
 		_capture_screenshots()
 	elif "--shot-port" in args:
 		_capture_port()
+	elif "--wipe" in args:
+		if _wipe_harness_ran:
+			_check_voyage_after_wipe()
+		else:
+			_wipe_harness_ran = true
+			_run_wipe_test()
+
+
+## Drives the entire game-over path and asserts the player can still play.
+##
+##   godot --headless src/scenes/voyage.tscn -- --wipe --auto-new
+##
+## The `--smoke` run deliberately treats a wipe as a failure and quits, so
+## nothing else in the harness had ever been through this path — which is how a
+## fleet wipe came to leave [member GameState.fleet] empty and the *next* voyage
+## with no player ship in it. `--auto-new` is what carries the run back out of
+## the menu, so the second half goes through the same two buttons a player does.
+func _run_wipe_test() -> void:
+	await get_tree().create_timer(0.5).timeout
+
+	# Give the run a bank and a purse. A wipe is supposed to cost one and not the
+	# other, and starting at zero cannot tell "kept" from "cleared".
+	GameState.banked_gold = 250
+	GameState.add_gold(90)
+
+	var hulls: Array[Ship] = fleet.living_ships()
+	if hulls.is_empty():
+		push_error("WIPE FAIL: voyage started with no player ship")
+		get_tree().quit(1)
+		return
+	for ship: Ship in hulls:
+		ship.apply_damage(999_999.0, AmmoType.Bar.HULL, null)
+
+	# One frame for the death signal to walk through FleetController and the wipe
+	# handler. The scene is still up — Router does not leave for FLEET_WIPE_DELAY.
+	await get_tree().process_frame
+
+	var failures: PackedStringArray = []
+	if GameState.fleet.is_empty():
+		failures.append("roster is empty — the next voyage would spawn no ship")
+	if GameState.carried_gold != 0:
+		failures.append("carried gold survived the wipe (%d)" % GameState.carried_gold)
+	if GameState.banked_gold != 250:
+		failures.append("banked gold should be untouched, is %d" % GameState.banked_gold)
+	if GameState.voyage_active:
+		failures.append("voyage still marked active")
+
+	if not failures.is_empty():
+		for line: String in failures:
+			push_error("WIPE FAIL: %s" % line)
+		get_tree().quit(1)
+		return
+
+	print("WIPE: fleet sunk, %d hull(s) issued, %d gold still banked" % [
+		GameState.fleet.size(), GameState.banked_gold
+	])
+
+	# The state being right is only half of it — what the player gets is a toast
+	# on a sea with no ship on it, and that has to be readable. Skipped headless,
+	# where there is no framebuffer to grab.
+	if DisplayServer.get_name() != "headless":
+		await get_tree().create_timer(1.0).timeout
+		await RenderingServer.frame_post_draw
+		DirAccess.make_dir_recursive_absolute("user://shots")
+		get_viewport().get_texture().get_image().save_png("user://shots/wipe_00.png")
+		print("WIPE SHOT: %s" % ProjectSettings.globalize_path("user://shots/wipe_00.png"))
+	# Nothing further here: `_on_fleet_emptied` is already counting down to the
+	# menu, and `--auto-new` takes it from there into the second half.
+
+
+## Second half of `--wipe`: the voyage a player gets after losing everything.
+func _check_voyage_after_wipe() -> void:
+	await get_tree().process_frame
+
+	var afloat: int = fleet.living_ships().size()
+	if afloat < 1:
+		push_error("WIPE FAIL: new voyage after a wipe has no player ship")
+		get_tree().quit(1)
+		return
+	if fleet.selected == null:
+		push_error("WIPE FAIL: new voyage after a wipe has no ship under command")
+		get_tree().quit(1)
+		return
+
+	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
+		afloat, GameState.banked_gold
+	])
+	get_tree().quit(0)
 
 
 ## Screenshots the port screen on the home island. The port is a modal over a
@@ -508,10 +605,25 @@ func _on_open_port(island: Node2D) -> void:
 	fleet.refit()
 
 
+## The voyage is over. Hand the player back a hull, tell them what survived, and
+## return to the menu.
+##
+## The message names the bank on purpose. A wipe keeps banked gold by design, but
+## the only thing the player saw was a menu still showing the gold they had before
+## they died, which reads as the game having failed to reset rather than as the
+## banking mechanic paying out. If the rule is going to be generous it has to be
+## legible at the moment it applies.
 func _on_fleet_emptied() -> void:
 	input_router.enabled = false
-	_toast("Your fleet is lost…")
 	GameState.voyage_active = false
+	GameState.wipe_fleet()
+
+	var kept: int = GameState.banked_gold
+	if kept > 0:
+		_toast("Your fleet is lost… %d gold is safe ashore." % kept)
+	else:
+		_toast("Your fleet is lost… and nothing was banked.")
+
 	SaveSystem.save_now()
 
 	var timer: SceneTreeTimer = get_tree().create_timer(FLEET_WIPE_DELAY)
