@@ -31,6 +31,8 @@ var crew_kill: float = 0.0
 var impact_pool: StringName = &"impact"
 var shooter: Node2D = null
 var shooter_team: int = 0
+## Scale the ball was launched at, so altitude does not fight the ammo's size.
+var _visual_scale: float = 1.0
 
 var _ball: Sprite2D
 var _shadow: Sprite2D
@@ -66,8 +68,15 @@ func launch(
 	# A long shot arcs higher, which is what makes range legible at a glance.
 	arc_height = ammo.arc_height * clampf(distance / 600.0, 0.5, 2.2)
 
-	if _ball != null and ammo.projectile_texture != null:
-		_ball.texture = ammo.projectile_texture
+	if _ball != null:
+		if ammo.projectile_texture != null:
+			_ball.texture = ammo.projectile_texture
+		# Colour and size are what make five shot types tellable apart in flight
+		# without five sprites. Mid-fight the player needs to know at a glance what
+		# is in the air, both theirs and the enemy's.
+		_ball.self_modulate = ammo.tint
+		_ball.scale = Vector2.ONE * ammo.visual_scale
+	_visual_scale = ammo.visual_scale
 
 	global_position = from
 	_apply_altitude(0.0)
@@ -92,9 +101,16 @@ func _apply_altitude(height01: float) -> void:
 	if _ball != null:
 		_ball.position.y = -arc_height * height01
 	if _shadow != null:
-		_shadow.scale = Vector2.ONE * lerpf(SHADOW_SCALE_GROUND, SHADOW_SCALE_APEX, height01)
+		# Altitude and ammo size both scale the shadow, so they multiply rather
+		# than one overwriting the other.
+		_shadow.scale = (
+			Vector2.ONE
+			* lerpf(SHADOW_SCALE_GROUND, SHADOW_SCALE_APEX, height01)
+			* _visual_scale
+		)
 
 
 func _pool_release() -> void:
 	shooter = null
 	elapsed = 0.0
+	_visual_scale = 1.0

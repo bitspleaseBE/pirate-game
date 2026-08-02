@@ -71,6 +71,9 @@ static func _fallback(id: StringName) -> AmmoType:
 	match id:
 		&"fire":
 			a.display_name = "Fire Shot"
+			a.role = "burns hulls"
+			a.tint = Color(1.0, 0.55, 0.22)
+			a.visual_scale = 1.05
 			a.damage_mul = 0.55
 			a.burn_dps = 5.0
 			a.burn_duration = 5.0
@@ -78,6 +81,9 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		&"explosive":
 			a.display_name = "Explosive Shot"
+			a.role = "hits groups"
+			a.tint = Color(0.95, 0.82, 0.35)
+			a.visual_scale = 1.25
 			a.damage_mul = 1.3
 			a.aoe_radius = 170.0
 			a.splash_bar_mul = 0.3
@@ -88,6 +94,9 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 8
 		&"chain":
 			a.display_name = "Chain Shot"
+			a.role = "shreds sails"
+			a.tint = Color(0.72, 0.78, 0.86)
+			a.visual_scale = 1.35
 			a.damage_mul = 1.6
 			a.primary_bar = AmmoType.Bar.SAILS
 			a.muzzle_speed = 620.0
@@ -95,6 +104,9 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		&"grape":
 			a.display_name = "Grape Shot"
+			a.role = "kills crew"
+			a.tint = Color(0.86, 0.62, 0.66)
+			a.visual_scale = 0.7
 			a.damage_mul = 1.1
 			a.primary_bar = AmmoType.Bar.CANNONS
 			a.crew_kill = 0.12
@@ -104,6 +116,8 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		_:
 			a.display_name = "Round Shot"
+			a.role = "all-purpose"
+			a.tint = Color(0.85, 0.85, 0.88)
 			a.damage_mul = 1.0
 			a.unlimited = true
 	return a

@@ -10,6 +10,16 @@ enum Bar { HULL, SAILS, CANNONS }
 
 @export var id: StringName = &"round"
 @export var display_name: String = "Round Shot"
+## Two or three words on what this shot is *for*. Shown on the ammo button,
+## because a name alone ("chain shot") teaches a player nothing about when to
+## reach for it, and blind-cycling five identical-looking options is not a
+## decision — it is a guess.
+@export var role: String = "all-purpose"
+## Colour of the ball in flight and of the ammo button. The single cheapest way to
+## make five shot types distinguishable mid-fight without five sprites.
+@export var tint: Color = Color(1, 1, 1)
+## Ball size relative to round shot, so grape reads as small and chain as heavy.
+@export var visual_scale: float = 1.0
 @export var icon: Texture2D
 
 @export_group("Damage")

@@ -114,13 +114,22 @@ func _refresh_all() -> void:
 	_refresh_fleet()
 
 
+## The ammo button carries the shot's *purpose*, not just its name.
+##
+## Five options behind one cycle button is only a decision if the player can tell
+## what each one is for. "Chain Shot" teaches nothing; "shreds sails" teaches the
+## whole mechanic. The colour matches the ball in flight, so the button and the
+## thing it fires are visibly the same object.
 func _refresh_ammo() -> void:
 	var ammo: AmmoType = AmmoLibrary.get_ammo(GameState.selected_ammo)
-	_ammo_button.text = ammo.display_name
+	_ammo_button.text = "%s\n%s" % [ammo.display_name, ammo.role]
+	_ammo_button.add_theme_color_override("font_color", ammo.tint)
+	_ammo_count.add_theme_color_override("font_color", ammo.tint)
 	if ammo.unlimited:
 		_ammo_count.text = "∞"
 	else:
-		_ammo_count.text = str(GameState.get_ammo(ammo.id))
+		var stock: int = GameState.get_ammo(ammo.id)
+		_ammo_count.text = "%d left" % stock
 
 
 func _refresh_fleet() -> void:

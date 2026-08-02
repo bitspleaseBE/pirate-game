@@ -17,6 +17,21 @@ const ISLAND_COUNT_MAX: int = 12
 const MIN_CHANNEL_WIDTH: float = 1500.0
 ## Radius of the first ring of islands around home.
 const FIRST_RING_DISTANCE: float = 4200.0
+## Where the very first island sits, and how big it is.
+##
+## Deliberately much closer than the first ring: at a Dinghy's speed the ring
+## distance is over half a minute of open water before anything happens, and a
+## player who does not yet know what the game *is* spends all of it wondering
+## whether they have understood the controls.
+##
+## It cannot be arbitrarily close, though. Placement still has to clear
+## `home.radius + island.radius + MIN_CHANNEL_WIDTH`, which is 2520px for the
+## smallest island — set it below that and every placement attempt fails, the
+## opening island is silently skipped, and the player's "first" island is
+## whichever tier-2 one happened to land nearest. The small radius here is what
+## buys the short distance.
+const OPENING_ISLAND_DISTANCE: float = 2950.0
+const OPENING_ISLAND_RADIUS: float = 380.0
 const RING_SPACING: float = 3600.0
 ## Distance band that maps to one difficulty tier.
 const TIER_BAND: float = 4600.0
@@ -115,7 +130,11 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 	for i: int in count:
 		var ring: int = 1 + i / 3
 		var target_distance: float = FIRST_RING_DISTANCE + float(ring - 1) * RING_SPACING
+		if i == 0:
+			target_distance = OPENING_ISLAND_DISTANCE
 		var radius: float = _rng.randf_range(360.0, 780.0)
+		if i == 0:
+			radius = OPENING_ISLAND_RADIUS
 
 		var pos: Vector2 = Vector2.INF
 		for _attempt: int in MAX_PLACEMENT_ATTEMPTS:
@@ -128,6 +147,13 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		if pos == Vector2.INF:
 			# Could not find room on this ring. Skipping is better than shipping
 			# two overlapping islands with a channel no ship can enter.
+			if i == 0:
+				push_error(
+					"Opening island could not be placed at %.0fpx — it is inside the"
+					% OPENING_ISLAND_DISTANCE
+					+ " minimum channel from home, so the player's first island will be"
+					+ " a distant high-tier one. Raise OPENING_ISLAND_DISTANCE."
+				)
 			continue
 
 		placed.append(pos)

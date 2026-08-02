@@ -94,11 +94,15 @@ func _on_ship_sunk(ship: Node2D, killer: Node2D) -> void:
 		return
 	if GameState.has_seen(&"first_kill"):
 		return
+	# Taught here, after a kill, rather than up front: a player who has just won a
+	# fight with round shot has the context to care that other shot exists. The
+	# same three lines before their first shot would be noise.
 	_show(
 		&"first_kill",
 		"ONE DOWN",
 		[
 			"That is the whole game: read the angle, get your side facing them, let the broadside do the rest.",
+			"The button bottom-right cycles your shot. Each one says what it is for — chain shreds sails so nothing escapes, grape kills crew so nothing shoots back.",
 			"Clear the rest of the defenders to take the island.",
 		]
 	)

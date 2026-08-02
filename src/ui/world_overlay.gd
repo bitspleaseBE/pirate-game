@@ -25,13 +25,23 @@ const COLOR_SELECT: Color = Color("f0c04a")
 const COLOR_TARGET: Color = Color("e2564a")
 const COLOR_COURSE: Color = Color(0.95, 0.95, 0.85, 0.55)
 
+const FONT: String = "res://assets/fonts/KenneyFuture.ttf"
+## How far inside the screen edge the objective arrow sits, in screen pixels.
+const OBJECTIVE_INSET: float = 62.0
+const COLOR_OBJECTIVE: Color = Color("e8d9a8")
+
 var fleet: FleetController = null
+var archipelago: Archipelago = null
+
+var _font: Font = null
 
 
 func _ready() -> void:
 	# Above the world, below the HUD CanvasLayer.
 	z_index = 50
 	z_as_relative = false
+	if ResourceLoader.exists(FONT):
+		_font = load(FONT)
 
 
 func _process(_delta: float) -> void:
@@ -47,6 +57,93 @@ func _draw() -> void:
 
 	_draw_enemies(s)
 	_draw_fleet(s)
+	_draw_objective(camera, s)
+
+
+## An arrow at the screen edge pointing at whatever the player should be heading
+## for, with the distance to it.
+##
+## Without this the opening is half a minute of open water in every direction,
+## with the only confirmation you are going the right way being a two-pixel mark
+## on a corner minimap. That is a rotten first impression of a game that is
+## perfectly clear once anything is actually happening — and the marker keeps
+## earning its place later, because an enemy that has drifted off screen mid-fight
+## is the other moment a player loses the thread.
+func _draw_objective(camera: Camera2D, s: float) -> void:
+	var target: Vector2 = _objective_position()
+	if target == Vector2.INF:
+		return
+
+	var view: Vector2 = camera.get_viewport_rect().size / camera.zoom
+	var centre: Vector2 = camera.get_screen_center_position()
+	var half: Vector2 = view * 0.5 - Vector2(OBJECTIVE_INSET, OBJECTIVE_INSET) * s
+
+	var offset: Vector2 = target - centre
+	# On screen already? Then the player can see it and needs no arrow.
+	if absf(offset.x) < half.x and absf(offset.y) < half.y:
+		return
+
+	# Push the marker to the edge along the bearing to the objective.
+	var scale_x: float = half.x / maxf(1.0, absf(offset.x))
+	var scale_y: float = half.y / maxf(1.0, absf(offset.y))
+	var at: Vector2 = centre + offset * minf(scale_x, scale_y)
+
+	var dir: Vector2 = offset.normalized()
+	var side: Vector2 = dir.orthogonal()
+	var length: float = 20.0 * s
+	draw_colored_polygon(
+		PackedVector2Array([
+			at + dir * length,
+			at - dir * length * 0.5 + side * length * 0.6,
+			at - dir * length * 0.5 - side * length * 0.6,
+		]),
+		COLOR_OBJECTIVE
+	)
+
+	if _font == null:
+		return
+	var metres: int = roundi(offset.length())
+	var text: String = "%dm" % metres
+	var text_size: Vector2 = _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14)
+	draw_string(
+		_font,
+		at - dir * length * 1.6 - Vector2(text_size.x * 0.5 * s, 0.0),
+		text,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1,
+		roundi(14.0 * s),
+		COLOR_OBJECTIVE
+	)
+
+
+## What the player should be heading for: whatever they have engaged, otherwise
+## the nearest island they have yet to take.
+func _objective_position() -> Vector2:
+	if fleet == null or not is_instance_valid(fleet):
+		return Vector2.INF
+
+	var lead: Ship = fleet.selected
+	if lead != null and is_instance_valid(lead):
+		if lead.target != null and is_instance_valid(lead.target):
+			return lead.target.global_position
+
+	if archipelago == null or not is_instance_valid(archipelago):
+		return Vector2.INF
+
+	var from: Vector2 = fleet.centroid()
+	var best: Vector2 = Vector2.INF
+	var best_distance: float = INF
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if island.is_captured:
+			continue
+		var distance: float = island.distance_to_coast(from)
+		if distance < best_distance:
+			best_distance = distance
+			best = island.global_position
+	return best
 
 
 func _draw_enemies(s: float) -> void:

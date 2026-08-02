@@ -45,6 +45,7 @@ func _ready() -> void:
 	input_router.camera = camera
 	input_router.fleet = fleet
 	overlay.fleet = fleet
+	overlay.archipelago = archipelago
 
 	director.fleet = fleet
 	director.archipelago = archipelago
@@ -329,6 +330,7 @@ func _run_smoke_test() -> void:
 			failures.append("pool '%s' outgrew its prewarm" % stats["name"])
 	failures.append_array(_check_wind())
 	failures.append_array(_check_upgrades())
+	failures.append_array(_check_opening_island())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
@@ -483,6 +485,47 @@ func _on_fleet_emptied() -> void:
 	var timer: SceneTreeTimer = get_tree().create_timer(FLEET_WIPE_DELAY)
 	await timer.timeout
 	Router.goto(&"main_menu")
+
+
+## The first island a player meets has to be the gentle one.
+##
+## Island tier rises with distance from home, so the opening island is only easy
+## if it is genuinely the closest. It is placed by rejection sampling against a
+## minimum channel width, and a distance set even slightly too low makes *every*
+## attempt fail — the island is skipped, and the player's first fight silently
+## becomes whichever tier-2-or-worse island happened to land nearest. That failure
+## is invisible from the code and only shows up as "the game is unfair at the
+## start", so it is asserted here.
+func _check_opening_island() -> PackedStringArray:
+	var out: PackedStringArray = []
+	if archipelago.home == null:
+		out.append("no home port was generated")
+		return out
+
+	var nearest: Island = null
+	var nearest_distance: float = INF
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if island.is_captured:
+			continue
+		var distance: float = island.global_position.distance_to(archipelago.home.global_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest = island
+
+	if nearest == null:
+		out.append("voyage has no hostile island at all")
+		return out
+	if nearest.def.tier != 1:
+		out.append(
+			"nearest island to home is tier %d (%s) — the opening island was not placed"
+			% [nearest.def.tier, nearest.def.display_name]
+		)
+	if nearest.def.garrison_ships > 1:
+		out.append("opening island fields %d defenders" % nearest.def.garrison_ships)
+	return out
 
 
 ## Checks that upgrades apply, and — more importantly — that buying one does not

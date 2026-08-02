@@ -166,10 +166,10 @@ vertical_alignment = 1
 
 [node name="AmmoButton" type="Button" parent="Root/BottomRight"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 62)
+custom_minimum_size = Vector2(0, 68)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 17
+theme_override_font_sizes/font_size = 15
 text = "Round Shot"
 
 [node name="AmmoCount" type="Label" parent="Root/BottomRight"]
