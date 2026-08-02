@@ -1,6 +1,7 @@
 # Pirates: Treasure Hunt
 
-A one-thumb naval action game. Sail, fight broadsides, capture islands, dig up gold.
+A one-thumb naval action game. Sail, fight broadsides, capture islands, take the gold off
+their quays.
 Godot 4.7, targeting mobile web first.
 
 **Play:** https://bitspleasebe.github.io/pirate-game/ (deployed from `main`)
@@ -41,6 +42,13 @@ and z-order:
 
 ```bash
 godot src/scenes/voyage.tscn -- --shot
+```
+
+Frame each island's harbour instead — hostile, held, and unloading — which is the only way
+to tell whether the port reads as a port at gameplay zoom:
+
+```bash
+godot src/scenes/voyage.tscn -- --shot-harbour
 ```
 
 Add `--sail` to either flag to start in a Sloop instead of the oared Dinghy, which is the

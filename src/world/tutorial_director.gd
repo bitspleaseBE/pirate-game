@@ -47,7 +47,7 @@ func begin() -> void:
 		"MAKE SAIL",
 		[
 			"Tap open water to set a course. Your ship turns slowly and cannot stop on a coin — plan ahead.",
-			"Somewhere out there is an island with treasure buried on it, and people who would rather you did not have it.",
+			"Somewhere out there is an island with treasure stacked on its quay, and people who would rather you did not have it.",
 			"The map in the corner shows what you have found. Sail for the island.",
 		],
 		"WEIGH ANCHOR"
@@ -115,8 +115,8 @@ func _on_island_captured(island: Node2D) -> void:
 		&"first_capture",
 		"ISLAND TAKEN",
 		[
-			"Sail to the beach and a landing party will row ashore for the treasure marked X. Tap the island to set that course again if you wander off.",
-			"An island you hold is a port: it repairs your ships and banks your gold. Gold you are still carrying is lost if you sink.",
+			"Every island has a harbour. Sail to the red buoy off the end of its jetty and a boat will bring the treasure out to you. Tap the island to set that course again if you wander off.",
+			"A harbour you hold is a port: it repairs your ships and banks your gold. Gold you are still carrying is lost if you sink.",
 		],
 		"GOT IT",
 		(island as Island).anchor_point

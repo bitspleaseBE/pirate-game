@@ -77,22 +77,31 @@ func build_outline() -> PackedVector2Array:
 	return points
 
 
-## A point off the coast where a ship can anchor to send a landing party.
+## The sheltered stretch of coast, in island-local space: where the harbour is
+## built.
 ##
-## The default offset clears the largest hull's keep-out ring (see
-## [constant Ship.COAST_STANDOFF]), so the anchor is somewhere a ship will
-## willingly sail to. The last stretch to the sand is the longboat's job — which
-## is what the landing party is for.
+## The widest, flattest stretch of coast makes the most believable beach; the
+## point furthest from the centre is a cliff, so take the closest instead.
+func sheltered_shore(outline: PackedVector2Array) -> Vector2:
+	if outline.is_empty():
+		return Vector2.ZERO
+	var best: Vector2 = outline[0]
+	for p: Vector2 in outline:
+		if p.length_squared() < best.length_squared():
+			best = p
+	return best
+
+
+## A point off the coast where a ship can moor — the mooring buoy at the end of
+## the island's [Port].
+##
+## Derived from [method sheltered_shore] rather than found independently, so the
+## water the player is steering for is always straight off the jetty they can
+## see. The default offset clears the largest hull's keep-out ring (see
+## [constant Ship.COAST_STANDOFF]), so it is somewhere a ship will willingly
+## sail to. The last stretch to the quay is the longboat's job.
 func beach_anchor(outline: PackedVector2Array, offset: float = 320.0) -> Vector2:
 	if outline.is_empty():
 		return world_position
-	# The widest, flattest stretch of coast makes the most believable beach; the
-	# point furthest from the centre is a cliff, so take the closest instead.
-	var best: Vector2 = outline[0]
-	var best_len: float = best.length()
-	for p: Vector2 in outline:
-		var l: float = p.length()
-		if l < best_len:
-			best_len = l
-			best = p
-	return world_position + best.normalized() * (best_len + offset)
+	var shore: Vector2 = sheltered_shore(outline)
+	return world_position + shore + shore.normalized() * offset

@@ -193,7 +193,7 @@ src/
     projectiles/   projectile_system, projectile visuals
     structures/    fort cannon, shipyard, castle
     crew/          landing party
-  world/           ocean, island, archipelago generator, spawn director
+  world/           ocean, island, port, archipelago generator, spawn director
   ui/              hud, minimap, port, menus
   scenes/          boot, main_menu, voyage
 tests/             GUT tests for grid, pool, quality, ballistics

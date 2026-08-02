@@ -61,9 +61,15 @@ func _ready() -> void:
 	director.archipelago = archipelago
 	director.ships_parent = ships_parent
 
+	# Riding at anchor just outside Port Royal's mooring buoy, rather than on top
+	# of it. Sitting exactly on the buoy hides the one piece of harbour furniture
+	# the opening is trying to teach the player to recognise.
 	var start: Vector2 = Vector2(0, -1400)
 	if archipelago.home != null:
-		start = archipelago.home.anchor_point
+		var home: Island = archipelago.home
+		start = home.anchor_point + (
+			home.anchor_point - home.global_position
+		).normalized() * 180.0
 	fleet.spawn_fleet(start)
 	# Snap rather than ease, so the first frame is already at the fleet and the
 	# culling manager's first tick sees the real camera rect.
@@ -81,7 +87,11 @@ func _ready() -> void:
 	# fleet is only ever lost well after the opening briefing is done with, so a
 	# run that dies behind it is not testing the moment a player actually sees.
 	var harness_args: PackedStringArray = OS.get_cmdline_user_args()
-	tutorial.enabled = not ("--smoke" in harness_args or "--wipe" in harness_args)
+	tutorial.enabled = not (
+		"--smoke" in harness_args
+		or "--wipe" in harness_args
+		or "--shot-harbour" in harness_args
+	)
 
 	_update_wind_availability()
 	EventBus.fleet_changed.connect(_update_wind_availability)
@@ -113,6 +123,8 @@ func _ready() -> void:
 		else:
 			_wipe_harness_ran = true
 			_run_wipe_test()
+	elif "--shot-harbour" in args:
+		_capture_harbours()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -194,6 +206,51 @@ func _check_voyage_after_wipe() -> void:
 	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
 		afloat, GameState.banked_gold
 	])
+	get_tree().quit(0)
+
+
+## Frames each island's [Port] and writes the frames to `user://shots/`.
+##
+## The harbour is the one structure the player is asked to steer to, and whether
+## it reads as a harbour at gameplay zoom is not a question the smoke test can
+## answer — only a rendered frame can. Captures all three states it is ever seen
+## in: hostile, held with cargo still on the quay, and unloading.
+##
+##   godot src/scenes/voyage.tscn -- --shot-harbour
+func _capture_harbours() -> void:
+	const STATES: PackedStringArray = ["hostile", "held", "unloading"]
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+	input_router.enabled = false
+
+	var shot: int = 0
+	for island: Island in archipelago.islands:
+		if shot >= 4:
+			break
+		# Halfway between quay and buoy, so the frame holds the whole approach —
+		# sheds, jetty and the water the player is actually steering for.
+		var seaward: Vector2 = (island.anchor_point - island.global_position).normalized()
+		for state: String in STATES:
+			if state != "hostile" and not island.is_captured:
+				island.capture()
+			if state == "unloading" and island.port != null:
+				island.port.begin_unloading(island.anchor_point + seaward * 200.0, 4.5)
+			camera.target_zoom = 0.95
+			camera.point_out(
+				island.treasure_world_position().lerp(island.anchor_point, 0.6), 4.0
+			)
+			await get_tree().create_timer(1.4).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(
+				"%s/harbour_%02d_%s.png" % [dir, shot, state]
+			)
+			if island.port != null:
+				island.port.finish_unloading()
+		shot += 1
+
+	print("HARBOUR SHOTS: %s" % ProjectSettings.globalize_path(dir))
 	get_tree().quit(0)
 
 
@@ -381,8 +438,10 @@ func _run_smoke_test() -> void:
 			)
 			if enemy != null:
 				EventBus.intent_target.emit(enemy)
-			else:
+			elif goal.is_captured:
 				fleet.selected.set_course(goal.anchor_point)
+			else:
+				fleet.selected.set_course(goal.global_position)
 		min_clearance = minf(min_clearance, _min_hull_clearance())
 		await get_tree().create_timer(0.5).timeout
 		elapsed += 0.5
@@ -563,15 +622,15 @@ func _update_wind_availability() -> void:
 
 
 func _on_landing_started(island: Node2D) -> void:
-	_toast("Landing party ashore at %s…" % (island as Island).def.display_name)
+	_toast("Boat away from the quay at %s…" % (island as Island).def.display_name)
 
 
-## Tapping an island you hold that still has gold buried on it sets a course for
-## its beach. The toast is what tells the player the tap did something, since the
-## ship itself may take a while to come about.
+## Tapping an island you hold that still has cargo on its quay sets a course for
+## its mooring. The toast is what tells the player the tap did something, since
+## the ship itself may take a while to come about.
 func _on_intent_dig(island: Node2D) -> void:
 	Audio.play_ui(&"ui_confirm")
-	_toast("Making for the beach at %s…" % (island as Island).def.display_name)
+	_toast("Making for the harbour at %s…" % (island as Island).def.display_name)
 
 
 func _on_island_captured(island: Node2D) -> void:
@@ -839,9 +898,36 @@ func _check_forts() -> PackedStringArray:
 				"%s was captured with %d batteries still firing"
 				% [island.def.display_name, island.forts_remaining()]
 			)
+		# And no battery may be standing on the harbour. The ring is laid out from
+		# the port bearing precisely so this cannot happen (see
+		# [method Island._build_forts]), but the failure is a stone bastion drawn
+		# on top of the quay — cosmetic enough to survive every other check here
+		# and glaring the moment anyone looks at the island.
+		out.append_array(_check_harbour_clearance(island))
 
 	if with_forts == 0:
 		out.append("no island in this voyage has a single shore battery")
+	return out
+
+
+## Every shore battery has to stand clear of the island's harbour.
+func _check_harbour_clearance(island: Island) -> PackedStringArray:
+	## Half the tightest even spacing the generator will ever produce, which is a
+	## four-gun ring. Anything closer than this means the layout rule broke.
+	const MIN_SEPARATION: float = PI / 4.0 - 0.01
+
+	var out: PackedStringArray = []
+	if island.port == null or island.port.position.length_squared() < 1.0:
+		return out
+	for fort: Fort in island.forts:
+		if not is_instance_valid(fort):
+			continue
+		var apart: float = absf(island.port.position.angle_to(fort.position))
+		if apart < MIN_SEPARATION:
+			out.append(
+				"a battery on %s stands %d° from the harbour"
+				% [island.def.display_name, roundi(rad_to_deg(apart))]
+			)
 	return out
 
 
