@@ -191,6 +191,9 @@ func _run_smoke_test() -> void:
 	## Hard wall-clock ceiling. Without it a stall anywhere in the game hangs CI
 	## until the job times out with no clue as to why.
 	const WALL_CLOCK_LIMIT_SEC: float = 90.0
+	## Same radius the minimap uses for contacts. The harness has to "see" a
+	## garrison the way a player does, not wait until the arcs already overlap.
+	const SMOKE_ACQUIRE_RANGE: float = 2600.0
 
 	# A Dictionary, not two ints: GDScript lambdas capture locals **by value**, so
 	# `shots += 1` inside a lambda would increment a copy and the counter would
@@ -246,9 +249,15 @@ func _run_smoke_test() -> void:
 		if fleet.selected != null and is_instance_valid(fleet.selected):
 			# Exercise the real intent path rather than poking the ship directly:
 			# engage the nearest defender if there is one, otherwise keep sailing.
+			#
+			# Acquire at lookout range, not gun range. A player sees the garrison
+			# on the minimap and taps it long before the arcs overlap; querying
+			# only `cannon_range` left the harness sailing past a defender that
+			# had been culled to SIMULATED just outside the camera, never issuing
+			# an attack order, and failing with "no shots fired".
 			var enemy: Node2D = Grid.query_nearest(
 				fleet.selected.global_position,
-				fleet.selected.stats.cannon_range,
+				SMOKE_ACQUIRE_RANGE,
 				SpatialGrid.KIND_ENEMY_SHIP
 			)
 			if enemy != null:
