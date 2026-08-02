@@ -169,7 +169,15 @@ func _tap(screen_pos: Vector2) -> void:
 
 	var island: Island = _island_at(world)
 	if island != null and island.is_captured:
-		EventBus.intent_open_port.emit(island)
+		# Treasure first, port second. An island you hold with gold still buried on
+		# it has exactly one thing the player wants from it, and opening a shop
+		# instead is the one interaction in the game with no visible way back out:
+		# the landing party is otherwise only triggered by drifting near an
+		# unmarked point off the beach, which nobody finds twice.
+		if island.def.is_treasure_remaining():
+			EventBus.intent_dig.emit(island)
+		else:
+			EventBus.intent_open_port.emit(island)
 		return
 
 	# Snap the order to water the fleet can actually settle in, rather than

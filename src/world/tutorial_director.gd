@@ -115,7 +115,7 @@ func _on_island_captured(island: Node2D) -> void:
 		&"first_capture",
 		"ISLAND TAKEN",
 		[
-			"Sail to the beach and a landing party will row ashore for the treasure marked X.",
+			"Sail to the beach and a landing party will row ashore for the treasure marked X. Tap the island to set that course again if you wander off.",
 			"An island you hold is a port: it repairs your ships and banks your gold. Gold you are still carrying is lost if you sink.",
 		],
 		"GOT IT",
