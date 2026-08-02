@@ -34,7 +34,20 @@ func _ready() -> void:
 
 
 ## Spawns one hull per entry in GameState.fleet, in a line abeam of `origin`.
+##
+## Every voyage — new, continued or restarted after a wipe — reaches the water
+## through here, which makes it the one place worth guaranteeing the player
+## actually has something to sail.
+##
+## That guarantee used to live only in [method GameState.from_dict], so it covered
+## loading a save and nothing else. A fleet wiped in the previous voyage leaves an
+## empty roster behind, and "New Voyage" does not reload the save — it reuses live
+## state — so the loop below ran zero times and the player was put on the water
+## with no ship at all. Worse than it sounds: with nothing alive, nothing can die,
+## so `fleet_emptied` never fires, there is no game-over, and the only way out is
+## the pause key.
 func spawn_fleet(origin: Vector2) -> void:
+	GameState.ensure_fleet()
 	_spawn_origin = origin
 	for i: int in GameState.fleet.size():
 		var entry: Dictionary = GameState.fleet[i]
