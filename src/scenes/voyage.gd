@@ -10,9 +10,16 @@ extends Node
 
 const FLEET_WIPE_DELAY: float = 2.8
 
+## Set by the first half of the `--wipe` harness so the voyage it comes back to
+## runs the second half instead of sinking itself again. Static because Router
+## frees this node on the way to the menu — nothing instance-side survives the
+## trip, and the check is only meaningful across two voyages in one process.
+static var _wipe_harness_ran: bool = false
+
 @onready var _viewport_container: SubViewportContainer = $GameViewport
 @onready var _world: Node2D = %World
 @onready var archipelago: Archipelago = %Archipelago
+@onready var ocean: Ocean = %Ocean
 @onready var fleet: FleetController = %Fleet
 @onready var camera: GameCamera = %GameCamera
 @onready var overlay: WorldOverlay = %WorldOverlay
@@ -40,6 +47,9 @@ func _ready() -> void:
 	Quality.tier_changed.connect(_on_quality_tier_changed)
 
 	archipelago.generate(GameState.voyage_seed)
+	# The sea is drawn before the land exists and knows nothing about it, so the
+	# shallows have to be handed to it once the coastlines are settled.
+	ocean.archipelago = archipelago
 	camera.set_world_bounds(archipelago.world_bounds)
 	camera.fleet = fleet
 	input_router.camera = camera
@@ -51,9 +61,15 @@ func _ready() -> void:
 	director.archipelago = archipelago
 	director.ships_parent = ships_parent
 
+	# Riding at anchor just outside Port Royal's mooring buoy, rather than on top
+	# of it. Sitting exactly on the buoy hides the one piece of harbour furniture
+	# the opening is trying to teach the player to recognise.
 	var start: Vector2 = Vector2(0, -1400)
 	if archipelago.home != null:
-		start = archipelago.home.anchor_point
+		var home: Island = archipelago.home
+		start = home.anchor_point + (
+			home.anchor_point - home.global_position
+		).normalized() * 180.0
 	fleet.spawn_fleet(start)
 	# Snap rather than ease, so the first frame is already at the fleet and the
 	# culling manager's first tick sees the real camera rect.
@@ -67,11 +83,18 @@ func _ready() -> void:
 	tutorial.fleet = fleet
 	# Briefings pause the tree, which an automated run has no way to dismiss —
 	# the world would sit frozen behind a modal and the harness would faithfully
-	# report that nothing happened. `--shot-port` is in the same boat: it waits on
-	# scene-tree timers, which do not tick while a briefing holds the pause, so it
-	# hung forever before ever reaching the line that dismisses the briefing.
-	var user_args: PackedStringArray = OS.get_cmdline_user_args()
-	tutorial.enabled = not ("--smoke" in user_args or "--shot-port" in user_args)
+	# report that nothing happened. `--shot-port` / `--shot-harbour` wait on
+	# scene-tree timers that do not tick while a briefing holds the pause.
+	# `--wipe` is excluded for a second reason: a fleet is only ever lost well
+	# after the opening briefing is done with, so a run that dies behind it is
+	# not testing the moment a player actually sees.
+	var harness_args: PackedStringArray = OS.get_cmdline_user_args()
+	tutorial.enabled = not (
+		"--smoke" in harness_args
+		or "--shot-port" in harness_args
+		or "--wipe" in harness_args
+		or "--shot-harbour" in harness_args
+	)
 
 	_update_wind_availability()
 	EventBus.fleet_changed.connect(_update_wind_availability)
@@ -97,6 +120,141 @@ func _ready() -> void:
 		_capture_screenshots()
 	elif "--shot-port" in args:
 		_capture_port()
+	elif "--wipe" in args:
+		if _wipe_harness_ran:
+			_check_voyage_after_wipe()
+		else:
+			_wipe_harness_ran = true
+			_run_wipe_test()
+	elif "--shot-harbour" in args:
+		_capture_harbours()
+
+
+## Drives the entire game-over path and asserts the player can still play.
+##
+##   godot --headless src/scenes/voyage.tscn -- --wipe --auto-new
+##
+## The `--smoke` run deliberately treats a wipe as a failure and quits, so
+## nothing else in the harness had ever been through this path — which is how a
+## fleet wipe came to leave [member GameState.fleet] empty and the *next* voyage
+## with no player ship in it. `--auto-new` is what carries the run back out of
+## the menu, so the second half goes through the same two buttons a player does.
+func _run_wipe_test() -> void:
+	await get_tree().create_timer(0.5).timeout
+
+	# Give the run a bank and a purse. A wipe is supposed to cost one and not the
+	# other, and starting at zero cannot tell "kept" from "cleared".
+	GameState.banked_gold = 250
+	GameState.add_gold(90)
+
+	var hulls: Array[Ship] = fleet.living_ships()
+	if hulls.is_empty():
+		push_error("WIPE FAIL: voyage started with no player ship")
+		get_tree().quit(1)
+		return
+	for ship: Ship in hulls:
+		ship.apply_damage(999_999.0, AmmoType.Bar.HULL, null)
+
+	# One frame for the death signal to walk through FleetController and the wipe
+	# handler. The scene is still up — Router does not leave for FLEET_WIPE_DELAY.
+	await get_tree().process_frame
+
+	var failures: PackedStringArray = []
+	if GameState.fleet.is_empty():
+		failures.append("roster is empty — the next voyage would spawn no ship")
+	if GameState.carried_gold != 0:
+		failures.append("carried gold survived the wipe (%d)" % GameState.carried_gold)
+	if GameState.banked_gold != 250:
+		failures.append("banked gold should be untouched, is %d" % GameState.banked_gold)
+	if GameState.voyage_active:
+		failures.append("voyage still marked active")
+
+	if not failures.is_empty():
+		for line: String in failures:
+			push_error("WIPE FAIL: %s" % line)
+		get_tree().quit(1)
+		return
+
+	print("WIPE: fleet sunk, %d hull(s) issued, %d gold still banked" % [
+		GameState.fleet.size(), GameState.banked_gold
+	])
+
+	# The state being right is only half of it — what the player gets is a toast
+	# on a sea with no ship on it, and that has to be readable. Skipped headless,
+	# where there is no framebuffer to grab.
+	if DisplayServer.get_name() != "headless":
+		await get_tree().create_timer(1.0).timeout
+		await RenderingServer.frame_post_draw
+		DirAccess.make_dir_recursive_absolute("user://shots")
+		get_viewport().get_texture().get_image().save_png("user://shots/wipe_00.png")
+		print("WIPE SHOT: %s" % ProjectSettings.globalize_path("user://shots/wipe_00.png"))
+	# Nothing further here: `_on_fleet_emptied` is already counting down to the
+	# menu, and `--auto-new` takes it from there into the second half.
+
+
+## Second half of `--wipe`: the voyage a player gets after losing everything.
+func _check_voyage_after_wipe() -> void:
+	await get_tree().process_frame
+
+	var afloat: int = fleet.living_ships().size()
+	if afloat < 1:
+		push_error("WIPE FAIL: new voyage after a wipe has no player ship")
+		get_tree().quit(1)
+		return
+	if fleet.selected == null:
+		push_error("WIPE FAIL: new voyage after a wipe has no ship under command")
+		get_tree().quit(1)
+		return
+
+	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
+		afloat, GameState.banked_gold
+	])
+	get_tree().quit(0)
+
+
+## Frames each island's [Port] and writes the frames to `user://shots/`.
+##
+## The harbour is the one structure the player is asked to steer to, and whether
+## it reads as a harbour at gameplay zoom is not a question the smoke test can
+## answer — only a rendered frame can. Captures all three states it is ever seen
+## in: hostile, held with cargo still on the quay, and unloading.
+##
+##   godot src/scenes/voyage.tscn -- --shot-harbour
+func _capture_harbours() -> void:
+	const STATES: PackedStringArray = ["hostile", "held", "unloading"]
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+	input_router.enabled = false
+
+	var shot: int = 0
+	for island: Island in archipelago.islands:
+		if shot >= 4:
+			break
+		# Halfway between quay and buoy, so the frame holds the whole approach —
+		# sheds, jetty and the water the player is actually steering for.
+		var seaward: Vector2 = (island.anchor_point - island.global_position).normalized()
+		for state: String in STATES:
+			if state != "hostile" and not island.is_captured:
+				island.capture()
+			if state == "unloading" and island.port != null:
+				island.port.begin_unloading(island.anchor_point + seaward * 200.0, 4.5)
+			camera.target_zoom = 0.95
+			camera.point_out(
+				island.treasure_world_position().lerp(island.anchor_point, 0.6), 4.0
+			)
+			await get_tree().create_timer(1.4).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(
+				"%s/harbour_%02d_%s.png" % [dir, shot, state]
+			)
+			if island.port != null:
+				island.port.finish_unloading()
+		shot += 1
+
+	print("HARBOUR SHOTS: %s" % ProjectSettings.globalize_path(dir))
+	get_tree().quit(0)
 
 
 ## Screenshots the port screen on the home island. The port is a modal over a
@@ -147,6 +305,12 @@ func _capture_screenshots() -> void:
 	var dir: String = "user://shots"
 	DirAccess.make_dir_recursive_absolute(dir)
 	Engine.time_scale = 3.0
+
+	# Pin the tier. Every capture reads back the viewport texture, which stalls the
+	# pipeline hard enough that the adaptive controller sees a 30fps game and
+	# ratchets to LOW within a few seconds — so the frames used to check the look
+	# of the game were the frames of the lowest tier, whatever the device.
+	Quality.set_tier_manual(Quality.Tier.HIGH)
 
 	# Bail out if the fleet dies, exactly as the smoke test does. Otherwise the wipe
 	# handler routes to the main menu, which frees this node in the middle of the
@@ -283,8 +447,10 @@ func _run_smoke_test() -> void:
 			)
 			if enemy != null:
 				EventBus.intent_target.emit(enemy)
-			else:
+			elif goal.is_captured:
 				fleet.selected.set_course(goal.anchor_point)
+			else:
+				fleet.selected.set_course(goal.global_position)
 		min_clearance = minf(min_clearance, _min_hull_clearance())
 		await get_tree().create_timer(0.5).timeout
 		elapsed += 0.5
@@ -465,15 +631,15 @@ func _update_wind_availability() -> void:
 
 
 func _on_landing_started(island: Node2D) -> void:
-	_toast("Landing party ashore at %s…" % (island as Island).def.display_name)
+	_toast("Boat away from the quay at %s…" % (island as Island).def.display_name)
 
 
-## Tapping an island you hold that still has gold buried on it sets a course for
-## its beach. The toast is what tells the player the tap did something, since the
-## ship itself may take a while to come about.
+## Tapping an island you hold that still has cargo on its quay sets a course for
+## its mooring. The toast is what tells the player the tap did something, since
+## the ship itself may take a while to come about.
 func _on_intent_dig(island: Node2D) -> void:
 	Audio.play_ui(&"ui_confirm")
-	_toast("Making for the beach at %s…" % (island as Island).def.display_name)
+	_toast("Making for the harbour at %s…" % (island as Island).def.display_name)
 
 
 func _on_island_captured(island: Node2D) -> void:
@@ -517,10 +683,25 @@ func _on_open_port(island: Node2D) -> void:
 	fleet.refit()
 
 
+## The voyage is over. Hand the player back a hull, tell them what survived, and
+## return to the menu.
+##
+## The message names the bank on purpose. A wipe keeps banked gold by design, but
+## the only thing the player saw was a menu still showing the gold they had before
+## they died, which reads as the game having failed to reset rather than as the
+## banking mechanic paying out. If the rule is going to be generous it has to be
+## legible at the moment it applies.
 func _on_fleet_emptied() -> void:
 	input_router.enabled = false
-	_toast("Your fleet is lost…")
 	GameState.voyage_active = false
+	GameState.wipe_fleet()
+
+	var kept: int = GameState.banked_gold
+	if kept > 0:
+		_toast("Your fleet is lost… %d gold is safe ashore." % kept)
+	else:
+		_toast("Your fleet is lost… and nothing was banked.")
+
 	SaveSystem.save_now()
 
 	var timer: SceneTreeTimer = get_tree().create_timer(FLEET_WIPE_DELAY)
@@ -726,9 +907,36 @@ func _check_forts() -> PackedStringArray:
 				"%s was captured with %d batteries still firing"
 				% [island.def.display_name, island.forts_remaining()]
 			)
+		# And no battery may be standing on the harbour. The ring is laid out from
+		# the port bearing precisely so this cannot happen (see
+		# [method Island._build_forts]), but the failure is a stone bastion drawn
+		# on top of the quay — cosmetic enough to survive every other check here
+		# and glaring the moment anyone looks at the island.
+		out.append_array(_check_harbour_clearance(island))
 
 	if with_forts == 0:
 		out.append("no island in this voyage has a single shore battery")
+	return out
+
+
+## Every shore battery has to stand clear of the island's harbour.
+func _check_harbour_clearance(island: Island) -> PackedStringArray:
+	## Half the tightest even spacing the generator will ever produce, which is a
+	## four-gun ring. Anything closer than this means the layout rule broke.
+	const MIN_SEPARATION: float = PI / 4.0 - 0.01
+
+	var out: PackedStringArray = []
+	if island.port == null or island.port.position.length_squared() < 1.0:
+		return out
+	for fort: Fort in island.forts:
+		if not is_instance_valid(fort):
+			continue
+		var apart: float = absf(island.port.position.angle_to(fort.position))
+		if apart < MIN_SEPARATION:
+			out.append(
+				"a battery on %s stands %d° from the harbour"
+				% [island.def.display_name, roundi(rad_to_deg(apart))]
+			)
 	return out
 
 

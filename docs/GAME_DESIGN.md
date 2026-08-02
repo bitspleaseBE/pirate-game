@@ -5,9 +5,9 @@
 ## 1. Pitch
 
 A one-thumb naval action game. You start in a rowed dinghy in a hostile archipelago.
-Tap to sail, tap to fire. Break an island's defences, plant your flag, send a landing
-party ashore to dig up what the map marks with an X — then spend the gold on a bigger,
-meaner fleet. Up to three ships under your command.
+Tap to sail, tap to fire. Break an island's defences, plant your flag, moor at its
+harbour and take the treasure off its quay — then spend the gold on a bigger, meaner
+fleet. Up to three ships under your command.
 
 **Feel:** the weight of a sailing ship. You cannot stop or strafe. Every fight is won by
 positioning before it is won by shooting.
@@ -175,12 +175,14 @@ This is the beat the whole game repeats.
 2. **Fight.** Waves come from the island's shipyard. Killing the shipyard cuts off
    reinforcements — the tactical decision of the fight is whether to push for it early.
 3. **Clear.** All defenders and batteries destroyed → the island flips to your flag.
-4. **Land.** Your ship auto-anchors at the beach node. A longboat rows ashore with a
-   landing party.
-5. **Dig.** The treasure map reveals the X. The landing party walks to it, digs, and
-   carries the chest back. (Player can watch or skip.)
+4. **Moor.** Every island has a harbour on its sheltered coast — a quay, a jetty and a
+   mooring buoy off the end of it. Your ship auto-sets a course for the buoy.
+5. **Unload.** A longboat leaves the quay with the chest and rows out to you. The whole
+   transaction happens at one visible place, so the reward lands somewhere rather than
+   at a point in open water the player cannot see. (Player can watch or sail off and
+   come back — the cargo stays on the quay until collected.)
 6. **Loot.** Reward popup — see the loot table below.
-7. **Port.** The island is now yours: repair, restock ammo, buy upgrades, respawn here.
+7. **Port.** The harbour is now yours: repair, restock ammo, buy upgrades, respawn here.
 
 ## 7. Treasure map (the minimap)
 
@@ -189,7 +191,7 @@ Always-visible parchment minimap in a corner, tappable to expand full-screen.
 - Island silhouettes — only for discovered islands
 - Your fleet as small ship icons, heading indicated
 - Enemy contacts as red skulls, only inside your lookout radius
-- A red **X** on every captured island with treasure still buried
+- A red **X** on the harbour of every island with treasure still on its quay
 - Fog on undiscovered water; dashed line to your current course
 
 It draws from the same polygon data the islands are built from, so it costs almost nothing

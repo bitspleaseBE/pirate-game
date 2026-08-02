@@ -20,10 +20,23 @@ signal save_failed(reason: String)
 
 var _dirty: bool = false
 var _debounce_left: float = 0.0
+## When true, saves are accepted and dropped rather than written.
+##
+## `user://` is keyed off the project name, so every checkout, worktree and
+## running copy of the game shares one save.json. A harness that deliberately
+## mangles the run — `--wipe` hands itself a bank and then sinks the fleet — would
+## otherwise overwrite whatever the developer was actually playing, from a
+## headless process they did not think of as a game. The harness still exercises
+## the real code path; only the write at the end of it is dropped.
+var _read_only: bool = false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	var args: PackedStringArray = OS.get_cmdline_user_args()
+	_read_only = "--wipe" in args or "--no-save" in args
+	if _read_only:
+		Log.info("Save is read-only for this run", "Save")
 	load_settings()
 	# Persist on the way out, including a browser tab close.
 	get_tree().auto_accept_quit = false
@@ -54,6 +67,8 @@ func request_save() -> void:
 func save_now() -> bool:
 	_dirty = false
 	_debounce_left = 0.0
+	if _read_only:
+		return true
 
 	var payload: Dictionary = {
 		"version": SAVE_VERSION,

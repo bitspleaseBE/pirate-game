@@ -31,6 +31,7 @@ render_target_update_mode = 4
 unique_name_in_owner = true
 
 [node name="Ocean" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
 script = ExtResource("2_ocean")
 
 [node name="Archipelago" type="Node2D" parent="GameViewport/SubViewport/World"]
