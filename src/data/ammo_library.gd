@@ -81,7 +81,19 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.tint = Color(1.0, 0.55, 0.22)
 			a.visual_scale = 1.05
 			a.damage_mul = 0.55
-			a.burn_dps = 5.0
+			# Burn is a *bonus* on a weak impact, never the bulk of the kill.
+			#
+			# At 5 dps for 5 s the burn did 25 on top of an 11-damage impact:
+			# 36 against a 34-hull Skiff, so a single fire ball sank one all by
+			# itself, several seconds after it landed. That reads as the game
+			# killing things on its own rather than as the player landing a shot,
+			# and it threw away the two-hit Skiff entirely.
+			#
+			# The invariant — no single ball of any type may sink the weakest
+			# enemy hull — is asserted in Voyage._check_lethality. Keeping
+			# burn_dps * burn_duration under one round shot's impact holds it at
+			# every tier, because both scale off the same base_damage.
+			a.burn_dps = 3.2
 			a.burn_duration = 5.0
 			a.muzzle_speed = 640.0
 			a.max_stock = 12

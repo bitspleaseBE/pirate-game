@@ -331,6 +331,7 @@ func _run_smoke_test() -> void:
 	failures.append_array(_check_wind())
 	failures.append_array(_check_upgrades())
 	failures.append_array(_check_opening_island())
+	failures.append_array(_check_lethality())
 
 	if failures.is_empty():
 		print("SMOKE PASS")
@@ -508,7 +509,12 @@ func _check_opening_island() -> PackedStringArray:
 		if not is_instance_valid(raw):
 			continue
 		var island: Island = raw
-		if island.is_captured:
+		# Skip home by identity, not by `is_captured`. This is a check on world
+		# *generation*, and it runs at the end of the smoke run — by which point the
+		# run has usually taken the opening island. Filtering captured islands
+		# therefore measured the second-nearest island and failed precisely when the
+		# game had worked, which is the worst possible time for an assertion to fire.
+		if island == archipelago.home:
 			continue
 		var distance: float = island.global_position.distance_to(archipelago.home.global_position)
 		if distance < nearest_distance:
@@ -574,6 +580,41 @@ func _check_upgrades() -> PackedStringArray:
 		out.append("bought an upgrade with an empty wallet")
 	GameState.banked_gold = before
 
+	return out
+
+
+## No single ball may sink the weakest enemy hull.
+##
+## A two-hit Skiff is the opening island's whole lesson: present a beam, land a
+## shot, come around, land another. A shot type that kills in one replaces that
+## with "fire once and look away" — and fire shot did exactly that for a while,
+## putting 25 points of burn on top of an 11-damage impact against 34 hull, so the
+## kill landed several seconds after the shot and read as the game sinking ships
+## by itself.
+##
+## Checked against the *starting* hull on purpose. Both damage and enemy hulls
+## scale with tier, so the opening matchup is the tightest one — and it is the
+## matchup a new player judges the whole game on.
+func _check_lethality() -> PackedStringArray:
+	var out: PackedStringArray = []
+	var player: ShipStats = ShipStatsLibrary.get_stats(GameState.STARTING_HULL)
+	var weakest: ShipStats = ShipStatsLibrary.get_stats(&"skiff")
+
+	for ammo: AmmoType in AmmoLibrary.all():
+		# Everything one ball can take off a hull: the impact if it is aimed at the
+		# hull bar, whatever splashes onto it if it is not, and the whole burn.
+		var hull_damage: float = ammo.burn_dps * ammo.burn_duration
+		var impact: float = player.base_damage * ammo.damage_mul
+		if ammo.primary_bar == AmmoType.Bar.HULL:
+			hull_damage += impact
+		else:
+			hull_damage += impact * ammo.splash_bar_mul
+
+		if hull_damage >= weakest.max_hull:
+			out.append(
+				"one %s ball does %.0f to a %.0f-hull %s — no single ball may sink one"
+				% [ammo.display_name, hull_damage, weakest.max_hull, weakest.display_name]
+			)
 	return out
 
 
