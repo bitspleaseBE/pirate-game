@@ -389,18 +389,18 @@ func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 ## ([method Ship._pay_bounty]) this pays the first hull off by the second island,
 ## which is where the loop starts teaching itself.
 ##
-## Doubloons only come from the outer islands and the castle, per the design: they
+## Diamonds only come from the outer islands and the castle, per the design: they
 ## buy fleet slots, so a second ship should be something you sail *out* for rather
 ## than something the opening island hands you.
 func _fallback_loot() -> Dictionary:
 	const CHEST_GOLD_PER_TIER: int = 140
-	const CASTLE_DOUBLOONS: int = 4
+	const CASTLE_DIAMONDS: int = 4
 
 	var loot: Dictionary = {&"gold": CHEST_GOLD_PER_TIER * def.tier}
 	if def.has_castle:
-		loot[&"doubloon"] = CASTLE_DOUBLOONS
+		loot[&"diamond"] = CASTLE_DIAMONDS
 	elif def.tier >= 2:
-		loot[&"doubloon"] = 1
+		loot[&"diamond"] = 1
 	return loot
 
 

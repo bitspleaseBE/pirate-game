@@ -1,9 +1,10 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://src/ui/hud/hud.gd" id="1_hud"]
 [ext_resource type="Script" path="res://src/ui/hud/minimap.gd" id="2_minimap"]
 [ext_resource type="FontFile" path="res://assets/fonts/Cinzel.ttf" id="3_cinzel"]
 [ext_resource type="Texture2D" path="res://assets/wave1/icons/icon_gold.png" id="4_gold"]
+[ext_resource type="Texture2D" path="res://assets/wave1/icons/icon_diamond.png" id="7_diamond"]
 [ext_resource type="Texture2D" path="res://assets/wave1/icons/icon_wheel.png" id="5_wheel"]
 [ext_resource type="FontFile" path="res://assets/fonts/Alegreya.ttf" id="6_alegreya"]
 
@@ -96,14 +97,6 @@ texture = ExtResource("4_gold")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="GoldTag" type="Label" parent="Root/TopBar/Counters"]
-mouse_filter = 2
-theme_override_colors/font_color = Color(0.847059, 0.717647, 0.301961, 1)
-theme_override_fonts/font = SubResource("Font_label")
-theme_override_font_sizes/font_size = 16
-text = "GOLD"
-vertical_alignment = 1
-
 [node name="GoldLabel" type="Label" parent="Root/TopBar/Counters"]
 unique_name_in_owner = true
 mouse_filter = 2
@@ -112,15 +105,15 @@ theme_override_font_sizes/font_size = 22
 text = "0"
 vertical_alignment = 1
 
-[node name="DoubloonTag" type="Label" parent="Root/TopBar/Counters"]
+[node name="DiamondIcon" type="TextureRect" parent="Root/TopBar/Counters"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
 mouse_filter = 2
-theme_override_colors/font_color = Color(0.792157, 0.831373, 0.882353, 1)
-theme_override_fonts/font = SubResource("Font_label")
-theme_override_font_sizes/font_size = 16
-text = "DBL"
-vertical_alignment = 1
+texture = ExtResource("7_diamond")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="DoubloonLabel" type="Label" parent="Root/TopBar/Counters"]
+[node name="DiamondLabel" type="Label" parent="Root/TopBar/Counters"]
 unique_name_in_owner = true
 mouse_filter = 2
 theme_override_fonts/font = SubResource("Font_number")

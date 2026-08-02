@@ -61,8 +61,8 @@ func _refresh_quality() -> void:
 
 
 func _refresh_stats() -> void:
-	_stats_label.text = "Banked %d gold · %d doubloons · %d islands taken" % [
-		GameState.banked_gold, GameState.doubloons, GameState.stats_islands_captured
+	_stats_label.text = "Banked %d gold · %d diamonds · %d islands taken" % [
+		GameState.banked_gold, GameState.diamonds, GameState.stats_islands_captured
 	]
 
 

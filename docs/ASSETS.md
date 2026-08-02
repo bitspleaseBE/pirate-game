@@ -199,7 +199,7 @@ authored sets: down, up, side).
 |---|---|---|---|
 | `chest_closed` / `_open` | 2 | 48 sq | |
 | `coin_spin` | 6 | 24 sq | |
-| `doubloon_spin` | 6 | 28 sq | Distinct silhouette from coin |
+| `diamond_spin` | 6 | 28 sq | Distinct silhouette from coin |
 | `gem` | 4 | 24 sq | Colour variants |
 | `crate_ammo` | 5 | 40 sq | One per shot type, icon stencilled on the lid |
 | `kit_repair` | 1 | 40 sq | |
@@ -246,7 +246,7 @@ authored sets: down, up, side).
 
 Flat, two-tone, 64 px square, designed on a 4 px grid so they stay crisp at 24 px.
 
-Economy: `gold`, `doubloon`, `gem`, `chest`
+Economy: `gold`, `diamond`, `gem`, `chest`
 Ship: `hull`, `sail`, `cannon`, `anchor`, `wheel`, `crew`, `cargo`, `speed`, `turn`
 Ammo: `shot_round`, `shot_fire`, `shot_explosive`, `shot_chain`, `shot_grape`
 Actions: `ram`, `board`, `repair`, `fire`, `retreat`
@@ -306,7 +306,7 @@ wind gust (×2), rain loop (if weather ships)
 chest open, boarding clash (×4)
 
 **UI & rewards:** tap, confirm, cancel, tab switch, purchase, upgrade applied, coin pickup
-(×3), doubloon pickup, loot fanfare (small / big), level up, island captured, map open /
+(×3), diamond pickup, loot fanfare (small / big), level up, island captured, map open /
 close, error buzz, warning klaxon, boss horn
 
 **Subtotal: ~95 files (≈45 distinct sounds with variants).**

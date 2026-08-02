@@ -8,7 +8,7 @@ extends Resource
 
 @export var id: StringName = &"island_tier_1"
 ## Each entry: { kind: StringName, weight: float, min: int, max: int }
-## `kind` is one of: gold, doubloon, ammo_round, ammo_fire, ammo_explosive,
+## `kind` is one of: gold, diamond, ammo_round, ammo_fire, ammo_explosive,
 ## ammo_chain, ammo_grape, repair_kit, life, boost, blueprint, map_fragment
 @export var entries: Array[Dictionary] = []
 ## How many independent rolls one chest makes.

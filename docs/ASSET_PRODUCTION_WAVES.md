@@ -479,7 +479,7 @@ body proportions, equipment, baseline, and foot placement.
 
 **Assets**
 
-- `doubloon_spin`
+- `diamond_spin`
 - Four gem variants
 - Five `crate_ammo` variants using one crate master and stencil overlays
 - `kit_repair`

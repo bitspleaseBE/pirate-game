@@ -203,17 +203,17 @@ to render. The map *is* the world data, not a second copy of it.
 
 - **Gold** — from treasure, wrecks, cargo. Buys upgrades and repairs. Only *banked* at a
   port; gold on a sunk ship is lost.
-- **Doubloons** — rare, from bosses and successful boardings. Buys fleet slots and tier
+- **Diamonds** — rare, from bosses and successful boardings. Buys fleet slots and tier
   jumps.
 
 ### 8.2 Fleet slots
 
 Start with one ship. Slot 2 unlocks around the third island, slot 3 after the first
-castle. Both doubloon-gated.
+castle. Both diamond-gated.
 
 ### 8.3 Ship tiers
 
-Per slot, upgradeable with gold + doubloons. Tiers are **tradeoffs, not strict upgrades**:
+Per slot, upgradeable with gold + diamonds. Tiers are **tradeoffs, not strict upgrades**:
 
 | Tier | Drive | Rig | Hull | Cannons/side | Cargo | Speed | Turn |
 |---|---|---|---|---|---|---|---|
@@ -236,7 +236,7 @@ capacity) · Lookout (vision + minimap radius) · Carpenter (slow auto-repair)
 
 ### 8.5 Loot table
 
-Gold · Doubloon · Ammo crate (per shot type) · Repair kit · Extra life (respawn without
+Gold · Diamond · Ammo crate (per shot type) · Repair kit · Extra life (respawn without
 losing cargo) · Temporary boost — Double Shot / Ghost Sails / Iron Hull / Powder Monkey ·
 Upgrade blueprint · Map fragment (reveals a distant island)
 

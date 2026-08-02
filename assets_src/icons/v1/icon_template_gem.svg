@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <g transform="translate(32 32) scale(.82) translate(-32 -32)">
+    <path d="{{PATH}}" fill="#1f2527" stroke="#15191a" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="{{PATH}}" fill="#8fc3cc" stroke="#dff0f2" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" transform="translate(0 -1)"/>
+  </g>
+</svg>

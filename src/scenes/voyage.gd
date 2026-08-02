@@ -83,12 +83,15 @@ func _ready() -> void:
 	tutorial.fleet = fleet
 	# Briefings pause the tree, which an automated run has no way to dismiss —
 	# the world would sit frozen behind a modal and the harness would faithfully
-	# report that nothing happened. `--wipe` is excluded for a second reason: a
-	# fleet is only ever lost well after the opening briefing is done with, so a
-	# run that dies behind it is not testing the moment a player actually sees.
+	# report that nothing happened. `--shot-port` / `--shot-harbour` wait on
+	# scene-tree timers that do not tick while a briefing holds the pause.
+	# `--wipe` is excluded for a second reason: a fleet is only ever lost well
+	# after the opening briefing is done with, so a run that dies behind it is
+	# not testing the moment a player actually sees.
 	var harness_args: PackedStringArray = OS.get_cmdline_user_args()
 	tutorial.enabled = not (
 		"--smoke" in harness_args
+		or "--shot-port" in harness_args
 		or "--wipe" in harness_args
 		or "--shot-harbour" in harness_args
 	)
@@ -277,6 +280,12 @@ func _capture_port() -> void:
 	if hud.has_method(&"dismiss_briefing"):
 		hud.call(&"dismiss_briefing")
 	await get_tree().process_frame
+
+	# A fresh save banks nothing, so the shot used to be a column of identically
+	# dead rows — which is the one state that tells you nothing about how the shop
+	# looks. Enough gold for the cheap upgrades and not enough for a new hull puts
+	# both the affordable and the unaffordable treatment in the same frame.
+	GameState.banked_gold = maxi(GameState.banked_gold, 182)
 
 	EventBus.intent_open_port.emit(port)
 	await get_tree().create_timer(0.6).timeout
