@@ -206,7 +206,20 @@ func _on_treasure_dug(_island: Node2D, loot: Dictionary) -> void:
 	_refresh_ammo()
 
 
+## "Ship lost!" is for losing *a* ship, not for losing the last one.
+##
+## [method Ship._sink] emits `died` before `ship_sunk`, and `died` is what walks
+## through FleetController into the voyage's game-over handler — so by the time
+## this runs the "your fleet is lost, this much gold is safe ashore" toast has
+## already been posted, and showing another one here silently replaced it. There
+## is only one toast slot, so the wipe read as an unexplained trip back to the
+## menu with the player's gold apparently untouched. The last hull is the one
+## moment the smaller message has nothing to add.
 func _on_ship_sunk(ship: Node2D, _killer: Node2D) -> void:
 	if ship is Ship and (ship as Ship).team == Teams.PLAYER:
-		show_toast("Ship lost!")
+		var fleet_alive: bool = (
+			_fleet != null and is_instance_valid(_fleet) and not _fleet.living_ships().is_empty()
+		)
+		if fleet_alive:
+			show_toast("Ship lost!")
 	_refresh_fleet()
