@@ -75,6 +75,7 @@ func _ready() -> void:
 
 	fleet.fleet_emptied.connect(_on_fleet_emptied)
 	EventBus.intent_open_port.connect(_on_open_port)
+	EventBus.intent_dig.connect(_on_intent_dig)
 	EventBus.island_captured.connect(_on_island_captured)
 	director.landing_started.connect(_on_landing_started)
 
@@ -456,6 +457,14 @@ func _update_wind_availability() -> void:
 
 func _on_landing_started(island: Node2D) -> void:
 	_toast("Landing party ashore at %s…" % (island as Island).def.display_name)
+
+
+## Tapping an island you hold that still has gold buried on it sets a course for
+## its beach. The toast is what tells the player the tap did something, since the
+## ship itself may take a while to come about.
+func _on_intent_dig(island: Node2D) -> void:
+	Audio.play_ui(&"ui_confirm")
+	_toast("Making for the beach at %s…" % (island as Island).def.display_name)
 
 
 func _on_island_captured(island: Node2D) -> void:

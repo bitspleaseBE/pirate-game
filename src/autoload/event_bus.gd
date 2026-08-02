@@ -11,6 +11,9 @@ signal intent_move(world_pos: Vector2)
 signal intent_target(entity: Node2D)
 signal intent_select_ship(ship: Node2D)
 signal intent_open_port(island: Node2D)
+## "Go and get the treasure on that island." Consumed by the spawn director,
+## which owns the landing party.
+signal intent_dig(island: Node2D)
 signal intent_cycle_ammo()
 
 # --- Combat ---

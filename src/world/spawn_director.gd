@@ -52,6 +52,7 @@ var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
 	_rng.seed = GameState.voyage_seed if GameState.voyage_seed != 0 else randi()
+	EventBus.intent_dig.connect(_on_intent_dig)
 
 
 func _process(delta: float) -> void:
@@ -77,7 +78,7 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 		island.mark_discovered()
 
 	if island.is_captured:
-		_tick_landing(island, focus, delta)
+		_tick_landing(island, delta)
 		return
 
 	if not island.is_alerted:
@@ -183,18 +184,38 @@ func _garrison_count(island: Island) -> int:
 	return (_garrisons.get(island, []) as Array).size()
 
 
-## After a capture, send the nearest ship to the beach so the landing party can go
-## ashore. The player can override it — tapping elsewhere cancels the approach,
-## and the treasure stays buried until they come back.
-func _begin_landing_approach(island: Island) -> void:
-	var nearest: Ship = _nearest_ship(island.anchor_point)
-	if nearest == null:
+## The player asked for the treasure on an island they hold. Same approach the
+## capture triggers automatically — this is the way back to it after the player
+## has sailed off and the automatic course was cancelled.
+func _on_intent_dig(node: Node2D) -> void:
+	var island := node as Island
+	if island == null or fleet == null or not is_instance_valid(fleet):
 		return
-	nearest.set_target(null)
-	nearest.set_course(island.anchor_point)
+	if not island.is_captured or not island.def.is_treasure_remaining():
+		return
+	_begin_landing_approach(island)
 
 
-func _tick_landing(island: Island, focus: Vector2, delta: float) -> void:
+## Send a ship to the beach so the landing party can go ashore. The player can
+## override it — tapping elsewhere cancels the approach, and the treasure stays
+## buried until they come back.
+##
+## The order goes to the *selected* hull, not to whichever one happens to be
+## nearest: an unselected ship is station-keeping on the leader, so
+## [method FleetController._update_escorts] would overwrite its course on the
+## next physics frame and the landing party would never arrive. Ordering the
+## leader also brings the escorts along behind it.
+func _begin_landing_approach(island: Island) -> void:
+	var ship: Ship = fleet.selected
+	if ship == null or not is_instance_valid(ship) or not ship.alive:
+		ship = _nearest_ship(island.anchor_point)
+	if ship == null:
+		return
+	ship.set_target(null)
+	ship.set_course(ship.clamp_to_navigable(island.anchor_point))
+
+
+func _tick_landing(island: Island, delta: float) -> void:
 	if not island.def.is_treasure_remaining():
 		return
 
@@ -209,7 +230,14 @@ func _tick_landing(island: Island, focus: Vector2, delta: float) -> void:
 		landing_finished.emit(island, loot)
 		return
 
-	if focus.distance_to(island.anchor_point) <= LANDING_DISTANCE:
+	# Any single hull at the anchor launches the boat. Measuring the fleet
+	# centroid instead means two escorts trailing astern can hold the average out
+	# past the trigger while the ship the player actually steered is sitting on
+	# top of the beach, waiting for nothing.
+	var nearest: Ship = _nearest_ship(island.anchor_point)
+	if nearest == null:
+		return
+	if nearest.global_position.distance_to(island.anchor_point) <= LANDING_DISTANCE:
 		_landing_left[island] = LANDING_DURATION
 		landing_started.emit(island)
 		Log.info("Landing party ashore at %s" % island.def.display_name, "Spawn")
