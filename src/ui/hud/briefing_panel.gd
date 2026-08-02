@@ -69,6 +69,7 @@ func present(title: String, lines: PackedStringArray, button_text: String = "GOT
 	_button.text = button_text
 	_button.custom_minimum_size = Vector2(0, 50)
 	_button.add_theme_font_size_override("font_size", 16)
+	Wave1UI.apply_brass(_button)
 	var font: FontFile = _font()
 	if font != null:
 		_button.add_theme_font_override("font", font)

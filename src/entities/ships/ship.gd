@@ -61,6 +61,14 @@ const ORBIT_OFFSET_RAD: float = 0.78
 ## a per-frame servo, and running it at 60 Hz just produces a twitchy helm.
 const ENGAGE_HZ: float = 5.0
 
+const SHIP_SHADOW: Texture2D = preload("res://assets/wave1/ships/ship_shadow.png")
+const WAKE_FOAM_FRAMES: Array[Texture2D] = [
+	preload("res://assets/wave1/ships/wake_foam_0.png"),
+	preload("res://assets/wave1/ships/wake_foam_1.png"),
+	preload("res://assets/wave1/ships/wake_foam_2.png"),
+	preload("res://assets/wave1/ships/wake_foam_3.png"),
+]
+
 @export var stats: ShipStats
 @export var team: int = Teams.PLAYER
 
@@ -97,6 +105,8 @@ var _retaliate_left: float = 0.0
 var _wake: GPUParticles2D = null
 var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
+var _ship_shadow: Sprite2D = null
+var _bow_foam: AnimatedSprite2D = null
 
 
 func _ready() -> void:
@@ -109,8 +119,10 @@ func _ready() -> void:
 
 	_hull_sprite = get_node_or_null(^"Visual/Hull") as Sprite2D
 	_apply_stats_to_visual()
+	_build_ship_art()
 	_setup_collision()
 	_build_wake_visuals()
+	Quality.tier_changed.connect(_on_ship_quality_changed)
 
 	Grid.add(self, Teams.grid_kind(team), stats.hull_radius)
 	Cull.register(self)
@@ -134,6 +146,7 @@ func set_lod_tier(tier: int) -> void:
 		# the first thing to go when a ship is far away. The trail stays: it is one
 		# draw call and it is the only thing telling the player anything is moving.
 		_wake.emitting = full and _wake_allowed()
+	_update_ship_art_visibility()
 
 
 ## Called by [CullingManager] while off screen. Deliberately coarse: no steering
@@ -174,6 +187,7 @@ func _physics_process(delta: float) -> void:
 	global_position = clamp_out_of_land(global_position)
 	Grid.update(self)
 	_tick_guns(delta)
+	_update_ship_art_visibility()
 	if _retaliate_left > 0.0:
 		_retaliate_left -= delta
 
@@ -746,6 +760,65 @@ func _apply_stats_to_visual() -> void:
 		_hull_sprite.texture = stats.hull_texture
 	_hull_sprite.scale = Vector2.ONE * stats.sprite_scale
 	_hull_sprite.self_modulate = stats.accent_color
+
+
+## Adds the Wave 1 shadow and animated bow churn without changing the modular
+## Wave 0 hull composition. Both are presentation-only children of the hull.
+func _build_ship_art() -> void:
+	var visual: Node2D = get_node_or_null(^"Visual") as Node2D
+	if visual == null:
+		return
+
+	_ship_shadow = Sprite2D.new()
+	_ship_shadow.name = "ShipShadow"
+	_ship_shadow.texture = SHIP_SHADOW
+	_ship_shadow.position = Vector2(8.0, 12.0)
+	_ship_shadow.z_index = -2
+	# The authored shadow is Sloop-sized; derive scale from physical hull width so
+	# the Skiff does not inherit a Sloop's silhouette.
+	var shadow_scale: float = 0.5 * (stats.hull_radius * 2.0) / 96.0
+	_ship_shadow.scale = Vector2.ONE * shadow_scale
+	visual.add_child(_ship_shadow)
+	visual.move_child(_ship_shadow, 0)
+
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed(&"default", 10.0)
+	frames.set_animation_loop(&"default", true)
+	for texture: Texture2D in WAKE_FOAM_FRAMES:
+		frames.add_frame(&"default", texture)
+
+	_bow_foam = AnimatedSprite2D.new()
+	_bow_foam.name = "BowFoam"
+	_bow_foam.sprite_frames = frames
+	_bow_foam.position = Vector2(0.0, -stats.hull_radius * 0.88)
+	_bow_foam.scale = Vector2.ONE * 0.5 * stats.hull_radius / 48.0
+	_bow_foam.z_index = -1
+	_bow_foam.play(&"default")
+	visual.add_child(_bow_foam)
+	visual.move_child(_bow_foam, 1)
+	_update_ship_art_visibility()
+
+
+func _update_ship_art_visibility() -> void:
+	if _ship_shadow != null:
+		_ship_shadow.visible = Quality.shadow_mode >= 1
+	if _bow_foam != null:
+		var speed_fraction: float = velocity.length() / maxf(1.0, stats.max_speed)
+		var should_show: bool = (
+			lod == Cull.Lod.FULL
+			and _wake_allowed()
+			and speed_fraction >= WakeTrail.MIN_SPEED_FRACTION
+		)
+		if _bow_foam.visible != should_show:
+			_bow_foam.visible = should_show
+			if should_show:
+				_bow_foam.play(&"default")
+			else:
+				_bow_foam.pause()
+
+
+func _on_ship_quality_changed(_tier: int) -> void:
+	_update_ship_art_visibility()
 
 
 func _setup_collision() -> void:

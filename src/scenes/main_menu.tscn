@@ -33,6 +33,7 @@ offset_bottom = 190.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 14
+alignment = 1
 
 [node name="Title" type="Label" parent="Centre"]
 layout_mode = 2
@@ -56,7 +57,7 @@ layout_mode = 2
 
 [node name="NewVoyageButton" type="Button" parent="Centre"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 60)
+custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("2_font")
 theme_override_font_sizes/font_size = 20
@@ -64,7 +65,7 @@ text = "NEW VOYAGE"
 
 [node name="ContinueButton" type="Button" parent="Centre"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("2_font")
 theme_override_font_sizes/font_size = 17
@@ -72,7 +73,7 @@ text = "CONTINUE"
 
 [node name="QualityButton" type="Button" parent="Centre"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
 theme_override_fonts/font = ExtResource("2_font")
 theme_override_font_sizes/font_size = 14

@@ -14,6 +14,24 @@ extends Control
 
 
 func _ready() -> void:
+	for button: Button in [_new_button, _continue_button, _quality_button]:
+		Wave1UI.apply_brass(button)
+	# One icon size, because the three buttons are now one height. The brass
+	# stylebox is a horizontal-only 9-slice, so its vertical band stretches to
+	# whatever height the button is: three different heights meant three
+	# different stretches of the same bevel, which read as a bug rather than as
+	# hierarchy. New Voyage is the primary action by being first and by being the
+	# only lit button when there is no save to continue.
+	Wave1UI.set_icon(
+		_new_button, preload("res://assets/wave1/icons/icon_chest.png"), 36
+	)
+	Wave1UI.set_icon(
+		_continue_button, preload("res://assets/wave1/icons/icon_map.png"), 36
+	)
+	Wave1UI.set_icon(
+		_quality_button, preload("res://assets/wave1/icons/icon_settings.png"), 36
+	)
+
 	_new_button.pressed.connect(_on_new_voyage)
 	_continue_button.pressed.connect(_on_continue)
 	_quality_button.pressed.connect(_on_cycle_quality)

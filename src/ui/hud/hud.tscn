@@ -1,8 +1,37 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://src/ui/hud/hud.gd" id="1_hud"]
 [ext_resource type="Script" path="res://src/ui/hud/minimap.gd" id="2_minimap"]
-[ext_resource type="FontFile" path="res://assets/fonts/KenneyFuture.ttf" id="3_font"]
+[ext_resource type="FontFile" path="res://assets/fonts/Cinzel.ttf" id="3_cinzel"]
+[ext_resource type="Texture2D" path="res://assets/wave1/icons/icon_gold.png" id="4_gold"]
+[ext_resource type="Texture2D" path="res://assets/wave1/icons/icon_wheel.png" id="5_wheel"]
+[ext_resource type="FontFile" path="res://assets/fonts/Alegreya.ttf" id="6_alegreya"]
+
+[sub_resource type="FontVariation" id="Font_label"]
+base_font = ExtResource("3_cinzel")
+variation_opentype = {
+"wght": 700
+}
+spacing_glyph = 1
+
+[sub_resource type="FontVariation" id="Font_number"]
+base_font = ExtResource("6_alegreya")
+variation_opentype = {
+"wght": 800
+}
+opentype_features = {
+"lnum": 1,
+"tnum": 1
+}
+
+[sub_resource type="FontVariation" id="Font_body"]
+base_font = ExtResource("6_alegreya")
+variation_opentype = {
+"wght": 700
+}
+opentype_features = {
+"lnum": 1
+}
 
 [sub_resource type="StyleBoxFlat" id="Style_panel"]
 content_margin_left = 12.0
@@ -59,35 +88,43 @@ theme_override_styles/panel = SubResource("Style_panel")
 mouse_filter = 2
 theme_override_constants/separation = 16
 
+[node name="GoldIcon" type="TextureRect" parent="Root/TopBar/Counters"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("4_gold")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="GoldTag" type="Label" parent="Root/TopBar/Counters"]
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.847059, 0.717647, 0.301961, 1)
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 15
+theme_override_fonts/font = SubResource("Font_label")
+theme_override_font_sizes/font_size = 16
 text = "GOLD"
 vertical_alignment = 1
 
 [node name="GoldLabel" type="Label" parent="Root/TopBar/Counters"]
 unique_name_in_owner = true
 mouse_filter = 2
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 20
+theme_override_fonts/font = SubResource("Font_number")
+theme_override_font_sizes/font_size = 22
 text = "0"
 vertical_alignment = 1
 
 [node name="DoubloonTag" type="Label" parent="Root/TopBar/Counters"]
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.792157, 0.831373, 0.882353, 1)
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 15
+theme_override_fonts/font = SubResource("Font_label")
+theme_override_font_sizes/font_size = 16
 text = "DBL"
 vertical_alignment = 1
 
 [node name="DoubloonLabel" type="Label" parent="Root/TopBar/Counters"]
 unique_name_in_owner = true
 mouse_filter = 2
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 20
+theme_override_fonts/font = SubResource("Font_number")
+theme_override_font_sizes/font_size = 22
 text = "0"
 vertical_alignment = 1
 
@@ -103,8 +140,8 @@ mouse_filter = 2
 theme_override_colors/font_color = Color(0.980392, 0.941176, 0.827451, 1)
 theme_override_colors/font_outline_color = Color(0.0431373, 0.113725, 0.176471, 1)
 theme_override_constants/outline_size = 8
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 20
+theme_override_fonts/font = SubResource("Font_body")
+theme_override_font_sizes/font_size = 24
 text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -130,7 +167,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -228.0
-offset_top = -172.0
+offset_top = -194.0
 offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 0
@@ -148,28 +185,36 @@ theme_override_styles/panel = SubResource("Style_panel")
 mouse_filter = 2
 theme_override_constants/separation = 10
 
+[node name="FleetIcon" type="TextureRect" parent="Root/BottomRight/FleetRow/FleetBox"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+mouse_filter = 2
+texture = ExtResource("5_wheel")
+expand_mode = 1
+stretch_mode = 5
+
 [node name="FleetTag" type="Label" parent="Root/BottomRight/FleetRow/FleetBox"]
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.639216, 0.717647, 0.780392, 1)
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 14
+theme_override_fonts/font = SubResource("Font_label")
+theme_override_font_sizes/font_size = 15
 text = "FLEET"
 vertical_alignment = 1
 
 [node name="FleetLabel" type="Label" parent="Root/BottomRight/FleetRow/FleetBox"]
 unique_name_in_owner = true
 mouse_filter = 2
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 18
+theme_override_fonts/font = SubResource("Font_number")
+theme_override_font_sizes/font_size = 20
 text = "1 / 1"
 vertical_alignment = 1
 
 [node name="AmmoButton" type="Button" parent="Root/BottomRight"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 68)
+custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 15
+theme_override_fonts/font = SubResource("Font_label")
+theme_override_font_sizes/font_size = 14
 text = "Round Shot"
 
 [node name="AmmoCount" type="Label" parent="Root/BottomRight"]
@@ -177,7 +222,7 @@ unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.847059, 0.717647, 0.301961, 1)
-theme_override_fonts/font = ExtResource("3_font")
-theme_override_font_sizes/font_size = 16
+theme_override_fonts/font = SubResource("Font_number")
+theme_override_font_sizes/font_size = 17
 text = "0"
 horizontal_alignment = 2

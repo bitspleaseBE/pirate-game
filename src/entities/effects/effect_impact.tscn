@@ -1,26 +1,29 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://src/entities/effects/pooled_effect.gd" id="1_fx"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_impact_wood_0.png" id="2_f0"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_impact_wood_1.png" id="3_f1"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_impact_wood_2.png" id="4_f2"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_impact_wood_3.png" id="5_f3"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_impact_wood_4.png" id="6_f4"]
 
-[sub_resource type="Gradient" id="Gradient_impact"]
-offsets = PackedFloat32Array(0, 0.35, 0.75, 1)
-colors = PackedColorArray(1, 0.96, 0.82, 1, 0.95, 0.72, 0.38, 0.9, 0.55, 0.36, 0.22, 0.5, 0.35, 0.25, 0.18, 0)
-
-[sub_resource type="GradientTexture2D" id="Tex_impact"]
-gradient = SubResource("Gradient_impact")
-width = 64
-height = 64
-fill = 1
-fill_from = Vector2(0.5, 0.5)
-fill_to = Vector2(1, 0.5)
+[sub_resource type="SpriteFrames" id="Frames_impact"]
+animations = [{
+"frames": [{"duration": 1.0, "texture": ExtResource("2_f0")}, {"duration": 1.0, "texture": ExtResource("3_f1")}, {"duration": 1.0, "texture": ExtResource("4_f2")}, {"duration": 1.0, "texture": ExtResource("5_f3")}, {"duration": 1.0, "texture": ExtResource("6_f4")}],
+"loop": false,
+"name": &"default",
+"speed": 20.0
+}]
 
 [node name="EffectImpact" type="Node2D"]
 script = ExtResource("1_fx")
 pool_name = &"impact"
-duration = 0.3
-start_scale = 0.25
-end_scale = 1.1
-spin = 1.4
+duration = 0.26
+start_scale = 0.5
+end_scale = 0.5
+fade_out = false
+spin = 0.0
 
-[node name="Sprite" type="Sprite2D" parent="."]
-texture = SubResource("Tex_impact")
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("Frames_impact")
+autoplay = "default"

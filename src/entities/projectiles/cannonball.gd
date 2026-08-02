@@ -14,6 +14,8 @@ extends Node2D
 const SHADOW_SCALE_GROUND: float = 1.0
 const SHADOW_SCALE_APEX: float = 0.45
 const SHADOW_ALPHA: float = 0.28
+## Shipping PNGs are rendered at 2x nominal size.
+const ART_SCALE: float = 0.5
 
 var origin: Vector2 = Vector2.ZERO
 var impact_point: Vector2 = Vector2.ZERO
@@ -75,7 +77,7 @@ func launch(
 		# without five sprites. Mid-fight the player needs to know at a glance what
 		# is in the air, both theirs and the enemy's.
 		_ball.self_modulate = ammo.tint
-		_ball.scale = Vector2.ONE * ammo.visual_scale
+		_ball.scale = Vector2.ONE * ammo.visual_scale * ART_SCALE
 	_visual_scale = ammo.visual_scale
 
 	global_position = from
@@ -107,6 +109,7 @@ func _apply_altitude(height01: float) -> void:
 			Vector2.ONE
 			* lerpf(SHADOW_SCALE_GROUND, SHADOW_SCALE_APEX, height01)
 			* _visual_scale
+			* ART_SCALE
 		)
 
 

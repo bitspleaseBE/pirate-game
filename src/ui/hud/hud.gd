@@ -7,6 +7,20 @@ extends CanvasLayer
 ## because that is where the player taps to sail.
 ##
 ## The layout lives in `hud.tscn`; this script only wires it to state.
+##
+## Two typefaces, split by job, both defined as FontVariations in the scene:
+##
+## - **Cinzel** (`Font_label`) for the tags — GOLD, DBL, FLEET, the ammo name.
+##   A Roman inscriptional face cut for stone and ship's nameplates, so it
+##   carries the period without costing anything: these are short all-caps
+##   words the player recognises by shape, never reads letter by letter.
+## - **Alegreya** (`Font_number`, `Font_body`) for everything the player
+##   actually has to read — the counters and the toast. `tnum` puts the digits
+##   on a fixed pitch so a gold tally does not shuffle sideways as it ticks up.
+##
+## The old Kenney Future was a wide geometric display face: thin at 14 px over
+## a moving ocean, and its zero was a plain rounded rectangle, so "GOLD 0" read
+## as a missing glyph.
 
 const TOAST_DURATION: float = 2.6
 
@@ -33,6 +47,7 @@ func _ready() -> void:
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 
 	_ammo_button.pressed.connect(_on_ammo_pressed)
+	Wave1UI.apply_brass(_ammo_button)
 
 	_build_wind_indicator()
 	_refresh_all()
@@ -123,6 +138,8 @@ func _refresh_all() -> void:
 func _refresh_ammo() -> void:
 	var ammo: AmmoType = AmmoLibrary.get_ammo(GameState.selected_ammo)
 	_ammo_button.text = "%s\n%s" % [ammo.display_name, ammo.role]
+	if ammo.icon != null:
+		Wave1UI.set_icon(_ammo_button, ammo.icon, 38)
 	_ammo_button.add_theme_color_override("font_color", ammo.tint)
 	_ammo_count.add_theme_color_override("font_color", ammo.tint)
 	if ammo.unlimited:

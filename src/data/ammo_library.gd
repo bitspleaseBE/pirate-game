@@ -13,6 +13,11 @@ extends Object
 
 const ORDER: Array[StringName] = [&"round", &"fire", &"explosive", &"chain", &"grape"]
 
+const ICON_ROUND: Texture2D = preload("res://assets/wave1/icons/icon_shot_round.png")
+const ICON_FIRE: Texture2D = preload("res://assets/wave1/icons/icon_fire.png")
+const ICON_CANNON: Texture2D = preload("res://assets/wave1/icons/icon_cannon.png")
+const ICON_SAIL: Texture2D = preload("res://assets/wave1/icons/icon_sail.png")
+
 const PATHS: Dictionary = {
 	&"round": "res://assets/data/ammo/round.tres",
 	&"fire": "res://assets/data/ammo/fire.tres",
@@ -71,6 +76,7 @@ static func _fallback(id: StringName) -> AmmoType:
 	match id:
 		&"fire":
 			a.display_name = "Fire Shot"
+			a.icon = ICON_FIRE
 			a.role = "burns hulls"
 			a.tint = Color(1.0, 0.55, 0.22)
 			a.visual_scale = 1.05
@@ -81,6 +87,7 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		&"explosive":
 			a.display_name = "Explosive Shot"
+			a.icon = ICON_FIRE
 			a.role = "hits groups"
 			a.tint = Color(0.95, 0.82, 0.35)
 			a.visual_scale = 1.25
@@ -94,6 +101,7 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 8
 		&"chain":
 			a.display_name = "Chain Shot"
+			a.icon = ICON_SAIL
 			a.role = "shreds sails"
 			a.tint = Color(0.72, 0.78, 0.86)
 			a.visual_scale = 1.35
@@ -104,6 +112,7 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		&"grape":
 			a.display_name = "Grape Shot"
+			a.icon = ICON_CANNON
 			a.role = "kills crew"
 			a.tint = Color(0.86, 0.62, 0.66)
 			a.visual_scale = 0.7
@@ -116,6 +125,7 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.max_stock = 12
 		_:
 			a.display_name = "Round Shot"
+			a.icon = ICON_ROUND
 			a.role = "all-purpose"
 			a.tint = Color(0.85, 0.85, 0.88)
 			a.damage_mul = 1.0

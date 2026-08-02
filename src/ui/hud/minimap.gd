@@ -31,6 +31,8 @@ const LOOKOUT_RADIUS: float = 2600.0
 const WINDOW_WORLD_SIZE: float = 11000.0
 
 const PARCHMENT_TEXTURE: String = "res://assets/wave0/ui/panel_parchment.png"
+const MAP_X: Texture2D = preload("res://assets/wave1/map/map_x.png")
+const MAP_SHIP: Texture2D = preload("res://assets/wave1/map/map_ship_icon.png")
 
 var _parchment: Texture2D = null
 
@@ -131,8 +133,8 @@ func _draw_island(island: Island) -> void:
 
 
 func _draw_x(at: Vector2, r: float) -> void:
-	draw_line(at + Vector2(-r, -r), at + Vector2(r, r), MARK_X, 2.5)
-	draw_line(at + Vector2(r, -r), at + Vector2(-r, r), MARK_X, 2.5)
+	var size: Vector2 = Vector2.ONE * r * 2.4
+	draw_texture_rect(MAP_X, Rect2(at - size * 0.5, size), false)
 
 
 func _draw_contacts() -> void:
@@ -151,17 +153,14 @@ func _draw_fleet() -> void:
 	for ship: Ship in fleet.living_ships():
 		var at: Vector2 = to_map(ship.global_position)
 		var color: Color = SHIP_SELECTED if ship.selected else SHIP_PLAYER
-		# A little triangle rather than a dot, so heading is readable.
 		var heading: Vector2 = ship.forward()
-		var side: Vector2 = heading.orthogonal()
-		draw_colored_polygon(
-			PackedVector2Array([
-				at + heading * 6.0,
-				at - heading * 4.0 + side * 3.5,
-				at - heading * 4.0 - side * 3.5,
-			]),
-			color
+		# The icon master points up at rotation zero, while Vector2.angle() calls
+		# up -PI/2. The quarter turn keeps the painted prow on the true heading.
+		draw_set_transform(at, heading.angle() + PI * 0.5)
+		draw_texture_rect(
+			MAP_SHIP, Rect2(Vector2(-7.0, -9.0), Vector2(14.0, 18.0)), false, color
 		)
+		draw_set_transform(Vector2.ZERO, 0.0)
 
 
 func _draw_compass() -> void:

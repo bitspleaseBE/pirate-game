@@ -1,15 +1,32 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://src/entities/effects/pooled_effect.gd" id="1_fx"]
-[ext_resource type="Texture2D" path="res://assets/placeholder/explosion.png" id="2_tex"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_0.png" id="2_f0"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_1.png" id="3_f1"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_2.png" id="4_f2"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_3.png" id="5_f3"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_4.png" id="6_f4"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_5.png" id="7_f5"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_6.png" id="8_f6"]
+[ext_resource type="Texture2D" path="res://assets/wave1/vfx/fx_explosion_7.png" id="9_f7"]
+
+[sub_resource type="SpriteFrames" id="Frames_explosion"]
+animations = [{
+"frames": [{"duration": 1.0, "texture": ExtResource("2_f0")}, {"duration": 1.0, "texture": ExtResource("3_f1")}, {"duration": 1.0, "texture": ExtResource("4_f2")}, {"duration": 1.0, "texture": ExtResource("5_f3")}, {"duration": 1.0, "texture": ExtResource("6_f4")}, {"duration": 1.0, "texture": ExtResource("7_f5")}, {"duration": 1.0, "texture": ExtResource("8_f6")}, {"duration": 1.0, "texture": ExtResource("9_f7")}],
+"loop": false,
+"name": &"default",
+"speed": 15.0
+}]
 
 [node name="EffectExplosion" type="Node2D"]
 script = ExtResource("1_fx")
 pool_name = &"explosion"
-duration = 0.55
-start_scale = 0.3
-end_scale = 2.4
-spin = 0.9
+duration = 0.54
+start_scale = 0.5
+end_scale = 0.5
+fade_out = false
+spin = 0.0
 
-[node name="Sprite" type="Sprite2D" parent="."]
-texture = ExtResource("2_tex")
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("Frames_explosion")
+autoplay = "default"

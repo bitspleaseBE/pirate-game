@@ -24,8 +24,17 @@ const INTERIOR_INSET: float = 0.78
 const SURF_WIDTH: float = 14.0
 
 const SAND_TEXTURE: String = "res://assets/wave0/terrain/fill_sand.png"
-const PALM_TEXTURE: String = "res://assets/wave0/props/palm_0.png"
-const ROCK_TEXTURE: String = "res://assets/wave0/props/rock_0.png"
+const GRASS_TEXTURE: String = "res://assets/wave1/terrain/fill_grass.png"
+const PALM_TEXTURES: Array[String] = [
+	"res://assets/wave0/props/palm_0.png",
+	"res://assets/wave1/props/palm_1.png",
+]
+const ROCK_TEXTURES: Array[String] = [
+	"res://assets/wave0/props/rock_0.png",
+	"res://assets/wave1/props/rock_1.png",
+]
+const TREASURE_MOUND: String = "res://assets/wave1/props/treasure_mound.png"
+const TREASURE_X: String = "res://assets/wave1/props/x_marks_spot.png"
 ## Wave 0 masters are 2x nominal.
 const PROP_SCALE: float = 0.5
 ## Props per 1000px of island radius.
@@ -115,7 +124,18 @@ func _build_visuals() -> void:
 	var interior := Polygon2D.new()
 	interior.name = "Interior"
 	interior.polygon = _scaled_outline(INTERIOR_INSET)
-	interior.color = colors["interior"]
+	if (
+		def.biome in [IslandDef.Biome.TROPICAL, IslandDef.Biome.JUNGLE]
+		and ResourceLoader.exists(GRASS_TEXTURE)
+	):
+		interior.texture = load(GRASS_TEXTURE)
+		interior.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+		interior.texture_scale = Vector2(0.6, 0.6)
+		# Jungle reuses the same seamless material with the biome tint doing the
+		# grading. Later biomes remain procedural colours until their own fills land.
+		interior.color = colors["interior"].lightened(0.18)
+	else:
+		interior.color = colors["interior"]
 	add_child(interior)
 
 	_props = Node2D.new()
@@ -133,9 +153,9 @@ func _build_visuals() -> void:
 ## They are y-sorted within the Props container so a ship never draws behind a
 ## palm on the far side of the island.
 func _scatter_props() -> void:
-	var palm: Texture2D = load(PALM_TEXTURE) if ResourceLoader.exists(PALM_TEXTURE) else null
-	var rock: Texture2D = load(ROCK_TEXTURE) if ResourceLoader.exists(ROCK_TEXTURE) else null
-	if palm == null and rock == null:
+	var palms: Array[Texture2D] = _load_textures(PALM_TEXTURES)
+	var rocks: Array[Texture2D] = _load_textures(ROCK_TEXTURES)
+	if palms.is_empty() and rocks.is_empty():
 		return
 
 	var rng := RandomNumberGenerator.new()
@@ -145,9 +165,12 @@ func _scatter_props() -> void:
 	var palm_chance: float = 0.25 if def.biome >= IslandDef.Biome.ROCKY else 0.75
 
 	for i: int in count:
-		var texture: Texture2D = palm if (rng.randf() < palm_chance and palm != null) else rock
-		if texture == null:
+		var family: Array[Texture2D] = palms if rng.randf() < palm_chance else rocks
+		if family.is_empty():
+			family = rocks if not rocks.is_empty() else palms
+		if family.is_empty():
 			continue
+		var texture: Texture2D = family[rng.randi_range(0, family.size() - 1)]
 
 		var angle: float = rng.randf() * TAU
 		# Keep props off the waterline so none of them appear to float.
@@ -161,6 +184,14 @@ func _scatter_props() -> void:
 		sprite.scale = Vector2.ONE * PROP_SCALE * rng.randf_range(0.82, 1.15)
 		sprite.flip_h = rng.randf() < 0.5
 		_props.add_child(sprite)
+
+
+func _load_textures(paths: Array[String]) -> Array[Texture2D]:
+	var out: Array[Texture2D] = []
+	for path: String in paths:
+		if ResourceLoader.exists(path):
+			out.append(load(path) as Texture2D)
+	return out
 
 
 func _build_collision() -> void:
@@ -196,14 +227,21 @@ func _place_treasure() -> void:
 	marker.position = treasure_local
 	add_child(marker)
 
-	# Placeholder X. Replaced by `x_marks_spot` from the asset list.
-	for i: int in 2:
-		var stroke := Line2D.new()
-		var dir: Vector2 = Vector2(1, 1) if i == 0 else Vector2(1, -1)
-		stroke.points = PackedVector2Array([-dir * 22.0, dir * 22.0])
-		stroke.width = 7.0
-		stroke.default_color = Color("b5372c")
-		marker.add_child(stroke)
+	if ResourceLoader.exists(TREASURE_MOUND):
+		var mound := Sprite2D.new()
+		mound.name = "Mound"
+		mound.texture = load(TREASURE_MOUND)
+		mound.offset = Vector2(0.0, -mound.texture.get_height() * 0.5)
+		mound.scale = Vector2.ONE * PROP_SCALE
+		marker.add_child(mound)
+
+	if ResourceLoader.exists(TREASURE_X):
+		var mark := Sprite2D.new()
+		mark.name = "XMarksSpot"
+		mark.texture = load(TREASURE_X)
+		mark.scale = Vector2.ONE * PROP_SCALE
+		mark.position = Vector2(0.0, -8.0)
+		marker.add_child(mark)
 
 
 func _build_flag() -> void:

@@ -30,6 +30,18 @@ const FONT: String = "res://assets/fonts/KenneyFuture.ttf"
 const OBJECTIVE_INSET: float = 62.0
 const COLOR_OBJECTIVE: Color = Color("e8d9a8")
 
+const RETICLE_FRAMES: Array[Texture2D] = [
+	preload("res://assets/wave1/ui/reticle_target_0.png"),
+	preload("res://assets/wave1/ui/reticle_target_1.png"),
+	preload("res://assets/wave1/ui/reticle_target_2.png"),
+	preload("res://assets/wave1/ui/reticle_target_3.png"),
+]
+const WAYPOINT_FRAMES: Array[Texture2D] = [
+	preload("res://assets/wave1/ui/marker_waypoint_0.png"),
+	preload("res://assets/wave1/ui/marker_waypoint_1.png"),
+	preload("res://assets/wave1/ui/marker_waypoint_2.png"),
+	preload("res://assets/wave1/ui/marker_waypoint_3.png"),
+]
 var fleet: FleetController = null
 var archipelago: Archipelago = null
 
@@ -203,6 +215,9 @@ func _draw_bars(ship: Ship, s: float, include_cannons: bool) -> void:
 
 
 func _draw_selection(ship: Ship, s: float) -> void:
+	# Wave 1's authored selection frames are perspective ellipses. Rotating those
+	# in a strict top-down game reads as a wobble, so selection remains a clean
+	# circular vector ring whose stroke stays constant on screen.
 	var radius: float = ship.stats.hull_radius * 1.5
 	draw_arc(ship.global_position, radius, 0.0, TAU, 32, COLOR_SELECT, 3.0 * s, false)
 
@@ -210,20 +225,26 @@ func _draw_selection(ship: Ship, s: float) -> void:
 func _draw_course(ship: Ship, s: float) -> void:
 	_draw_dashed(ship.global_position, ship.nav_target, COLOR_COURSE, 2.0 * s, 22.0 * s)
 
-	var r: float = 12.0 * s
 	var p: Vector2 = ship.nav_target
-	draw_line(p + Vector2(-r, 0), p + Vector2(r, 0), COLOR_COURSE, 2.5 * s)
-	draw_line(p + Vector2(0, -r), p + Vector2(0, r), COLOR_COURSE, 2.5 * s)
+	var size: Vector2 = Vector2.ONE * 64.0 * s
+	# The authored pivot is at (32, 55) in nominal pixels: the pin's point, not
+	# the centre of its square texture, lands on the actual navigable destination.
+	var pivot: Vector2 = Vector2(32.0, 55.0) * s
+	draw_texture_rect(
+		_animated_frame(WAYPOINT_FRAMES, 8.0), Rect2(p - pivot, size), false
+	)
 
 
 func _draw_reticle(at: Vector2, s: float) -> void:
-	var radius: float = 40.0 * s
-	var spin: float = float(Time.get_ticks_msec()) * 0.0012
-	# Four corner brackets rather than a full circle: it reads as a lock-on and
-	# does not hide the ship underneath it.
-	for i: int in 4:
-		var start: float = spin + float(i) * TAU / 4.0
-		draw_arc(at, radius, start, start + 0.42, 6, COLOR_TARGET, 3.0 * s, false)
+	var size: Vector2 = Vector2.ONE * 80.0 * s
+	draw_texture_rect(
+		_animated_frame(RETICLE_FRAMES, 8.0), Rect2(at - size * 0.5, size), false
+	)
+
+
+func _animated_frame(frames: Array[Texture2D], fps: float) -> Texture2D:
+	var tick: int = floori(float(Time.get_ticks_msec()) * 0.001 * fps)
+	return frames[tick % frames.size()]
 
 
 func _draw_broadside_arcs(ship: Ship) -> void:

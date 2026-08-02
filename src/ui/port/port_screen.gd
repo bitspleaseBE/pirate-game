@@ -23,6 +23,12 @@ const GOLD: Color = Color("d9a12c")
 const TEXT: Color = Color("e6e2d3")
 const DIM: Color = Color("8a97a3")
 
+const ICON_HULL: Texture2D = preload("res://assets/wave1/icons/icon_hull.png")
+const ICON_SAIL: Texture2D = preload("res://assets/wave1/icons/icon_sail.png")
+const ICON_CANNON: Texture2D = preload("res://assets/wave1/icons/icon_cannon.png")
+const ICON_WHEEL: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
+const ICON_MAP: Texture2D = preload("res://assets/wave1/icons/icon_map.png")
+
 signal closed()
 
 var _island_name: String = "Port"
@@ -84,6 +90,8 @@ func present(island_name: String) -> void:
 	sail.custom_minimum_size = Vector2(0, 52)
 	sail.add_theme_font_size_override("font_size", 17)
 	_apply_font(sail)
+	Wave1UI.apply_brass(sail)
+	Wave1UI.set_icon(sail, preload("res://assets/wave1/icons/icon_anchor.png"), 38)
 	sail.pressed.connect(_close)
 	column.add_child(sail)
 
@@ -122,7 +130,8 @@ func _refresh() -> void:
 				_guns_phrase(next_stats.cannons_per_side), roundi(next_stats.max_hull)
 			],
 			hull_cost,
-			_buy_hull.bind(next_hull)
+			_buy_hull.bind(next_hull),
+			ICON_HULL
 		)
 
 	for id: StringName in UpgradeLibrary.ORDER:
@@ -131,9 +140,11 @@ func _refresh() -> void:
 		var cost: int = UpgradeLibrary.next_cost(upgrades, id)
 		var title: String = "%s  ·  %d/%d" % [UpgradeLibrary.display_name(id), level, maximum]
 		if cost < 0:
-			_add_row(title, "Fully upgraded.", -1, Callable())
+			_add_row(title, "Fully upgraded.", -1, Callable(), _upgrade_icon(id))
 		else:
-			_add_row(title, UpgradeLibrary.blurb(id), cost, _buy_upgrade.bind(id))
+			_add_row(
+				title, UpgradeLibrary.blurb(id), cost, _buy_upgrade.bind(id), _upgrade_icon(id)
+			)
 
 	var short_of_ammo: bool = false
 	for ammo_id: StringName in AmmoLibrary.ORDER:
@@ -145,7 +156,8 @@ func _refresh() -> void:
 			"RESTOCK SHOT",
 			"+%d of every special shot type." % AMMO_RESTOCK_AMOUNT,
 			AMMO_RESTOCK_COST,
-			_buy_ammo
+			_buy_ammo,
+			ICON_CANNON
 		)
 
 
@@ -153,7 +165,9 @@ func _guns_phrase(count: int) -> String:
 	return "1 gun a side" if count == 1 else "%d guns a side" % count
 
 
-func _add_row(title: String, blurb: String, cost: int, action: Callable) -> void:
+func _add_row(
+	title: String, blurb: String, cost: int, action: Callable, icon: Texture2D = null
+) -> void:
 	var button := Button.new()
 	button.custom_minimum_size = Vector2(0, 62)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -161,6 +175,9 @@ func _add_row(title: String, blurb: String, cost: int, action: Callable) -> void
 	# for. Hiding them would make the shop look empty and the loop look broken.
 	button.disabled = cost < 0 or GameState.banked_gold < cost
 	_apply_font(button)
+	Wave1UI.apply_brass(button)
+	if icon != null:
+		Wave1UI.set_icon(button, icon, 42)
 
 	var price: String = "MAXED" if cost < 0 else "%d g" % cost
 	button.text = "%s          %s\n%s" % [title, price, blurb]
@@ -173,6 +190,22 @@ func _add_row(title: String, blurb: String, cost: int, action: Callable) -> void
 	if action.is_valid() and not button.disabled:
 		button.pressed.connect(action)
 	_rows.add_child(button)
+
+
+func _upgrade_icon(id: StringName) -> Texture2D:
+	match id:
+		&"plating":
+			return ICON_HULL
+		&"rigging":
+			return ICON_SAIL
+		&"gunnery":
+			return ICON_CANNON
+		&"crew":
+			return ICON_WHEEL
+		&"lookout":
+			return ICON_MAP
+		_:
+			return null
 
 
 func _buy_upgrade(id: StringName) -> void:
