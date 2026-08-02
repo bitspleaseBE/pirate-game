@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/entities/ships/enemy_ship.gd" id="1_enemy"]
+
+[node name="EnemyShip" type="CharacterBody2D"]
+motion_mode = 1
+wall_min_slide_angle = 0.0
+script = ExtResource("1_enemy")
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+
+[node name="Visual" type="Node2D" parent="."]
+
+[node name="Hull" type="Sprite2D" parent="Visual"]

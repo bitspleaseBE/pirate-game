@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "render_scale": 2,
+  "assets": [
+    {
+      "id": "hull_sloop",
+      "source": "res://assets_src/ships/sloop/hull_sloop.svg",
+      "output": "res://assets/wave0/ships/hull_sloop.png",
+      "nominal": [96, 160],
+      "pivot": [48, 80],
+      "orientation": "bow_negative_y",
+      "atlas": "ships",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "hull_sloop_blue_proof",
+      "source": "res://assets_src/ships/sloop/hull_sloop.svg",
+      "output": "res://assets/wave0/ships/hull_sloop_blue_proof.png",
+      "nominal": [96, 160],
+      "pivot": [48, 80],
+      "orientation": "bow_negative_y",
+      "atlas": "proof",
+      "derived_from": "hull_sloop@1",
+      "replacements": {"#D9573F": "#3F78B8", "#A9342D": "#285481"},
+      "padding": true
+    },
+    {
+      "id": "hull_sloop_green_proof",
+      "source": "res://assets_src/ships/sloop/hull_sloop.svg",
+      "output": "res://assets/wave0/ships/hull_sloop_green_proof.png",
+      "nominal": [96, 160],
+      "pivot": [48, 80],
+      "orientation": "bow_negative_y",
+      "atlas": "proof",
+      "derived_from": "hull_sloop@1",
+      "replacements": {"#D9573F": "#4F8D3A", "#A9342D": "#28582E"},
+      "padding": true
+    },
+    {
+      "id": "hull_sloop_gold_proof",
+      "source": "res://assets_src/ships/sloop/hull_sloop.svg",
+      "output": "res://assets/wave0/ships/hull_sloop_gold_proof.png",
+      "nominal": [96, 160],
+      "pivot": [48, 80],
+      "orientation": "bow_negative_y",
+      "atlas": "proof",
+      "derived_from": "hull_sloop@1",
+      "replacements": {"#D9573F": "#D59C2E", "#A9342D": "#8B601A"},
+      "padding": true
+    },
+    {
+      "id": "hull_sloop_accent_mask",
+      "source": "res://assets_src/ships/sloop/hull_sloop_accent_mask.svg",
+      "output": "res://assets/wave0/ships/hull_sloop_accent_mask.png",
+      "nominal": [96, 160],
+      "pivot": [48, 80],
+      "orientation": "bow_negative_y",
+      "atlas": "ships",
+      "derived_from": "hull_sloop@1",
+      "padding": true
+    },
+    {
+      "id": "hull_skiff",
+      "source": "res://assets_src/ships/skiff/hull_skiff.svg",
+      "output": "res://assets/wave0/ships/hull_skiff.png",
+      "nominal": [48, 72],
+      "pivot": [24, 36],
+      "orientation": "bow_negative_y",
+      "atlas": "ships",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "sail_med",
+      "source": "res://assets_src/ships/sloop/sail_med.svg",
+      "output": "res://assets/wave0/ships/sail_med.png",
+      "nominal": [110, 110],
+      "pivot": [55, 55],
+      "atlas": "ships",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "cannon_mount",
+      "source": "res://assets_src/ships/sloop/cannon_mount.svg",
+      "output": "res://assets/wave0/ships/cannon_mount.png",
+      "nominal": [32, 20],
+      "pivot": [6, 10],
+      "orientation": "fires_positive_x",
+      "atlas": "ships",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "flag_wave_0",
+      "source": "res://assets_src/ships/sloop/flag_wave_0.svg",
+      "output": "res://assets/wave0/ships/flag_wave_0.png",
+      "nominal": [24, 32],
+      "pivot": [5, 29],
+      "atlas": "ships",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "flag_wave_1",
+      "source": "res://assets_src/ships/sloop/flag_wave_1.svg",
+      "output": "res://assets/wave0/ships/flag_wave_1.png",
+      "nominal": [24, 32],
+      "pivot": [5, 29],
+      "atlas": "ships",
+      "derived_from": "flag_wave_0@1",
+      "padding": true
+    },
+    {
+      "id": "palm_0",
+      "source": "res://assets_src/props/palm/palm_0.svg",
+      "output": "res://assets/wave0/props/palm_0.png",
+      "nominal": [64, 96],
+      "pivot": [32, 94],
+      "atlas": "props",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "rock_0",
+      "source": "res://assets_src/props/rock/rock_0.svg",
+      "output": "res://assets/wave0/props/rock_0.png",
+      "nominal": [64, 64],
+      "pivot": [32, 62],
+      "atlas": "props",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "panel_parchment",
+      "source": "res://assets_src/ui/panel_parchment.svg",
+      "output": "res://assets/wave0/ui/panel_parchment.png",
+      "nominal": [192, 128],
+      "pivot": [96, 64],
+      "atlas": "ui",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "icon_cannon",
+      "source": "res://assets_src/icons/icon_cannon.svg",
+      "output": "res://assets/wave0/icons/icon_cannon.png",
+      "nominal": [64, 64],
+      "pivot": [32, 32],
+      "atlas": "icons",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "fill_sand",
+      "source": "res://assets_src/terrain/fill_sand.svg",
+      "output": "res://assets/wave0/terrain/fill_sand.png",
+      "nominal": [256, 256],
+      "pivot": [0, 0],
+      "atlas": "terrain",
+      "master_revision": 1,
+      "padding": false
+    },
+    {
+      "id": "edge_shore",
+      "source": "res://assets_src/terrain/edge_shore.svg",
+      "output": "res://assets/wave0/terrain/edge_shore.png",
+      "nominal": [128, 48],
+      "pivot": [64, 24],
+      "atlas": "terrain",
+      "master_revision": 1,
+      "padding": false
+    },
+    {
+      "id": "fx_muzzleflash_0",
+      "source": "res://assets_src/vfx/fx_muzzleflash_0.svg",
+      "output": "res://assets/wave0/vfx/fx_muzzleflash_0.png",
+      "nominal": [64, 64],
+      "pivot": [8, 32],
+      "orientation": "fires_positive_x",
+      "atlas": "vfx",
+      "master_revision": 1,
+      "padding": true
+    },
+    {
+      "id": "fx_muzzleflash_1",
+      "source": "res://assets_src/vfx/fx_muzzleflash_1.svg",
+      "output": "res://assets/wave0/vfx/fx_muzzleflash_1.png",
+      "nominal": [64, 64],
+      "pivot": [8, 32],
+      "orientation": "fires_positive_x",
+      "atlas": "vfx",
+      "derived_from": "fx_muzzleflash_0@1",
+      "padding": true
+    },
+    {
+      "id": "fx_muzzleflash_2",
+      "source": "res://assets_src/vfx/fx_muzzleflash_2.svg",
+      "output": "res://assets/wave0/vfx/fx_muzzleflash_2.png",
+      "nominal": [64, 64],
+      "pivot": [8, 32],
+      "orientation": "fires_positive_x",
+      "atlas": "vfx",
+      "derived_from": "fx_muzzleflash_0@1",
+      "padding": true
+    },
+    {
+      "id": "fx_muzzleflash_3",
+      "source": "res://assets_src/vfx/fx_muzzleflash_3.svg",
+      "output": "res://assets/wave0/vfx/fx_muzzleflash_3.png",
+      "nominal": [64, 64],
+      "pivot": [8, 32],
+      "orientation": "fires_positive_x",
+      "atlas": "vfx",
+      "derived_from": "fx_muzzleflash_0@1",
+      "padding": true
+    }
+  ]
+}

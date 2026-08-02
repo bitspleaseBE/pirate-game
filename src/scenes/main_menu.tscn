@@ -1,0 +1,121 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/scenes/main_menu.gd" id="1_menu"]
+[ext_resource type="FontFile" path="res://assets/fonts/KenneyFuture.ttf" id="2_font"]
+
+[sub_resource type="StyleBoxFlat" id="Style_bg"]
+bg_color = Color(0.0431373, 0.113725, 0.176471, 1)
+
+[node name="MainMenu" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Background" type="Panel" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_bg")
+
+[node name="Centre" type="VBoxContainer" parent="."]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -190.0
+offset_right = 220.0
+offset_bottom = 190.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Centre"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.937255, 0.870588, 0.686275, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 42
+text = "PIRATES"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Centre"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.831373, 0.643137, 0.239216, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 20
+text = "TREASURE HUNT"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Centre"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+
+[node name="NewVoyageButton" type="Button" parent="Centre"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 20
+text = "NEW VOYAGE"
+
+[node name="ContinueButton" type="Button" parent="Centre"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 17
+text = "CONTINUE"
+
+[node name="QualityButton" type="Button" parent="Centre"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 14
+text = "Quality: HIGH"
+
+[node name="StatsLabel" type="Label" parent="Centre"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.560784, 0.639216, 0.698039, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 12
+text = ""
+horizontal_alignment = 1
+
+[node name="VersionLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -34.0
+offset_right = 400.0
+offset_bottom = -12.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.376471, 0.462745, 0.529412, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 11
+text = "v0.1.0"
+
+[node name="Hint" type="Label" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -34.0
+offset_right = -16.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.376471, 0.462745, 0.529412, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 11
+text = "F3 debug overlay · ESC menu"
+horizontal_alignment = 2

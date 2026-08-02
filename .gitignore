@@ -1,0 +1,23 @@
+# Godot 4
+.godot/
+/android/
+/build/
+/export/
+*.translation
+
+# Exported builds
+/dist/
+
+# macOS
+.DS_Store
+
+# Editor / OS cruft
+*.swp
+*~
+.idea/
+.vscode/
+
+# Godot may generate these next to exports
+*.pck
+*.zip
+!inspiration/**/*.zip

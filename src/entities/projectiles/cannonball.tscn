@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/entities/projectiles/cannonball.gd" id="1_ball"]
+[ext_resource type="Texture2D" path="res://assets/placeholder/cannonball.png" id="2_tex"]
+
+[node name="Cannonball" type="Node2D"]
+script = ExtResource("1_ball")
+
+[node name="Shadow" type="Sprite2D" parent="."]
+modulate = Color(0, 0, 0, 0.28)
+texture = ExtResource("2_tex")
+
+[node name="Ball" type="Sprite2D" parent="."]
+texture = ExtResource("2_tex")

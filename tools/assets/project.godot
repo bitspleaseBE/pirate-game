@@ -1,0 +1,9 @@
+; Minimal isolated project for deterministic asset tooling.
+config_version=5
+
+[application]
+config/name="Pirates Asset Tools"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

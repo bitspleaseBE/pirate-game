@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" fill="#EACB83"/>
+  <path d="M0 68Q42 48 84 68t84 0 88 0v42q-46 18-88 0t-84 0-84 0ZM0 190q46-18 88 0t84 0 84 0v34q-46 15-88 0t-84 0-84 0Z" fill="#F4DDA2" opacity=".26"/>
+  <g fill="#D8B66B" opacity=".7">
+    <circle cx="24" cy="26" r="3"/><circle cx="104" cy="18" r="2"/><circle cx="184" cy="36" r="3"/><circle cx="248" cy="26" r="2"/>
+    <circle cx="57" cy="92" r="2"/><circle cx="139" cy="118" r="3"/><circle cx="221" cy="89" r="2"/>
+    <circle cx="15" cy="158" r="2"/><circle cx="82" cy="178" r="3"/><circle cx="174" cy="165" r="2"/><circle cx="246" cy="154" r="3"/>
+    <circle cx="42" cy="235" r="3"/><circle cx="126" cy="221" r="2"/><circle cx="208" cy="238" r="3"/>
+  </g>
+  <g fill="#FFF0C6" opacity=".55">
+    <path d="m43 53 4 4-4 4-4-4Z"/><path d="m157 61 3 3-3 3-3-3Z"/><path d="m235 129 4 4-4 4-4-4Z"/>
+    <path d="m34 207 3 3-3 3-3-3Z"/><path d="m152 247 4 4-4 4-4-4Z"/>
+  </g>
+</svg>

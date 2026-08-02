@@ -1,0 +1,128 @@
+; Engine configuration file.
+; Pirates: Treasure Hunt
+;
+; Renderer is gl_compatibility on EVERY platform so that web, mobile and desktop
+; share one rendering path. See docs/ARCHITECTURE.md §1.
+
+config_version=5
+
+[application]
+
+config/name="Pirates: Treasure Hunt"
+config/description="A one-thumb naval treasure-hunting game. Sail, fight, capture islands, dig up gold."
+config/version="0.1.0"
+run/main_scene="res://src/scenes/boot.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.043, 0.114, 0.176, 1)
+boot_splash/show_image=false
+
+[audio]
+
+buses/default_bus_layout="res://assets/audio/default_bus_layout.tres"
+driver/output_latency=30
+driver/output_latency.web=60
+
+[autoload]
+
+Log="*res://src/autoload/log.gd"
+EventBus="*res://src/autoload/event_bus.gd"
+Quality="*res://src/autoload/quality_manager.gd"
+Grid="*res://src/autoload/grid_service.gd"
+Pools="*res://src/autoload/pool_manager.gd"
+Cull="*res://src/autoload/culling_manager.gd"
+Audio="*res://src/autoload/audio_manager.gd"
+GameState="*res://src/autoload/game_state.gd"
+SaveSystem="*res://src/autoload/save_system.gd"
+Router="*res://src/autoload/scene_router.gd"
+DebugOverlay="*res://src/core/debug/debug_overlay.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
+gdscript/warnings/unsafe_property_access=1
+gdscript/warnings/unsafe_method_access=1
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/energy_saving/keep_screen_on=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+window/vsync/vsync_mode=1
+
+[file_customization]
+
+folder_colors={
+"res://assets/": "orange",
+"res://docs/": "gray",
+"res://src/autoload/": "red",
+"res://src/core/": "purple",
+"res://src/data/": "yellow",
+"res://src/entities/": "blue",
+"res://src/ui/": "teal",
+"res://src/world/": "green"
+}
+
+[input]
+
+pause={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":4194305,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+toggle_debug={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":4194334,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+zoom_in={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":61,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+zoom_out={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":45,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+
+[input_devices]
+
+; Deliberately OFF. Touch emulation is applied per-Viewport, which makes it
+; unreliable for a game whose world lives inside a SubViewport. InputRouter
+; normalises mouse and touch itself instead — see src/core/input_router.gd.
+pointing/emulate_touch_from_mouse=false
+
+[layer_names]
+
+2d_physics/layer_1="player_ship"
+2d_physics/layer_2="enemy_ship"
+2d_physics/layer_3="land"
+2d_physics/layer_4="structure"
+2d_physics/layer_5="pickup"
+2d_physics/layer_6="trigger"
+2d_render/layer_1="world"
+2d_render/layer_2="minimap"
+
+[physics]
+
+common/physics_ticks_per_second=60
+common/max_physics_steps_per_frame=4
+2d/default_gravity=0.0
+2d/run_on_separate_thread=false
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=1
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_2d=0
+2d/snap/snap_2d_transforms_to_pixel=false
+2d/snap/snap_2d_vertices_to_pixel=false
+environment/defaults/default_clear_color=Color(0.043, 0.114, 0.176, 1)

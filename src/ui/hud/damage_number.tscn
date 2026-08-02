@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/ui/hud/damage_number.gd" id="1_dmg"]
+[ext_resource type="FontFile" path="res://assets/fonts/KenneyFuture.ttf" id="2_font"]
+
+[node name="DamageNumber" type="Node2D"]
+z_index = 60
+script = ExtResource("1_dmg")
+
+[node name="Label" type="Label" parent="."]
+offset_left = -50.0
+offset_top = -16.0
+offset_right = 50.0
+offset_bottom = 16.0
+mouse_filter = 2
+theme_override_colors/font_outline_color = Color(0.0784314, 0.101961, 0.129412, 1)
+theme_override_constants/outline_size = 6
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 22
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1

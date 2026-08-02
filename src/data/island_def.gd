@@ -1,0 +1,98 @@
+class_name IslandDef
+extends Resource
+## Generation parameters for one island.
+##
+## The archipelago generator produces these, then islands build themselves from
+## them. Keeping the definition separate from the node means the minimap, the
+## save file and the generator can all reason about an island without it being
+## instantiated — which is how a large voyage stays cheap.
+
+enum Biome { TROPICAL, JUNGLE, ROCKY, VOLCANIC, FROZEN }
+
+@export var id: StringName = &"isle_0"
+@export var display_name: String = "Nameless Cay"
+@export_range(1, 5) var tier: int = 1
+@export var biome: Biome = Biome.TROPICAL
+
+@export_group("Shape")
+@export var world_position: Vector2 = Vector2.ZERO
+## Mean radius in pixels. The outline is this, perturbed by noise.
+@export var radius: float = 520.0
+## 0 = a circle, 1 = a very ragged coast.
+@export_range(0.0, 1.0) var raggedness: float = 0.45
+## Outline resolution. Below about 40 the coastline reads as visibly straight
+## segments at gameplay zoom; above it the collision polygon and the minimap draw
+## start costing more than the extra smoothness is worth.
+@export_range(10, 96) var outline_points: int = 44
+@export var shape_seed: int = 0
+
+@export_group("Defence")
+@export var fort_cannons: int = 2
+@export var garrison_ships: int = 3
+@export var has_shipyard: bool = true
+@export var has_castle: bool = false
+## Distance from the coast at which defenders wake up.
+@export var alert_radius: float = 1100.0
+
+@export_group("Rewards")
+@export var loot_table: LootTable
+@export var treasure_count: int = 1
+
+@export_group("Runtime state")
+@export var discovered: bool = false
+@export var captured: bool = false
+@export var treasure_dug: int = 0
+
+
+func is_treasure_remaining() -> bool:
+	return treasure_dug < treasure_count
+
+
+## Deterministic outline for this island. Both the world node and the minimap
+## call this, so the map is guaranteed to match the coastline the player sails.
+func build_outline() -> PackedVector2Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = shape_seed if shape_seed != 0 else hash(id)
+
+	# Three octaves of angular noise gives bays and headlands rather than the
+	# uniform fuzz a single random offset per point produces.
+	var phase_a: float = rng.randf() * TAU
+	var phase_b: float = rng.randf() * TAU
+	var phase_c: float = rng.randf() * TAU
+	var lobes_a: float = rng.randi_range(2, 3)
+	var lobes_b: float = rng.randi_range(4, 6)
+	var lobes_c: float = rng.randi_range(8, 11)
+
+	var points := PackedVector2Array()
+	points.resize(outline_points)
+	for i: int in outline_points:
+		var t: float = float(i) / float(outline_points) * TAU
+		var n: float = (
+			sin(t * lobes_a + phase_a) * 0.55
+			+ sin(t * lobes_b + phase_b) * 0.30
+			+ sin(t * lobes_c + phase_c) * 0.15
+		)
+		var r: float = radius * (1.0 + n * raggedness * 0.5)
+		points[i] = Vector2(cos(t), sin(t)) * r
+	return points
+
+
+## A point off the coast where a ship can anchor to send a landing party.
+##
+## The default offset clears the largest hull's keep-out ring (see
+## [constant Ship.COAST_STANDOFF]), so the anchor is somewhere a ship will
+## willingly sail to. The last stretch to the sand is the longboat's job — which
+## is what the landing party is for.
+func beach_anchor(outline: PackedVector2Array, offset: float = 320.0) -> Vector2:
+	if outline.is_empty():
+		return world_position
+	# The widest, flattest stretch of coast makes the most believable beach; the
+	# point furthest from the centre is a cliff, so take the closest instead.
+	var best: Vector2 = outline[0]
+	var best_len: float = best.length()
+	for p: Vector2 in outline:
+		var l: float = p.length()
+		if l < best_len:
+			best_len = l
+			best = p
+	return world_position + best.normalized() * (best_len + offset)

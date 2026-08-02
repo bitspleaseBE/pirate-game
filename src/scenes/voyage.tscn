@@ -1,0 +1,70 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://src/scenes/voyage.gd" id="1_voyage"]
+[ext_resource type="Script" path="res://src/world/ocean/ocean.gd" id="2_ocean"]
+[ext_resource type="Script" path="res://src/world/archipelago.gd" id="3_archi"]
+[ext_resource type="Script" path="res://src/entities/ships/fleet_controller.gd" id="4_fleet"]
+[ext_resource type="Script" path="res://src/entities/projectiles/projectile_system.gd" id="5_proj"]
+[ext_resource type="Script" path="res://src/ui/world_overlay.gd" id="6_overlay"]
+[ext_resource type="Script" path="res://src/world/game_camera.gd" id="7_camera"]
+[ext_resource type="Script" path="res://src/core/input_router.gd" id="8_input"]
+[ext_resource type="Script" path="res://src/world/spawn_director.gd" id="9_director"]
+[ext_resource type="PackedScene" path="res://src/ui/hud/hud.tscn" id="10_hud"]
+
+[node name="Voyage" type="Node"]
+script = ExtResource("1_voyage")
+
+[node name="GameViewport" type="SubViewportContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="GameViewport"]
+disable_3d = true
+render_target_update_mode = 4
+
+[node name="World" type="Node2D" parent="GameViewport/SubViewport"]
+unique_name_in_owner = true
+
+[node name="Ocean" type="Node2D" parent="GameViewport/SubViewport/World"]
+script = ExtResource("2_ocean")
+
+[node name="Archipelago" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
+script = ExtResource("3_archi")
+
+[node name="Ships" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
+y_sort_enabled = true
+
+[node name="Fleet" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
+y_sort_enabled = true
+script = ExtResource("4_fleet")
+
+[node name="ProjectileSystem" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
+z_index = 40
+z_as_relative = false
+script = ExtResource("5_proj")
+
+[node name="WorldOverlay" type="Node2D" parent="GameViewport/SubViewport/World"]
+unique_name_in_owner = true
+script = ExtResource("6_overlay")
+
+[node name="GameCamera" type="Camera2D" parent="GameViewport/SubViewport"]
+unique_name_in_owner = true
+script = ExtResource("7_camera")
+
+[node name="InputRouter" type="Node" parent="GameViewport/SubViewport"]
+unique_name_in_owner = true
+script = ExtResource("8_input")
+
+[node name="SpawnDirector" type="Node" parent="."]
+unique_name_in_owner = true
+script = ExtResource("9_director")
+
+[node name="Hud" parent="." instance=ExtResource("10_hud")]
+unique_name_in_owner = true

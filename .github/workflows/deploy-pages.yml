@@ -1,0 +1,134 @@
+name: Build and deploy web
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; a half-uploaded Pages site is worse than a stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.1
+
+jobs:
+  build:
+    name: Export web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The engine and its export templates are ~1 GB together and never change
+      # between runs, so cache them on the version string.
+      - name: Cache Godot and export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Install Godot
+        run: |
+          set -euo pipefail
+          if [ ! -x "$HOME/godot-bin/godot" ]; then
+            mkdir -p "$HOME/godot-bin"
+            curl -fsSL -o /tmp/godot.zip \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+            unzip -q /tmp/godot.zip -d /tmp/godot
+            mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$HOME/godot-bin/godot"
+            chmod +x "$HOME/godot-bin/godot"
+          fi
+          echo "$HOME/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Install export templates
+        run: |
+          set -euo pipefail
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          if [ ! -d "$TEMPLATE_DIR" ]; then
+            curl -fsSL -o /tmp/templates.tpz \
+              "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+            mkdir -p "$(dirname "$TEMPLATE_DIR")"
+            unzip -q /tmp/templates.tpz -d /tmp/templates
+            mv /tmp/templates/templates "$TEMPLATE_DIR"
+          fi
+          ls "$TEMPLATE_DIR" | head
+
+      - name: Import assets
+        run: godot --headless --import
+
+      # The gate. Plays a full island loop headless — sail, alert, fight, capture,
+      # dig — and fails the build on a broken voyage, a ship run aground, or a pool
+      # that outgrew its prewarm. A scene that cannot play must not reach Pages.
+      - name: Smoke test
+        run: godot --headless src/scenes/voyage.tscn -- --smoke
+
+      - name: Export web build
+        run: |
+          set -euo pipefail
+          mkdir -p dist/web
+          godot --headless --export-release "Web" dist/web/index.html
+          # GitHub Pages serves files beginning with an underscore only if Jekyll
+          # is disabled. Cheap insurance.
+          touch dist/web/.nojekyll
+          ls -lh dist/web
+
+      - name: Check the build can actually boot on Pages
+        run: |
+          set -euo pipefail
+
+          # A threaded Godot web build needs SharedArrayBuffer, which needs COOP
+          # and COEP response headers, which GitHub Pages cannot send. It would
+          # deploy cleanly and then load to a black screen. Guard both the cause
+          # and the symptom.
+          #
+          # Note: do NOT grep index.js for "SharedArrayBuffer" — emscripten's glue
+          # references it even when threads are off, so that check always fires.
+          if ! grep -q '^variant/thread_support=false' export_presets.cfg; then
+            echo "::error file=export_presets.cfg::Web export has thread support enabled. GitHub Pages cannot serve the COOP/COEP headers SharedArrayBuffer requires — set variant/thread_support=false."
+            exit 1
+          fi
+          if [ -f dist/web/index.worker.js ]; then
+            echo "::error::Export produced index.worker.js, so this is a threaded build and will not boot on Pages."
+            exit 1
+          fi
+
+          test -f dist/web/index.wasm
+          test -f dist/web/index.pck
+          test -f dist/web/index.html
+
+          echo "Transfer sizes (gzipped, as Pages serves them):"
+          for f in dist/web/index.wasm dist/web/index.pck dist/web/index.js; do
+            printf '  %-20s %s\n' "$(basename "$f")" \
+              "$(gzip -c "$f" | wc -c | awk '{printf "%.1f MB", $1/1048576}')"
+          done
+
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: dist/web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

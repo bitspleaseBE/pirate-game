@@ -1,0 +1,183 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/ui/hud/hud.gd" id="1_hud"]
+[ext_resource type="Script" path="res://src/ui/hud/minimap.gd" id="2_minimap"]
+[ext_resource type="FontFile" path="res://assets/fonts/KenneyFuture.ttf" id="3_font"]
+
+[sub_resource type="StyleBoxFlat" id="Style_panel"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.0470588, 0.109804, 0.164706, 0.72)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.541176, 0.435294, 0.262745, 0.65)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_map"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.352941, 0.278431, 0.164706, 0.85)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.219608, 0.164706, 0.0941176, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="Hud" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_hud")
+
+[node name="Root" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopBar" type="PanelContainer" parent="Root"]
+offset_left = 16.0
+offset_top = 14.0
+offset_right = 300.0
+offset_bottom = 60.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_panel")
+
+[node name="Counters" type="HBoxContainer" parent="Root/TopBar"]
+mouse_filter = 2
+theme_override_constants/separation = 16
+
+[node name="GoldTag" type="Label" parent="Root/TopBar/Counters"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.847059, 0.717647, 0.301961, 1)
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 15
+text = "GOLD"
+vertical_alignment = 1
+
+[node name="GoldLabel" type="Label" parent="Root/TopBar/Counters"]
+unique_name_in_owner = true
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 20
+text = "0"
+vertical_alignment = 1
+
+[node name="DoubloonTag" type="Label" parent="Root/TopBar/Counters"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.792157, 0.831373, 0.882353, 1)
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 15
+text = "DBL"
+vertical_alignment = 1
+
+[node name="DoubloonLabel" type="Label" parent="Root/TopBar/Counters"]
+unique_name_in_owner = true
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 20
+text = "0"
+vertical_alignment = 1
+
+[node name="Toast" type="Label" parent="Root"]
+unique_name_in_owner = true
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 74.0
+offset_right = 340.0
+offset_bottom = 112.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.980392, 0.941176, 0.827451, 1)
+theme_override_colors/font_outline_color = Color(0.0431373, 0.113725, 0.176471, 1)
+theme_override_constants/outline_size = 8
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 20
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MinimapPanel" type="PanelContainer" parent="Root"]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -212.0
+offset_right = 212.0
+offset_bottom = -16.0
+grow_vertical = 0
+theme_override_styles/panel = SubResource("Style_map")
+
+[node name="Minimap" type="Control" parent="Root/MinimapPanel"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(184, 184)
+script = ExtResource("2_minimap")
+
+[node name="BottomRight" type="VBoxContainer" parent="Root"]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -228.0
+offset_top = -172.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 0
+grow_vertical = 0
+alignment = 2
+theme_override_constants/separation = 8
+
+[node name="FleetRow" type="PanelContainer" parent="Root/BottomRight"]
+layout_mode = 2
+size_flags_horizontal = 8
+mouse_filter = 2
+theme_override_styles/panel = SubResource("Style_panel")
+
+[node name="FleetBox" type="HBoxContainer" parent="Root/BottomRight/FleetRow"]
+mouse_filter = 2
+theme_override_constants/separation = 10
+
+[node name="FleetTag" type="Label" parent="Root/BottomRight/FleetRow/FleetBox"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.639216, 0.717647, 0.780392, 1)
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 14
+text = "FLEET"
+vertical_alignment = 1
+
+[node name="FleetLabel" type="Label" parent="Root/BottomRight/FleetRow/FleetBox"]
+unique_name_in_owner = true
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 18
+text = "1 / 1"
+vertical_alignment = 1
+
+[node name="AmmoButton" type="Button" parent="Root/BottomRight"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 62)
+layout_mode = 2
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 17
+text = "Round Shot"
+
+[node name="AmmoCount" type="Label" parent="Root/BottomRight"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.847059, 0.717647, 0.301961, 1)
+theme_override_fonts/font = ExtResource("3_font")
+theme_override_font_sizes/font_size = 16
+text = "0"
+horizontal_alignment = 2

@@ -1,0 +1,204 @@
+class_name SpawnDirector
+extends Node
+## Runs the island loop: alert, defend, reinforce, capture, land, dig.
+##
+## All of it on a 2 Hz tick. Proximity checks, garrison bookkeeping and capture
+## conditions do not need frame accuracy, and an archipelago-wide distance check
+## every frame would be pure waste.
+##
+## Reinforcement waves come from the island's shipyard, and destroying it stops
+## them — the tactical decision inside every island fight is whether to push for
+## the shipyard early or clear the escorts first.
+
+const ENEMY_SCENE: PackedScene = preload("res://src/entities/ships/enemy_ship.tscn")
+
+const TICK_HZ: float = 2.0
+## Seconds between reinforcement waves while a shipyard lives.
+const REINFORCE_INTERVAL: float = 16.0
+const REINFORCE_WAVE_SIZE: int = 2
+## Garrison ships spawn this far outside the island's coast.
+const SPAWN_STANDOFF: float = 420.0
+## How close a ship must be to the anchor point to send the landing party.
+const LANDING_DISTANCE: float = 260.0
+## Seconds the landing party takes to row ashore, dig and row back.
+const LANDING_DURATION: float = 3.5
+
+signal landing_started(island: Island)
+signal landing_finished(island: Island, loot: Dictionary)
+
+var fleet: FleetController = null
+var archipelago: Archipelago = null
+## Enemies are parented here rather than to the island, so a captured island can
+## never take its attackers down with it.
+var ships_parent: Node2D = null
+
+var _accum: float = 0.0
+var _garrisons: Dictionary = {}       # Island -> Array[EnemyShip]
+var _reinforce_left: Dictionary = {}   # Island -> float
+var _landing_left: Dictionary = {}     # Island -> float
+var _rng := RandomNumberGenerator.new()
+
+
+func _ready() -> void:
+	_rng.seed = GameState.voyage_seed if GameState.voyage_seed != 0 else randi()
+
+
+func _process(delta: float) -> void:
+	if fleet == null or archipelago == null:
+		return
+	_accum += delta
+	if _accum < 1.0 / TICK_HZ:
+		return
+	var tick_delta: float = _accum
+	_accum = 0.0
+
+	var focus: Vector2 = fleet.centroid()
+	for island: Island in archipelago.islands:
+		if not is_instance_valid(island):
+			continue
+		_tick_island(island, focus, tick_delta)
+
+
+func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
+	var distance: float = island.distance_to_coast(focus)
+
+	if distance < island.def.alert_radius * 1.6:
+		island.mark_discovered()
+
+	if island.is_captured:
+		_tick_landing(island, focus, delta)
+		return
+
+	if not island.is_alerted:
+		if distance <= island.def.alert_radius:
+			_alert(island)
+		return
+
+	_prune_garrison(island)
+
+	if _garrison_count(island) == 0:
+		island.capture()
+		_reinforce_left.erase(island)
+		if island.def.is_treasure_remaining():
+			_begin_landing_approach(island)
+		return
+
+	if island.def.has_shipyard:
+		var left: float = float(_reinforce_left.get(island, REINFORCE_INTERVAL)) - delta
+		if left <= 0.0:
+			_spawn_wave(island, REINFORCE_WAVE_SIZE)
+			left = REINFORCE_INTERVAL
+		_reinforce_left[island] = left
+
+
+func _alert(island: Island) -> void:
+	island.alert()
+	_garrisons[island] = [] as Array[EnemyShip]
+	_reinforce_left[island] = REINFORCE_INTERVAL
+	_spawn_wave(island, island.def.garrison_ships)
+	Log.info(
+		"%s alerted: %d defenders" % [island.def.display_name, island.def.garrison_ships],
+		"Spawn"
+	)
+
+
+func _spawn_wave(island: Island, count: int) -> void:
+	if ships_parent == null:
+		return
+	var garrison: Array = _garrisons.get(island, [])
+
+	for i: int in count:
+		var angle: float = _rng.randf() * TAU
+		var radius: float = island.def.radius + SPAWN_STANDOFF + _rng.randf_range(0.0, 240.0)
+		var at: Vector2 = island.global_position + Vector2(cos(angle), sin(angle)) * radius
+
+		var enemy: EnemyShip = ENEMY_SCENE.instantiate() as EnemyShip
+		enemy.stats = ShipStatsLibrary.get_stats(_hull_for_tier(island.def.tier, i))
+		enemy.global_position = at
+		ships_parent.add_child(enemy)
+		enemy.assign_station(
+			island.global_position, island.def.radius + 600.0, island.def.alert_radius * 1.3
+		)
+		garrison.append(enemy)
+
+	_garrisons[island] = garrison
+	Log.debug(
+		"%s wave: +%d, garrison now %d" % [island.def.display_name, count, garrison.size()],
+		"Spawn"
+	)
+
+
+## Tier decides the mix. Every garrison keeps at least one skiff pack so the
+## player always has something cheap to practise angles on.
+func _hull_for_tier(tier: int, index: int) -> StringName:
+	if tier <= 1:
+		return &"skiff"
+	if tier == 2:
+		return &"skiff" if index % 2 == 0 else &"enemy_sloop"
+	if tier == 3:
+		return &"enemy_sloop" if index % 3 != 0 else &"enemy_brig"
+	return &"enemy_brig" if index % 2 == 0 else &"enemy_sloop"
+
+
+func _prune_garrison(island: Island) -> void:
+	var garrison: Array = _garrisons.get(island, [])
+	for i: int in range(garrison.size() - 1, -1, -1):
+		var enemy: EnemyShip = garrison[i]
+		if not is_instance_valid(enemy) or not enemy.alive:
+			garrison.remove_at(i)
+	_garrisons[island] = garrison
+
+
+func _garrison_count(island: Island) -> int:
+	return (_garrisons.get(island, []) as Array).size()
+
+
+## After a capture, send the nearest ship to the beach so the landing party can go
+## ashore. The player can override it — tapping elsewhere cancels the approach,
+## and the treasure stays buried until they come back.
+func _begin_landing_approach(island: Island) -> void:
+	var nearest: Ship = _nearest_ship(island.anchor_point)
+	if nearest == null:
+		return
+	nearest.set_target(null)
+	nearest.set_course(island.anchor_point)
+
+
+func _tick_landing(island: Island, focus: Vector2, delta: float) -> void:
+	if not island.def.is_treasure_remaining():
+		return
+
+	if _landing_left.has(island):
+		var left: float = float(_landing_left[island]) - delta
+		if left > 0.0:
+			_landing_left[island] = left
+			return
+		_landing_left.erase(island)
+		var loot: Dictionary = island.dig_treasure(_rng)
+		Audio.play_ui(&"coin_pickup")
+		landing_finished.emit(island, loot)
+		return
+
+	if focus.distance_to(island.anchor_point) <= LANDING_DISTANCE:
+		_landing_left[island] = LANDING_DURATION
+		landing_started.emit(island)
+		Log.info("Landing party ashore at %s" % island.def.display_name, "Spawn")
+
+
+func _nearest_ship(at: Vector2) -> Ship:
+	var best: Ship = null
+	var best_dist: float = INF
+	for ship: Ship in fleet.living_ships():
+		var d: float = ship.global_position.distance_to(at)
+		if d < best_dist:
+			best_dist = d
+			best = ship
+	return best
+
+
+## Total living enemies, for the HUD and the debug overlay.
+func active_enemy_count() -> int:
+	var n: int = 0
+	for island: Island in _garrisons:
+		n += _garrison_count(island)
+	return n
