@@ -202,6 +202,7 @@ func _check_voyage_after_wipe() -> void:
 	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
 		afloat, GameState.banked_gold
 	])
+	get_tree().quit(0)
 
 
 ## Frames each island's [Port] and writes the frames to `user://shots/`.
