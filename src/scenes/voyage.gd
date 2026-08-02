@@ -13,6 +13,7 @@ const FLEET_WIPE_DELAY: float = 2.8
 @onready var _viewport_container: SubViewportContainer = $GameViewport
 @onready var _world: Node2D = %World
 @onready var archipelago: Archipelago = %Archipelago
+@onready var ocean: Ocean = %Ocean
 @onready var fleet: FleetController = %Fleet
 @onready var camera: GameCamera = %GameCamera
 @onready var overlay: WorldOverlay = %WorldOverlay
@@ -40,6 +41,9 @@ func _ready() -> void:
 	Quality.tier_changed.connect(_on_quality_tier_changed)
 
 	archipelago.generate(GameState.voyage_seed)
+	# The sea is drawn before the land exists and knows nothing about it, so the
+	# shallows have to be handed to it once the coastlines are settled.
+	ocean.archipelago = archipelago
 	camera.set_world_bounds(archipelago.world_bounds)
 	camera.fleet = fleet
 	input_router.camera = camera
@@ -138,6 +142,12 @@ func _capture_screenshots() -> void:
 	var dir: String = "user://shots"
 	DirAccess.make_dir_recursive_absolute(dir)
 	Engine.time_scale = 3.0
+
+	# Pin the tier. Every capture reads back the viewport texture, which stalls the
+	# pipeline hard enough that the adaptive controller sees a 30fps game and
+	# ratchets to LOW within a few seconds — so the frames used to check the look
+	# of the game were the frames of the lowest tier, whatever the device.
+	Quality.set_tier_manual(Quality.Tier.HIGH)
 
 	# Bail out if the fleet dies, exactly as the smoke test does. Otherwise the wipe
 	# handler routes to the main menu, which frees this node in the middle of the
