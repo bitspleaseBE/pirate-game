@@ -19,6 +19,19 @@ render_mode unshaded;
 // not circular ripples, and that directionality is most of what distinguishes an
 // ocean from a texture.
 //
+// Everything travels **downwind**, and the surf travels **onto the land**. Both
+// used to run backwards, which is the kind of error that is invisible in a still
+// frame and unmissable in motion: the sea sailed into the wind and every island
+// sat at the centre of expanding rings.
+//
+// The surface also has to read as *heaving*, not sliding. From directly overhead
+// a travelling wave really does just translate, so vertical motion has to be said
+// in shading rather than in geometry: crests are shaped rather than sinusoidal,
+// water on the way up is lifted towards the light, and whitecaps only appear on a
+// crest that is still building. Ships ride the same field from the CPU side (see
+// `Ocean.swell_at`) — a hull lifting and rolling on a swell is worth more than
+// any of it.
+//
 // Octave count is driven by QualityManager, so a slow device pays for three waves
 // instead of six.
 
@@ -26,8 +39,12 @@ uniform vec2 world_offset = vec2(0.0);
 uniform vec2 world_size = vec2(1280.0, 720.0);
 uniform int wave_octaves : hint_range(1, 4) = 4;
 uniform bool caustics_enabled = true;
-uniform float wave_speed : hint_range(0.0, 3.0) = 1.0;
 uniform float wind_angle = 0.0;
+
+// The wave clock, fed by the Ocean node rather than taken from `TIME`. Ships ride
+// this same swell, and a hull cannot rise on a crest it is a few frames out of
+// phase with, so both sides have to be reading one clock. See `Ocean.swell_at`.
+uniform float wave_time = 0.0;
 
 uniform vec4 deep_color : source_color = vec4(0.055, 0.165, 0.271, 1.0);
 uniform vec4 mid_color : source_color = vec4(0.098, 0.322, 0.451, 1.0);
@@ -98,7 +115,9 @@ const vec4 WAVES[8] = {
 // eight aligned — a speckle. This one is dominated by the leading swell, so it
 // reaches its peak across whole crests, and matching the average would light half
 // the screen at once.
-const float NORMAL_STRENGTH = 118.0;
+// Trimmed from 118 when crest shaping went in: a shaped crest peaks about 30%
+// steeper than the sine it replaced, so the old figure lit the whole leading face.
+const float NORMAL_STRENGTH = 100.0;
 // Cheap value noise. Stacked sinusoids, however many and however irrationally
 // spaced, always interfere into a periodic lattice — the eye finds the repeat
 // within a second or two and the sea reads as patterned wallpaper. Noise is the
@@ -164,10 +183,17 @@ vec2 direction_for(float offset) {
 	return vec2(cos(a), sin(a));
 }
 
-// Returns (height, d/dx, d/dy) of the summed wave field.
-vec3 wave_field(vec2 p, float t, int octaves) {
+// Returns (height, d/dx, d/dy, d/dt) of the summed wave field.
+//
+// The vertical rate is the fourth component and it is not decoration. Shading a
+// top-down sea by slope alone gives a fixed pattern sliding across the screen —
+// the sea passes by, nothing about it goes up or down. Knowing which way a patch
+// of water is moving vertically is what lets the shading say "this crest is
+// lifting" rather than "this stripe is over here now".
+vec4 wave_field(vec2 p, float t, int octaves) {
 	float height = 0.0;
 	vec2 slope = vec2(0.0);
+	float vertical = 0.0;
 	float total = 0.0;
 
 	// The quality tier picks how many components we can afford — but they are
@@ -181,35 +207,65 @@ vec3 wave_field(vec2 p, float t, int octaves) {
 	for (int i = 0; i < count; i++) {
 		vec4 w = WAVES[i * stride];
 		vec2 dir = direction_for(w.x);
-		float phase = dot(p, dir) * w.y + t * w.w;
-		height += sin(phase) * w.z;
-		slope += dir * cos(phase) * w.z * w.y;
+
+		// Minus, not plus. A plane wave travelling along `dir` is sin(k.x - wt);
+		// with the sign the other way every component ran *backwards*, so the whole
+		// sea marched into the wind while the HUD compass said otherwise.
+		float phase = dot(p, dir) * w.y - t * w.w;
+		float s = sin(phase);
+		float c = cos(phase);
+
+		// Crest shaping. A swell is not a sinusoid — it is a narrow ridge over a
+		// broad, flat trough — and a symmetric sine is a large part of why this sea
+		// read as a scrolling texture: a sine has no front and no back, so there is
+		// nothing to watch rise and break. Squaring the profile (h = 2u^2 - 1 for
+		// u = (sin+1)/2) is the cheapest honest way to say so: the derivative is
+		// exact, and it costs no transcendentals beyond the sin/cos already paid.
+		//
+		// Only the components carrying real amplitude are shaped. Sharpening the
+		// chop just piles on fine slope, which reads as static rather than water.
+		float sharp = smoothstep(0.05, 0.30, w.z);
+		float u = s * 0.5 + 0.5;
+		float h = mix(s, 2.0 * u * u - 1.0, sharp);
+		float dh = mix(c, (s + 1.0) * c, sharp);
+
+		height += h * w.z;
+		slope += dir * dh * w.z * w.y;
+		// dh/dt = dh/dphase * dphase/dt, and dphase/dt is -w.w.
+		vertical -= dh * w.z * w.w;
 		total += w.z;
 	}
-	return vec3(height / total, slope);
+	return vec4(height / total, slope, vertical / total);
 }
 
 void fragment() {
 	vec2 p = world_offset + UV * world_size;
-	float t = TIME * wave_speed;
+	float t = wave_time;
 
 	vec2 shoal = shoal_at(p);
 	float shelf = shoal.x;
 
-	vec3 field = wave_field(p, t, wave_octaves);
+	vec4 field = wave_field(p, t, wave_octaves);
 	float height = field.x;
 
 	// Slope to normal. The z term sets how much a given slope tilts the surface.
 	vec2 slope = field.yz;
+	float rise = field.w;
 
 	// Perturb the slope with noise so no two crests are quite alike. Its gradient
 	// is what we want, not its value. Both scales are coarser than the finest wave
 	// octaves — noise finer than the chop reads as film grain rather than water.
+	//
+	// Both layers drift downwind rather than along fixed axes. They used to slide
+	// north-east regardless of the weather, which put a second, contradictory
+	// direction on the water and helped sell "texture scrolling past" over "sea".
 	if (wave_octaves > 2) {
-		vec2 np = p * 0.0052 + vec2(t * 0.05, t * -0.035);
+		vec2 drift = direction_for(0.0) * t;
+
+		vec2 np = (p - drift * 9.0) * 0.0052;
 		slope += value_noise_d(np).yz * 0.0016;
 
-		vec2 fp = p * 0.0215 + vec2(t * -0.09, t * 0.065);
+		vec2 fp = (p - drift * 4.0) * 0.0215;
 		slope += value_noise_d(fp).yz * 0.0028;
 	}
 
@@ -217,6 +273,7 @@ void fragment() {
 	// the open sea. It is also what stops the shallows reading as deep water that
 	// happens to be a different colour.
 	slope *= mix(1.0, 0.55, shelf);
+	rise *= mix(1.0, 0.55, shelf);
 
 	vec3 n = normalize(vec3(-slope.x * NORMAL_STRENGTH, -slope.y * NORMAL_STRENGTH, 1.0));
 
@@ -228,6 +285,14 @@ void fragment() {
 	// Ambient floor before the directional term. Pure lambert drives most of the
 	// surface to near-black, which reads as night rather than as a lit sea.
 	float lit = 0.42 + 0.58 * lambert;
+
+	// Heave. Slope tells you the shape of the surface; it does not tell you that
+	// the surface is *moving vertically*, and from directly overhead that motion
+	// has nowhere else to show itself. So water on the way up is lifted towards
+	// the light and water on the way down falls away from it, which puts a bright
+	// leading face and a dark following face on every crest. This is what turns a
+	// band sliding across the screen into something that swells and subsides.
+	lit += clamp(rise * 0.50, -0.16, 0.16);
 
 	// The shelf recolours the whole ramp rather than tinting the finished pixel,
 	// so shallow water keeps its own light and shade instead of looking like deep
@@ -261,27 +326,60 @@ void fragment() {
 
 	// Foam only where a crest is both high and steep, so it forms broken lines
 	// along the wave tops rather than filling in whole regions. The threshold
-	// tracks the amplitude curve: the leading swell is now most of the normalised
-	// height, and the old 0.80 cut sat above anything this spectrum reaches.
+	// tracks the amplitude curve: the leading swell is most of the normalised
+	// height, and it sits lower than it used to now that crest shaping has pulled
+	// the mean of the field down and left the peaks where they were.
+	//
+	// Whitecaps also only appear on a crest that is still building, and vanish
+	// once it has passed its top — so the foam is gated on the water rising. A
+	// crest that grows a white edge, breaks and loses it again is the clearest
+	// statement the sea can make that it is doing something vertical.
 	float steepness = clamp(length(slope) * NORMAL_STRENGTH * 1.6, 0.0, 1.0);
-	float foam = smoothstep(0.42, 0.68, height) * steepness;
-	col = mix(col, foam_color.rgb, foam * 0.35);
+	float breaking = smoothstep(-0.02, 0.14, rise);
+	float foam = smoothstep(0.30, 0.58, height) * steepness * breaking;
+	col = mix(col, foam_color.rgb, foam * 0.42);
 
-	// Surf. Sets of parallel lines marching shoreward, densest right against the
-	// beach. Drawn in world space off the same distance the shelf uses, so the
-	// breakers and the shallow water can never disagree about where the coast is.
+	// Surf. Sets of parallel lines marching *in* onto the beach, densest right
+	// against the sand. Drawn in world space off the same distance the shelf uses,
+	// so the breakers and the shallow water can never disagree about where the
+	// coast is.
+	//
+	// They used to march the other way — every island sat at the centre of a set
+	// of rings radiating out into open water, which is a stone dropped in a pond,
+	// not a coast. Surf only ever runs one direction: onto the land.
 	if (shore_foam_enabled && shelf > 0.0) {
 		float out_dist = max(shoal.y, 0.0);
+
+		// Shoaling. The bottom coming up shortens the wavelength and slows the
+		// crest, which is why real sets crowd together and stack up against a beach
+		// instead of arriving evenly spaced. Advancing the phase as dist^0.72
+		// rather than dist buys both effects from one exponent: the spacing closes
+		// up towards the sand, and because the phase gradient steepens there, so
+		// does the time each crest takes to cross the last stretch.
+		float shoaled = pow(out_dist, 0.72) * 0.26;
 		float near_shore = 1.0 - smoothstep(0.0, 340.0, out_dist);
-		float band = sin(out_dist * 0.030 - t * 1.35) * 0.5 + 0.5;
-		col = mix(col, foam_color.rgb, near_shore * pow(band, 4.0) * 0.55);
+
+		// Plus, so a line of constant phase travels towards the island.
+		float band = sin(shoaled + t * 1.5) * 0.5 + 0.5;
+
+		// The line sharpens as it comes in. Well offshore a set is a broad swell;
+		// the same set at the beach is a thin hard edge that has broken.
+		float breaker = pow(band, mix(5.0, 2.0, near_shore));
+		col = mix(col, foam_color.rgb, near_shore * breaker * 0.60);
+
+		// The wash. Where the surf meets the sand there is always white water —
+		// what the sets do is make it surge and drain, not appear and vanish. This
+		// is the part that reads as waves clashing on the beach rather than as
+		// stripes that happen to stop there.
+		float wash = 1.0 - smoothstep(0.0, 90.0, out_dist);
+		col = mix(col, foam_color.rgb, wash * wash * (0.30 + 0.45 * band));
 	}
 
 	if (caustics_enabled) {
 		// A second, much coarser field, used only as a sparkle mask on the glitter.
 		// Broad and gentle: a glitter *track* across the swell, not a field of
 		// individual white dots. High frequency here reads as falling snow.
-		float fine = sin(dot(p, direction_for(0.35)) * 0.0165 + t * 1.1)
+		float fine = sin(dot(p, direction_for(0.35)) * 0.0165 - t * 1.1)
 			* sin(dot(p, direction_for(-1.1)) * 0.0139 - t * 0.85);
 		col += vec3(0.85, 0.95, 1.0) * pow(clamp(fine, 0.0, 1.0), 3.0) * 0.11;
 	}

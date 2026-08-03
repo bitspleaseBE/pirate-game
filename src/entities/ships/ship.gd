@@ -61,6 +61,35 @@ const ORBIT_OFFSET_RAD: float = 0.78
 ## a per-frame servo, and running it at 60 Hz just produces a twitchy helm.
 const ENGAGE_HZ: float = 5.0
 
+# --- Riding the swell -------------------------------------------------------
+#
+# The sea is drawn from directly overhead, and from directly overhead a
+# travelling wave just slides: nothing in the shader can prove the water has any
+# vertical extent at all. A hull does. A ship that lifts on a crest, leans on the
+# flank and settles in the trough is the only thing on screen that can say the
+# surface goes up and down, and once one thing on the water is doing it the sea
+# behind it stops reading as a scrolling texture.
+#
+# Deliberately small numbers. This is meant to be felt while watching the ship
+# sail, not noticed as an animation, and anything larger turns a ship of the line
+# into a cork.
+
+## Extra scale on the hull at the top of a crest — the deck lifting towards the
+## camera. Past about 5% it stops reading as height and starts reading as the
+## sprite changing size.
+const SWELL_HEAVE: float = 0.035
+## Peak roll, in radians (~3°), on the flank of a swell.
+const SWELL_ROLL: float = 0.055
+## Surface slope that counts as a full lean. Set against the summed slope of the
+## three swell lines in [constant Ocean.SWELL] rather than picked by eye.
+const SWELL_SLOPE_REF: float = 0.007
+## How much the drop shadow slides out as the hull rises. A shadow that holds
+## station while the ship grows reads as a zoom; one that opens a gap reads as
+## the hull climbing away from the water.
+const SWELL_SHADOW_LIFT: float = 0.30
+## Where the shadow sits with the hull at rest, before any lift.
+const SHADOW_OFFSET: Vector2 = Vector2(8.0, 12.0)
+
 const SHIP_SHADOW: Texture2D = preload("res://assets/wave1/ships/ship_shadow.png")
 const WAKE_FOAM_FRAMES: Array[Texture2D] = [
 	preload("res://assets/wave1/ships/wake_foam_0.png"),
@@ -111,6 +140,9 @@ var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
 var _ship_shadow: Sprite2D = null
 var _bow_foam: AnimatedSprite2D = null
+## Everything the swell moves. Held as one node so heave and roll never fight the
+## hull's own scale or the ship's heading.
+var _visual: Node2D = null
 
 
 func _ready() -> void:
@@ -121,6 +153,7 @@ func _ready() -> void:
 	sails = stats.max_sails
 	cannons_hp = stats.max_cannons_health
 
+	_visual = get_node_or_null(^"Visual") as Node2D
 	_hull_sprite = get_node_or_null(^"Visual/Hull") as Sprite2D
 	_apply_stats_to_visual()
 	_build_ship_art()
@@ -191,6 +224,7 @@ func _physics_process(delta: float) -> void:
 	global_position = clamp_out_of_land(global_position)
 	Grid.update(self)
 	_tick_guns(delta)
+	_ride_swell()
 	_update_ship_art_visibility()
 	if _retaliate_left > 0.0:
 		_retaliate_left -= delta
@@ -424,6 +458,27 @@ func clamp_to_navigable(world_pos: Vector2) -> Vector2:
 		out_pos = island.global_position + offset.normalized() * keep_out
 
 	return out_pos
+
+
+## Lifts and leans the hull on the swell it is actually sitting on.
+##
+## Presentation only — it moves nothing the simulation reads, so a ship's guns,
+## collision and steering are all unaffected by which part of a wave it is on.
+func _ride_swell() -> void:
+	if _visual == null:
+		return
+
+	var swell: Vector3 = Ocean.sample(global_position)
+	_visual.scale = Vector2.ONE * (1.0 + swell.x * SWELL_HEAVE)
+
+	# Roll is the athwartships part of the surface slope, not its magnitude: a hull
+	# lying along a crest leans hard, the same hull pointing straight up the face
+	# of it stays level and pitches instead — which top-down we cannot show anyway.
+	var lean: float = Vector2(swell.y, swell.z).dot(starboard())
+	_visual.rotation = clampf(lean / SWELL_SLOPE_REF, -1.0, 1.0) * SWELL_ROLL
+
+	if _ship_shadow != null:
+		_ship_shadow.position = SHADOW_OFFSET * (1.0 + swell.x * SWELL_SHADOW_LIFT)
 
 
 func forward() -> Vector2:
@@ -797,7 +852,7 @@ func _build_ship_art() -> void:
 	_ship_shadow = Sprite2D.new()
 	_ship_shadow.name = "ShipShadow"
 	_ship_shadow.texture = SHIP_SHADOW
-	_ship_shadow.position = Vector2(8.0, 12.0)
+	_ship_shadow.position = SHADOW_OFFSET
 	_ship_shadow.z_index = -2
 	# The authored shadow is Sloop-sized; derive scale from physical hull width so
 	# the Skiff does not inherit a Sloop's silhouette.
