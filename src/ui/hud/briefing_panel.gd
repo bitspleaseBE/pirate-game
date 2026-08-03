@@ -73,7 +73,10 @@ func present(title: String, lines: PackedStringArray, button_text: String = "GOT
 	_button.text = button_text
 	_button.custom_minimum_size = Vector2(0, 50)
 	_button.add_theme_font_size_override("font_size", 16)
-	Wave1UI.apply_brass(_button)
+	# The one button on a briefing, and never a choice between options — the same
+	# case as the port's SET SAIL and the menu's NEW VOYAGE, so it wears the same
+	# solid shape rather than the brass sprite. See [Wave1UI].
+	Wave1UI.apply_primary(_button)
 	var font: FontFile = _font()
 	if font != null:
 		_button.add_theme_font_override("font", font)

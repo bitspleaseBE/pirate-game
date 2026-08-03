@@ -51,6 +51,14 @@ to tell whether the port reads as a port at gameplay zoom:
 godot src/scenes/voyage.tscn -- --shot-harbour
 ```
 
+Frame the title screen in both the states it ships in — no save to continue, and one
+waiting — which is the only way to check the three buttons are still told apart at a
+glance:
+
+```bash
+godot src/scenes/main_menu.tscn -- --shot-menu
+```
+
 Add `--sail` to either flag to start in a Sloop instead of the oared Dinghy, which is the
 only way to exercise the wind, the wake and the compass ring without first playing through
 the opening islands:
