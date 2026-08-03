@@ -15,7 +15,6 @@ const ENEMY_SCENE: PackedScene = preload("res://src/entities/ships/enemy_ship.ts
 const TICK_HZ: float = 2.0
 ## Seconds between reinforcement waves while a shipyard lives.
 const REINFORCE_INTERVAL: float = 22.0
-const REINFORCE_WAVE_SIZE: int = 2
 ## Total reinforcement waves an island will ever send.
 ##
 ## Unbounded reinforcement is only fair if the player can stop it, and the
@@ -46,6 +45,10 @@ var _accum: float = 0.0
 var _garrisons: Dictionary = {}       # Island -> Array[EnemyShip]
 var _reinforce_left: Dictionary = {}   # Island -> float
 var _waves_sent: Dictionary = {}       # Island -> int
+## Island -> hulls ever spawned there. Feeds the index into the hull mix, so a
+## reinforcement wave sends what comes *after* the garrison in the mix rather
+## than starting again at its heaviest hull.
+var _spawned_total: Dictionary = {}    # Island -> int
 var _landing_left: Dictionary = {}     # Island -> float
 var _rng := RandomNumberGenerator.new()
 
@@ -82,7 +85,7 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 		return
 
 	if not island.is_alerted:
-		if distance <= island.def.alert_radius:
+		if distance <= island.def.alert_radius and not _fleet_is_already_busy(island):
 			_alert(island)
 		return
 
@@ -101,10 +104,37 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 	if island.def.has_shipyard and int(_waves_sent.get(island, 0)) < MAX_REINFORCEMENT_WAVES:
 		var left: float = float(_reinforce_left.get(island, REINFORCE_INTERVAL)) - delta
 		if left <= 0.0:
-			_spawn_wave(island, REINFORCE_WAVE_SIZE)
+			_spawn_wave(island, _wave_size(island.def.tier))
 			_waves_sent[island] = int(_waves_sent.get(island, 0)) + 1
 			left = REINFORCE_INTERVAL
 		_reinforce_left[island] = left
+
+
+## One island at a time.
+##
+## Islands sit 2,000–3,000 m apart, which is close enough that a fleet cutting
+## through the channel between two of them can stand inside both alert radii at
+## once. Two garrisons arriving together is not a harder island, it is two
+## islands — and it is indistinguishable, from the deck, from the game simply
+## deciding to drown you. The player picks their fights; the generator's job is
+## to make sure the game cannot pick one for them.
+##
+## Only a fight the fleet is still *in* holds the line. An island alerted and
+## then left astern releases it, so running from a losing fight is still a way
+## out of it rather than a way to lock the rest of the voyage down.
+func _fleet_is_already_busy(candidate: Island) -> bool:
+	var focus: Vector2 = fleet.centroid()
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var other: Island = raw
+		if other == candidate or other.is_captured or not other.is_alerted:
+			continue
+		if _garrison_count(other) == 0 and other.forts_remaining() == 0:
+			continue
+		if other.distance_to_coast(focus) <= other.def.alert_radius * 2.0:
+			return true
+	return false
 
 
 func _alert(island: Island) -> void:
@@ -132,6 +162,7 @@ func _spawn_wave(island: Island, count: int) -> void:
 	var garrison: Array = _garrisons.get(island, [])
 
 	var toward_player: float = (fleet.centroid() - island.global_position).angle()
+	var already: int = int(_spawned_total.get(island, 0))
 
 	for i: int in count:
 		# Spread across the near quarter so a wave is not a single-file column.
@@ -140,7 +171,7 @@ func _spawn_wave(island: Island, count: int) -> void:
 		var at: Vector2 = island.global_position + Vector2(cos(angle), sin(angle)) * radius
 
 		var enemy: EnemyShip = ENEMY_SCENE.instantiate() as EnemyShip
-		enemy.stats = ShipStatsLibrary.get_stats(_hull_for_tier(island.def.tier, i))
+		enemy.stats = ShipStatsLibrary.get_stats(_hull_for_tier(island.def.tier, already + i))
 		enemy.global_position = at
 		ships_parent.add_child(enemy)
 		enemy.assign_station(
@@ -149,22 +180,40 @@ func _spawn_wave(island: Island, count: int) -> void:
 		garrison.append(enemy)
 
 	_garrisons[island] = garrison
+	_spawned_total[island] = already + count
 	Log.debug(
 		"%s wave: +%d, garrison now %d" % [island.def.display_name, count, garrison.size()],
 		"Spawn"
 	)
 
 
-## Tier decides the mix. Every garrison keeps at least one skiff pack so the
-## player always has something cheap to practise angles on.
+## Tier decides the mix, and `index` is how many hulls this island has already
+## put on the water — so the heaviest hull leads the garrison and reinforcements
+## come in lighter behind it.
+##
+## The whole shape of the early game lives in the tier-2 line. It used to read
+## `skiff if index % 2 == 0 else enemy_sloop`, which against a two-hull garrison
+## meant a Navy Sloop *and* a skiff for a player who had, at that point, one gun
+## a side and eighty-five points of hull. The step from island one to island two
+## is now a step in weight — one proper warship instead of one pop-gun boat —
+## rather than a step in numbers, and numbers do not start climbing until tier 3.
 func _hull_for_tier(tier: int, index: int) -> StringName:
 	if tier <= 1:
 		return &"skiff"
 	if tier == 2:
-		return &"skiff" if index % 2 == 0 else &"enemy_sloop"
+		return &"enemy_sloop"
 	if tier == 3:
-		return &"enemy_sloop" if index % 3 != 0 else &"enemy_brig"
+		return &"enemy_sloop" if index == 0 else &"skiff"
+	if tier == 4:
+		return &"enemy_brig" if index == 0 else &"enemy_sloop"
 	return &"enemy_brig" if index % 2 == 0 else &"enemy_sloop"
+
+
+## Reinforcements per wave. A shipyard only exists from tier 3, and at tier 3 it
+## sends one hull at a time — two is what turns a fight you are winning into a
+## fight that never ends.
+func _wave_size(tier: int) -> int:
+	return 1 if tier <= 3 else 2
 
 
 func _prune_garrison(island: Island) -> void:

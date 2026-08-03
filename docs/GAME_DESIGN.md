@@ -39,7 +39,9 @@ and "see one ship's detail". Ships point bow-up at rotation 0.
 |---|---|
 | Tap open water | Selected ship(s) set course for that point |
 | Tap enemy ship / fort | Mark as target — your ships auto-fire when it enters a broadside arc |
-| Tap own ship | Select it; tap the fleet badge to select all |
+| Tap own ship | Select it |
+| Tap the fleet badge | Open the roster — a card per hull, tap one to take its helm |
+| Tap Hideout | Set a course for the home port; it opens when you arrive |
 | Tap captured island | Open the port screen |
 | Tap ammo button | Cycle loaded shot type |
 | Drag empty water | Pan camera freely; snaps back to the fleet after 2s |
@@ -211,6 +213,17 @@ to render. The map *is* the world data, not a second copy of it.
 Start with one ship. Slot 2 unlocks around the third island, slot 3 after the first
 castle. Both diamond-gated.
 
+A hull bought in a port does not exist until the fleet sails — the roster grows at the
+counter, the ship is built on the way out. That gap is invisible and it made the most
+expensive purchase in the game look like it had failed, so three places now say so: the
+port's shop row ("joins your fleet when you set sail"), the fleet line under the purse,
+and a card in the roster reading **at the yard**.
+
+The **fleet roster**, behind the HUD badge, is a card per hull: condition in the same
+three bars painted over the ships themselves, what the crew are doing to the reload, guns
+and reach, drive and refits. Tapping a card takes that hull's helm, which is also the only
+way to select an escort that has drifted off screen.
+
 ### 8.3 Ship tiers
 
 Per slot, upgradeable with gold + diamonds. Tiers are **tradeoffs, not strict upgrades**:
@@ -248,12 +261,44 @@ home and bank it?*
 
 ## 9. World structure
 
-- **Home port** — persistent, safe, always yours.
-- **Voyage** — a generated archipelago of 8–12 islands with a castle at the far end.
-  Island tier (1–5) rises with distance from home, so the player picks their own
-  difficulty by choosing a route.
+- **Home port** — persistent, safe, always yours, and one tap away: the **Hideout**
+  button carries the range home and sets the course, and the port opens when the fleet
+  moors. That range is the other half of "push one more island, or sail home and bank
+  it?" — it is not a decision the player can weigh without it.
+- **Voyage** — a generated archipelago of 8–12 islands with a castle at the far end,
+  laid out as a **chain** that works its way outward from home. Island tier (1–5) rises
+  along the chain, and every island sits further from home than the one before it, so
+  tier and distance say the same thing and the player picks their own difficulty by
+  picking how far out to push.
+- **Legs of 2,000–3,000 m.** Sailing is connective tissue, not content. Each hop is
+  solved for directly rather than falling out of a ring radius, which is how the
+  previous layout ended up with 8,000 m gaps between neighbours.
 - Clear the castle → voyage complete, everything you carry is banked, next voyage seeds
   harder.
+
+### 9.1 The ramp
+
+Difficulty is a written-out ladder, not a formula, because it *is* the argument:
+
+| Island | Tier | Garrison | Batteries | Shipyard |
+|---|---|---|---|---|
+| 1st | 1 | one skiff | — | — |
+| 2nd–3rd | 2 | **one Navy Sloop** | — | — |
+| 4th–6th | 3 | a sloop and a skiff | 1 | 1 hull a wave |
+| 7th–9th | 4 | a brig and two sloops | 2 | 2 hulls a wave |
+| 10th+ | 5 | brigs and sloops, four hulls | 3 | 2 hulls a wave |
+| Castle | 5 | four hulls, twice the treasure | — | — |
+
+The second island is the one that decides whether a new player keeps playing, and for a
+while it was a Navy Sloop *and* a skiff, with a shore battery and two reinforcement waves
+behind them, against a one-gun Dinghy. The step from the first island to the second is now
+a step in **weight** — one proper warship instead of one pop-gun boat — and numbers do not
+start climbing until tier 3.
+
+Islands also alert **one at a time**. At 2,000–3,000 m apart a fleet cutting through a
+channel can stand inside two alert radii at once, and two garrisons arriving together is
+not a harder island, it is two islands. A fight the fleet has left astern releases the
+hold, so running from a losing fight still works.
 
 ## 10. Audio direction
 

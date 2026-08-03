@@ -26,7 +26,9 @@ godot src/scenes/voyage.tscn
 
 Controls: tap water to set a course, tap an enemy to engage (your ship will manoeuvre
 to bring a broadside to bear), pinch to zoom, drag to look around, `F3` for the debug
-overlay, `Esc` for the menu.
+overlay, `Esc` for the menu. Bottom right: **Hideout** sets a course home and opens the
+port when you get there, the **fleet badge** opens the roster, and the brass button
+cycles your shot.
 
 ## Development commands
 
@@ -65,6 +67,22 @@ the opening islands:
 
 ```bash
 godot src/scenes/voyage.tscn -- --shot --sail
+```
+
+Frame the fleet roster with all three card states in it — a knocked-about flagship, a
+healthy escort, and a berth whose hull is still at the yard. Reaching a three-ship fleet in
+play costs a diamond and most of a voyage, so the harness builds one:
+
+```bash
+godot src/scenes/voyage.tscn -- --shot-fleet
+```
+
+Sail the fleet home from offshore and assert the hideout actually opens when it arrives.
+The Hideout button only sets a course; everything that makes going home worth doing happens
+on arrival, so a course that quietly fails looks exactly like a dead button:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --hideout
 ```
 
 Regenerate the placeholder sound effects (deterministic; safe to re-run):

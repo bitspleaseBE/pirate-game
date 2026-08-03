@@ -14,6 +14,9 @@ signal intent_open_port(island: Node2D)
 ## "Go and get the treasure on that island." Consumed by the spawn director,
 ## which owns the landing party.
 signal intent_dig(island: Node2D)
+## "Take us home." Consumed by the voyage, which sets the course and opens the
+## hideout when the fleet gets there.
+signal intent_sail_home()
 signal intent_cycle_ammo()
 
 # --- Combat ---

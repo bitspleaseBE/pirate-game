@@ -23,19 +23,29 @@ extends CanvasLayer
 ## as a missing glyph.
 
 const TOAST_DURATION: float = 2.6
+## How often the range to the hideout is recomputed. It is a number the player
+## glances at between decisions, not one they steer by, so twice a second is
+## generous and a per-frame distance check is pure waste.
+const HIDEOUT_REFRESH: float = 0.5
+
+const ICON_ANCHOR: Texture2D = preload("res://assets/wave1/icons/icon_anchor.png")
 
 @onready var _gold_label: Label = %GoldLabel
 @onready var _diamond_label: Label = %DiamondLabel
 @onready var _ammo_button: Button = %AmmoButton
 @onready var _ammo_count: Label = %AmmoCount
 @onready var _fleet_label: Label = %FleetLabel
+@onready var _fleet_button: Button = %FleetButton
+@onready var _hideout_button: Button = %HideoutButton
 @onready var _toast: Label = %Toast
 @onready var minimap: Minimap = %Minimap
 @onready var _root: Control = $Root
 
 var _toast_left: float = 0.0
+var _hideout_left: float = 0.0
 var _wind_indicator: WindIndicator
 var _fleet: FleetController = null
+var _archipelago: Archipelago = null
 
 
 func _ready() -> void:
@@ -49,6 +59,10 @@ func _ready() -> void:
 
 	_ammo_button.pressed.connect(_on_ammo_pressed)
 	Wave1UI.apply_brass(_ammo_button)
+	_hideout_button.pressed.connect(_on_hideout_pressed)
+	Wave1UI.apply_brass(_hideout_button)
+	Wave1UI.set_icon(_hideout_button, ICON_ANCHOR, 26)
+	_fleet_button.pressed.connect(_on_fleet_pressed)
 
 	_build_wind_indicator()
 	_refresh_all()
@@ -58,11 +72,31 @@ func _ready() -> void:
 ## Called by the voyage scene once the world exists.
 func bind(fleet: FleetController, archipelago: Archipelago) -> void:
 	_fleet = fleet
+	_archipelago = archipelago
 	minimap.fleet = fleet
 	minimap.archipelago = archipelago
 	_wind_indicator.fleet = fleet
 	fleet.selection_changed.connect(_on_selection_changed)
 	_refresh_all()
+	_refresh_hideout()
+
+
+## The toast fades on its own, and the range home ticks over.
+##
+## Pauses with the world, which is what you want for both: a toast should not
+## time out while the player is reading a briefing over the top of it, and the
+## fleet is not moving, so neither is the range home.
+func _process(delta: float) -> void:
+	if _toast_left > 0.0:
+		_toast_left -= delta
+		# Hold it solid for most of its life, then fade over the last half second:
+		# a toast that starts fading immediately reads as already leaving.
+		_toast.modulate.a = clampf(_toast_left * 2.0, 0.0, 1.0)
+
+	_hideout_left -= delta
+	if _hideout_left <= 0.0:
+		_hideout_left = HIDEOUT_REFRESH
+		_refresh_hideout()
 
 
 func _build_wind_indicator() -> void:
@@ -124,6 +158,31 @@ func dismiss_port() -> bool:
 	return true
 
 
+## Opens the fleet roster. Returns null if a modal is already up.
+func show_fleet() -> FleetPanel:
+	if (
+		_fleet == null
+		or get_node_or_null(^"Fleet") != null
+		or get_node_or_null(^"Port") != null
+		or get_node_or_null(^"Briefing") != null
+	):
+		return null
+	var panel := FleetPanel.new()
+	panel.name = "Fleet"
+	panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(panel)
+	panel.present(_fleet)
+	return panel
+
+
+func dismiss_fleet() -> bool:
+	var panel: FleetPanel = get_node_or_null(^"Fleet") as FleetPanel
+	if panel == null:
+		return false
+	panel.force_close()
+	return true
+
+
 func _refresh_all() -> void:
 	_on_gold_changed(GameState.total_gold(), 0)
 	_on_diamonds_changed(GameState.diamonds, 0)
@@ -151,19 +210,28 @@ func _refresh_ammo() -> void:
 		_ammo_count.text = "%d left" % stock
 
 
-## "hulls afloat / slots owned".
+## "hulls afloat / hulls owned".
 ##
 ## Counted off the fleet controller, not off `GameState.fleet`. The roster is the
 ## ships you own; only the controller knows which of them are still floating, and
 ## the whole point of the readout is to tell you when one is not. Counting the
 ## roster made this a constant "1 / 1" that could never report a loss — harmless
 ## while the fleet was capped at one hull, wrong the moment a second one exists.
+##
+## The denominator is the roster rather than [member GameState.fleet_slots].
+## Slots are a permanent purchase and never fall, so a fleet of one that owns
+## three slots read "1 / 3" for the rest of the run and looked like two ships had
+## sunk. What the player wants to know is how many of the hulls they have are
+## still under them.
+##
+## Two numbers can only ever be two numbers, though, and buying a second ship
+## moves the second one silently — see [FleetPanel], which the badge opens.
 func _refresh_fleet() -> void:
-	var afloat: int = GameState.fleet.size()
+	var owned: int = GameState.fleet.size()
+	var afloat: int = owned
 	if _fleet != null and is_instance_valid(_fleet):
 		afloat = _fleet.living_ships().size()
-	var slots: int = maxi(GameState.fleet_slots, GameState.fleet.size())
-	_fleet_label.text = "%d / %d" % [afloat, slots]
+	_fleet_label.text = "%d / %d" % [afloat, owned]
 
 
 func show_toast(text: String) -> void:
@@ -183,6 +251,41 @@ func _on_diamonds_changed(total: int, _delta: int) -> void:
 func _on_ammo_pressed() -> void:
 	EventBus.intent_cycle_ammo.emit()
 	_refresh_ammo()
+
+
+func _on_fleet_pressed() -> void:
+	Audio.play_ui(&"ui_tap")
+	show_fleet()
+
+
+## Sets a course for home. The button carries the range, which is the other half
+## of the decision — "push one more island or go and bank it" is not a decision
+## the player can weigh without knowing how far back it is.
+func _on_hideout_pressed() -> void:
+	Audio.play_ui(&"ui_confirm")
+	EventBus.intent_sail_home.emit()
+
+
+func _refresh_hideout() -> void:
+	var home: Island = null
+	if _archipelago != null and is_instance_valid(_archipelago):
+		home = _archipelago.home
+	if home == null or _fleet == null or not is_instance_valid(_fleet):
+		_hideout_button.text = "Hideout"
+		_hideout_button.disabled = home == null
+		return
+
+	var range_home: float = maxf(0.0, home.distance_to_coast(_fleet.centroid()))
+	_hideout_button.disabled = false
+	_hideout_button.text = "Hideout\n%s" % _range_text(range_home)
+
+
+## Metres up to a kilometre, then kilometres to one decimal. A four-figure number
+## on a button is read as "a lot" rather than as a distance.
+func _range_text(metres: float) -> String:
+	if metres < 1000.0:
+		return "%d m" % roundi(metres)
+	return "%.1f km" % (metres / 1000.0)
 
 
 func _on_selection_changed(ship: Node2D) -> void:

@@ -9,6 +9,13 @@ extends Node
 ## remains crisp even at half render scale.
 
 const FLEET_WIPE_DELAY: float = 2.8
+## How close to home's mooring buoy counts as being home. Wider than the landing
+## party's own trigger, because nothing is being winched aboard here — the fleet
+## just has to be recognisably in the harbour.
+const HIDEOUT_ARRIVAL: float = 340.0
+## Rate the run home is checked at. Arrival is a proximity test on one point; it
+## does not need frame accuracy any more than the island loop does.
+const HIDEOUT_CHECK_HZ: float = 4.0
 
 ## Set by the first half of the `--wipe` harness so the voyage it comes back to
 ## runs the second half instead of sinking itself again. Static because Router
@@ -29,6 +36,11 @@ static var _wipe_harness_ran: bool = false
 @onready var wind: WindSystem = %WindSystem
 @onready var tutorial: TutorialDirector = %Tutorial
 @onready var hud: CanvasLayer = %Hud
+
+## Set while the fleet is under orders for the hideout, so arriving there opens
+## the port instead of quietly mooring.
+var _returning_home: bool = false
+var _hideout_accum: float = 0.0
 
 
 func _ready() -> void:
@@ -94,6 +106,8 @@ func _ready() -> void:
 		or "--shot-port" in harness_args
 		or "--wipe" in harness_args
 		or "--shot-harbour" in harness_args
+		or "--shot-fleet" in harness_args
+		or "--hideout" in harness_args
 	)
 
 	_update_wind_availability()
@@ -102,6 +116,8 @@ func _ready() -> void:
 	fleet.fleet_emptied.connect(_on_fleet_emptied)
 	EventBus.intent_open_port.connect(_on_open_port)
 	EventBus.intent_dig.connect(_on_intent_dig)
+	EventBus.intent_sail_home.connect(_on_sail_home)
+	EventBus.intent_move.connect(_on_intent_move)
 	EventBus.island_captured.connect(_on_island_captured)
 	director.landing_started.connect(_on_landing_started)
 
@@ -128,6 +144,10 @@ func _ready() -> void:
 			_run_wipe_test()
 	elif "--shot-harbour" in args:
 		_capture_harbours()
+	elif "--shot-fleet" in args:
+		_capture_fleet()
+	elif "--hideout" in args:
+		_run_hideout_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -254,6 +274,162 @@ func _capture_harbours() -> void:
 		shot += 1
 
 	print("HARBOUR SHOTS: %s" % ProjectSettings.globalize_path(dir))
+	get_tree().quit(0)
+
+
+## Drives the Hideout button end to end and asserts the port actually opens.
+##
+##   godot --headless src/scenes/voyage.tscn -- --hideout
+##
+## The run home is the one feature in the game whose payoff is asynchronous: the
+## button only sets a course, and everything that makes going home worth doing —
+## the bank, the carpenter, the shop — happens when the fleet arrives, several
+## thousand metres and half a minute later. A course order that quietly fails to
+## arrive looks exactly like a button that does nothing, so it is asserted rather
+## than eyeballed.
+func _run_hideout_test() -> void:
+	const SAIL_LIMIT: float = 90.0
+	const TIME_SCALE: float = 6.0
+
+	await get_tree().create_timer(0.5).timeout
+	var home: Island = archipelago.home
+	if home == null:
+		push_error("HIDEOUT FAIL: no home port was generated")
+		get_tree().quit(1)
+		return
+
+	# Stand the fleet off, or it starts inside the arrival radius and the test
+	# proves only that the button works when it has nothing to do.
+	#
+	# Off to one side of the harbour rather than straight out from it: the opening
+	# island is deliberately placed on home's harbour bearing (see
+	# [constant Archipelago.OPENING_ISLAND_BEARING_SPREAD]), so "2,200 m seaward of
+	# the buoy" is a spot that lands the fleet on a beach.
+	var seaward: Vector2 = (home.anchor_point - home.global_position).normalized()
+	var offshore: Vector2 = home.global_position + seaward.rotated(1.2) * 2600.0
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = ship.clamp_to_navigable(offshore)
+	await get_tree().process_frame
+
+	GameState.add_gold(120)
+	# Through the button, so the run covers the wiring as well as the sailing.
+	var button: Button = hud.find_child("HideoutButton", true, false) as Button
+	if button == null:
+		push_error("HIDEOUT FAIL: the HUD has no hideout button")
+		get_tree().quit(1)
+		return
+	button.pressed.emit()
+
+	Engine.time_scale = TIME_SCALE
+	var elapsed: float = 0.0
+	var arrived: bool = false
+	while elapsed < SAIL_LIMIT:
+		await get_tree().create_timer(0.5).timeout
+		elapsed += 0.5
+		if hud.get_node_or_null(^"Port") != null:
+			arrived = true
+			break
+		var lead: Ship = fleet.selected
+		if lead != null and is_equal_approx(elapsed, floorf(elapsed)) and int(elapsed) % 10 == 0:
+			print("HIDEOUT: t=%ds to_home=%d helm[%s]" % [
+				int(elapsed),
+				roundi(lead.global_position.distance_to(home.anchor_point)),
+				lead.debug_state(),
+			])
+	Engine.time_scale = 1.0
+
+	var failures: PackedStringArray = []
+	if not arrived:
+		failures.append(
+			"the fleet never reached the hideout — %d m short after %ds"
+			% [roundi(fleet.centroid().distance_to(home.anchor_point)), roundi(elapsed)]
+		)
+	# Arriving home is what makes gold safe. If that stopped happening the button
+	# would still look like it worked and the player would lose a voyage's takings
+	# to the next thing that sank them.
+	elif GameState.carried_gold != 0:
+		failures.append("arriving home left %d gold unbanked" % GameState.carried_gold)
+
+	if failures.is_empty():
+		print("HIDEOUT OK: home in %ds, %d gold banked" % [roundi(elapsed), GameState.banked_gold])
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("HIDEOUT FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## Screenshots the fleet roster with every card state in one frame.
+##
+##   godot src/scenes/voyage.tscn -- --shot-fleet
+##
+## A three-berth fleet is the only configuration that shows what the panel is
+## for, and reaching one in play means a diamond, eight hundred gold and most of
+## a voyage. So it is built here: a knocked-about flagship, a healthy escort, and
+## a berth whose hull is still at the yard — which is precisely the state that
+## used to leave the fleet badge reading "1 / 1" with no explanation.
+func _capture_fleet() -> void:
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(0.6).timeout
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+	await get_tree().process_frame
+
+	GameState.banked_gold = 640
+	GameState.add_gold(210)
+	GameState.fleet[0] = {"stats_id": &"sloop", "upgrades": {&"plating": 2, &"gunnery": 1}}
+	GameState.fleet.append({"stats_id": &"sloop", "upgrades": {}})
+	fleet.refit()
+
+	var hulls: Array[Ship] = fleet.living_ships()
+	if hulls.is_empty():
+		push_error("--shot-fleet: no player ship to photograph")
+		get_tree().quit(1)
+		return
+	hulls[0].apply_damage(46.0, AmmoType.Bar.HULL, null)
+	hulls[0].apply_damage(22.0, AmmoType.Bar.SAILS, null)
+	hulls[0].apply_crew_loss(0.35)
+
+	# The third berth is added *after* the refit on purpose: that is what a hull
+	# bought in a port looks like until the fleet sails.
+	GameState.fleet.append({"stats_id": &"sloop", "upgrades": {}})
+	EventBus.fleet_changed.emit()
+
+	# Through the badge itself rather than through show_fleet(). The panel being
+	# right and the badge being wired to it are two different things, and the badge
+	# is a transparent button laid over a panel — exactly the sort of arrangement
+	# that renders perfectly and swallows every tap.
+	var badge: Button = hud.find_child("FleetButton", true, false) as Button
+	if badge == null:
+		push_error("--shot-fleet: the HUD has no fleet badge to press")
+		get_tree().quit(1)
+		return
+	badge.pressed.emit()
+	await get_tree().create_timer(0.6).timeout
+	var panel: Node = hud.get_node_or_null(^"Fleet")
+	if panel == null:
+		push_error("--shot-fleet: pressing the fleet badge opened nothing")
+		get_tree().quit(1)
+		return
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/fleet_00.png" % dir)
+
+	# And the bottom of the list, where the berth with no hull in it lives.
+	if panel != null:
+		for node: Node in panel.find_children("*", "ScrollContainer", true, false):
+			(node as ScrollContainer).scroll_vertical = 4000
+		await get_tree().create_timer(0.3).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/fleet_01_scrolled.png" % dir)
+
+	if hud.has_method(&"dismiss_fleet"):
+		hud.call(&"dismiss_fleet")
+	await get_tree().create_timer(0.4).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/fleet_02_hud.png" % dir)
+
+	print("FLEET SHOT: %s" % ProjectSettings.globalize_path(dir))
 	get_tree().quit(0)
 
 
@@ -527,6 +703,8 @@ func _run_smoke_test() -> void:
 	failures.append_array(_check_wind())
 	failures.append_array(_check_upgrades())
 	failures.append_array(_check_opening_island())
+	failures.append_array(_check_spacing())
+	failures.append_array(_check_ramp())
 	failures.append_array(_check_lethality())
 	failures.append_array(_check_economy())
 	failures.append_array(_check_forts())
@@ -630,6 +808,61 @@ func _update_wind_availability() -> void:
 	tutorial.wind_came_up(wind.compass_name())
 
 
+## The run home, and the reason the home port is a place rather than a spawn
+## point.
+##
+## Port Royal is the only harbour in the voyage that is yours before you have
+## fought for it, and until there was a button for it the only way back was to
+## pan the camera across the whole archipelago and tap an island the size of a
+## thumbnail. Everything the player wants from home — the bank, the carpenter,
+## the shop — is behind [method _on_open_port], so this only has to get them
+## there and then open it.
+func _on_sail_home() -> void:
+	var home: Island = archipelago.home
+	if home == null or not is_instance_valid(home):
+		return
+	var ship: Ship = fleet.selected
+	if ship == null or not is_instance_valid(ship) or not ship.alive:
+		return
+
+	_returning_home = true
+	# A course order, not a teleport, and it goes to the selected hull so the
+	# escorts follow it in — same rule as the landing party.
+	ship.set_target(null)
+	ship.set_course(ship.clamp_to_navigable(home.anchor_point))
+	_toast(
+		"Making for the hideout at %s — %d m" % [
+			home.def.display_name, roundi(maxf(0.0, home.distance_to_coast(fleet.centroid())))
+		]
+	)
+
+
+## Tapping the sea calls off the run home, exactly as it calls off a fire order.
+## The alternative is a player who changed their mind three islands ago being
+## ambushed by a shop opening on them.
+func _on_intent_move(_world_pos: Vector2) -> void:
+	_returning_home = false
+
+
+func _process(delta: float) -> void:
+	if not _returning_home:
+		return
+	_hideout_accum += delta
+	if _hideout_accum < 1.0 / HIDEOUT_CHECK_HZ:
+		return
+	_hideout_accum = 0.0
+
+	var home: Island = archipelago.home
+	if home == null or not is_instance_valid(home):
+		_returning_home = false
+		return
+	for ship: Ship in fleet.living_ships():
+		if ship.global_position.distance_to(home.anchor_point) <= HIDEOUT_ARRIVAL:
+			_returning_home = false
+			EventBus.intent_open_port.emit(home)
+			return
+
+
 func _on_landing_started(island: Node2D) -> void:
 	_toast("Boat away from the quay at %s…" % (island as Island).def.display_name)
 
@@ -718,11 +951,18 @@ func _on_fleet_emptied() -> void:
 ## becomes whichever tier-2-or-worse island happened to land nearest. That failure
 ## is invisible from the code and only shows up as "the game is unfair at the
 ## start", so it is asserted here.
+##
+## Measured from home's mooring buoy rather than from the middle of the island,
+## because that is where the fleet actually weighs anchor. The two are the better
+## part of a thousand metres apart, which was enough — once the islands were
+## packed closer together — for the nearest island *to the player* to be a
+## different island from the nearest one to home.
 func _check_opening_island() -> PackedStringArray:
 	var out: PackedStringArray = []
 	if archipelago.home == null:
 		out.append("no home port was generated")
 		return out
+	var from: Vector2 = archipelago.home.anchor_point
 
 	var nearest: Island = null
 	var nearest_distance: float = INF
@@ -737,7 +977,7 @@ func _check_opening_island() -> PackedStringArray:
 		# game had worked, which is the worst possible time for an assertion to fire.
 		if island == archipelago.home:
 			continue
-		var distance: float = island.global_position.distance_to(archipelago.home.global_position)
+		var distance: float = island.distance_to_coast(from)
 		if distance < nearest_distance:
 			nearest_distance = distance
 			nearest = island
@@ -752,6 +992,89 @@ func _check_opening_island() -> PackedStringArray:
 		)
 	if nearest.def.garrison_ships > 1:
 		out.append("opening island fields %d defenders" % nearest.def.garrison_ships)
+	return out
+
+
+## No island may be marooned at the far end of a long, empty sail.
+##
+## The generator says nothing about leg length directly: it says ring distance,
+## ring spacing, jitter and minimum channel width, in four places, and the number
+## that actually decides whether the game is boring — how far it is from where you
+## are to the next thing that happens — falls out of all four at once. Twenty
+## seconds of open water is a breather. A minute of it is the player putting the
+## phone down, and nothing else in this harness would ever notice.
+func _check_spacing() -> PackedStringArray:
+	## A leg longer than this is a sail rather than a crossing. Sits above the
+	## 3,000 m design target with room for jitter and an unlucky angle.
+	const MAX_LEG: float = 3600.0
+	var out: PackedStringArray = []
+
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if island == archipelago.home:
+			continue
+		var nearest: float = INF
+		for other_raw: Variant in archipelago.islands:
+			if not is_instance_valid(other_raw) or other_raw == raw:
+				continue
+			nearest = minf(
+				nearest,
+				island.global_position.distance_to((other_raw as Island).global_position)
+			)
+		if nearest > MAX_LEG:
+			out.append(
+				"%s is %d m from its nearest neighbour — nothing may be further than %d"
+				% [island.def.display_name, roundi(nearest), roundi(MAX_LEG)]
+			)
+	return out
+
+
+## Difficulty must climb with distance from home, and climb gently at the bottom.
+##
+## Tier comes from the island's place in the outward order rather than from its
+## raw distance ([constant Archipelago.TIER_LADDER]), which is what makes the
+## second island reliably a single Navy Sloop instead of a coin flip between that
+## and a Navy Sloop with an escort. But "order" and "distance" only agree while
+## the rings stay separated, so both halves are asserted: the ladder is what the
+## player feels, and the ordering is what the design promises.
+func _check_ramp() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var ranked: Array[Island] = []
+	for raw: Variant in archipelago.islands:
+		if is_instance_valid(raw) and raw != archipelago.home:
+			ranked.append(raw)
+	if ranked.size() < 2:
+		return out
+	ranked.sort_custom(func(a: Island, b: Island) -> bool:
+		return a.global_position.length() < b.global_position.length()
+	)
+
+	var previous: int = 0
+	for island: Island in ranked:
+		if island.def.tier < previous:
+			out.append(
+				"%s is tier %d but sits outside a tier-%d island — the ramp runs backwards"
+				% [island.def.display_name, island.def.tier, previous]
+			)
+			break
+		previous = island.def.tier
+
+	# The second island the player meets is the one that decides whether they keep
+	# playing: their first fight against something that shoots back properly, still
+	# in whatever hull the opening island paid for.
+	var second: Island = ranked[1]
+	if second.def.garrison_ships != 1:
+		out.append(
+			"the second island (%s, tier %d) fields %d defenders — it must be one ship alone"
+			% [second.def.display_name, second.def.tier, second.def.garrison_ships]
+		)
+	if second.def.fort_cannons > 0:
+		out.append("the second island fields %d batteries" % second.def.fort_cannons)
+	if second.def.has_shipyard:
+		out.append("the second island sends reinforcements")
 	return out
 
 
