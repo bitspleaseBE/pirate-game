@@ -41,16 +41,14 @@ const GOLD_BRIGHT: Color = Color("f0c04a")
 const TEXT: Color = Color("e6e2d3")
 const DIM: Color = Color("8a97a3")
 
-## Card chrome. All of it is drawn by [StyleBoxFlat] rather than nine-sliced from
-## the brass button sprite: the sprite is a fixed-height band with riveted caps, so
-## every row it painted had to be the same shape as every other row, and a shop is
-## exactly the screen that needs an unaffordable row to *look* unaffordable and a
-## new hull to look like the headline. Colour is free to vary; a texture is not.
-const CARD_BG: Color = Color(0.071, 0.145, 0.204)
-const CARD_BG_DOWN: Color = Color(0.043, 0.098, 0.145)
-const CARD_BG_OFF: Color = Color(0.051, 0.094, 0.129)
-const CARD_EDGE: Color = Color(0.353, 0.310, 0.220)
-const CARD_EDGE_OFF: Color = Color(0.196, 0.239, 0.278)
+## Card chrome is drawn by [StyleBoxFlat] rather than nine-sliced from the brass
+## button sprite: the sprite is a fixed-height band with riveted caps, so every row
+## it painted had to be the same shape as every other row, and a shop is exactly the
+## screen that needs an unaffordable row to *look* unaffordable and a new hull to
+## look like the headline. Colour is free to vary; a texture is not.
+##
+## The colours and the state ramp now live in [Wave1UI], because the title screen
+## uses the same two treatments and one definition cannot drift from itself.
 const CARD_HEIGHT: float = 88.0
 
 const ICON_GOLD: Texture2D = preload("res://assets/wave1/icons/icon_gold.png")
@@ -138,7 +136,7 @@ func present(island_name: String) -> void:
 	sail.custom_minimum_size = Vector2(0, 54)
 	sail.add_theme_font_size_override("font_size", 17)
 	_apply_font(sail)
-	_apply_sail_style(sail)
+	Wave1UI.apply_primary(sail)
 	sail.icon = preload("res://assets/wave1/icons/icon_anchor.png")
 	sail.expand_icon = true
 	sail.add_theme_constant_override("icon_max_width", 30)
@@ -251,7 +249,7 @@ func _add_row(
 	card.custom_minimum_size = Vector2(0, CARD_HEIGHT)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.disabled = dead
-	_apply_card_style(card, featured)
+	Wave1UI.apply_card(card, featured)
 	_rows.add_child(card)
 
 	var pad := MarginContainer.new()
@@ -567,41 +565,6 @@ func _purse_pill(value: Label, icon: Texture2D) -> Control:
 	return pill
 
 
-func _apply_card_style(card: Button, featured: bool) -> void:
-	var edge: Color = Color(0.851, 0.631, 0.173, 0.55) if featured else Color(CARD_EDGE)
-	var base: Color = Color(0.094, 0.153, 0.192) if featured else CARD_BG
-	var width: int = 2 if featured else 1
-
-	card.add_theme_stylebox_override("normal", _card_style(base, edge, width))
-	card.add_theme_stylebox_override("hover", _card_style(
-		base.lightened(0.09), Color(0.941, 0.753, 0.290, 0.9), width
-	))
-	card.add_theme_stylebox_override("pressed", _card_style(CARD_BG_DOWN, edge, width))
-	card.add_theme_stylebox_override("focus", _card_style(
-		base.lightened(0.05), Color(0.941, 0.753, 0.290, 0.75), width
-	))
-	card.add_theme_stylebox_override("disabled", _card_style(
-		CARD_BG_OFF,
-		Color(0.851, 0.631, 0.173, 0.28) if featured else Color(CARD_EDGE_OFF),
-		width
-	))
-
-
-func _card_style(bg: Color, edge: Color, border: int) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg
-	style.set_border_width_all(border)
-	style.border_color = edge
-	style.set_corner_radius_all(10)
-	# The card content is laid out by an anchored child, so the stylebox carries no
-	# content margins of its own — they would offset nothing and only confuse the
-	# next person to touch this.
-	style.shadow_color = Color(0, 0, 0, 0.3)
-	style.shadow_size = 4
-	style.shadow_offset = Vector2(0, 2)
-	return style
-
-
 func _pill_style(fill: Color, edge: Color) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = fill
@@ -611,34 +574,6 @@ func _pill_style(fill: Color, edge: Color) -> StyleBoxFlat:
 	style.set_content_margin_all(6)
 	style.content_margin_left = 10.0
 	style.content_margin_right = 10.0
-	return style
-
-
-## The one button on the screen that is not a purchase, so it is the one solid
-## brass shape — everything else is an outline against the panel.
-func _apply_sail_style(button: Button) -> void:
-	button.add_theme_stylebox_override("normal", _sail_style(Color("bd9139")))
-	button.add_theme_stylebox_override("hover", _sail_style(Color("d6a642")))
-	button.add_theme_stylebox_override("focus", _sail_style(Color("d6a642")))
-	button.add_theme_stylebox_override("pressed", _sail_style(Color("8f6d29")))
-	button.add_theme_color_override("font_color", Color("1c1409"))
-	button.add_theme_color_override("font_hover_color", Color("1c1409"))
-	button.add_theme_color_override("font_focus_color", Color("1c1409"))
-	button.add_theme_color_override("font_pressed_color", Color("f3dfae"))
-	button.add_theme_constant_override("outline_size", 0)
-	button.add_theme_constant_override("h_separation", 10)
-
-
-func _sail_style(fill: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = fill
-	style.set_border_width_all(2)
-	style.border_color = fill.darkened(0.45)
-	style.set_corner_radius_all(10)
-	style.set_content_margin_all(10)
-	style.shadow_color = Color(0, 0, 0, 0.35)
-	style.shadow_size = 4
-	style.shadow_offset = Vector2(0, 2)
 	return style
 
 

@@ -1,10 +1,37 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main_menu.gd" id="1_menu"]
-[ext_resource type="FontFile" path="res://assets/fonts/KenneyFuture.ttf" id="2_font"]
+[ext_resource type="FontFile" path="res://assets/fonts/Cinzel.ttf" id="2_cinzel"]
+[ext_resource type="FontFile" path="res://assets/fonts/Alegreya.ttf" id="3_body"]
 
 [sub_resource type="StyleBoxFlat" id="Style_bg"]
 bg_color = Color(0.0431373, 0.113725, 0.176471, 1)
+
+; Typography, and why 2003265652 is not a typo: see the header of main_menu.gd.
+; (Comments in a .tscn do not survive the editor re-saving the scene, so the
+; explanation lives in the script.)
+[sub_resource type="FontVariation" id="Font_title"]
+base_font = ExtResource("2_cinzel")
+variation_opentype = {
+2003265652: 900
+}
+spacing_glyph = 3
+
+[sub_resource type="FontVariation" id="Font_kicker"]
+base_font = ExtResource("2_cinzel")
+variation_opentype = {
+2003265652: 600
+}
+spacing_glyph = 5
+
+[sub_resource type="FontVariation" id="Font_small"]
+base_font = ExtResource("3_body")
+variation_opentype = {
+2003265652: 700
+}
+opentype_features = {
+1819178349: 1
+}
 
 [node name="MainMenu" type="Control"]
 anchor_right = 1.0
@@ -38,16 +65,16 @@ alignment = 1
 [node name="Title" type="Label" parent="Centre"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.937255, 0.870588, 0.686275, 1)
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 42
+theme_override_fonts/font = SubResource("Font_title")
+theme_override_font_sizes/font_size = 46
 text = "PIRATES"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="Centre"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.831373, 0.643137, 0.239216, 1)
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 20
+theme_override_fonts/font = SubResource("Font_kicker")
+theme_override_font_sizes/font_size = 18
 text = "TREASURE HUNT"
 horizontal_alignment = 1
 
@@ -59,32 +86,32 @@ layout_mode = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 20
+theme_override_fonts/font = ExtResource("3_body")
+theme_override_font_sizes/font_size = 21
 text = "NEW VOYAGE"
 
 [node name="ContinueButton" type="Button" parent="Centre"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 17
+theme_override_fonts/font = ExtResource("3_body")
+theme_override_font_sizes/font_size = 18
 text = "CONTINUE"
 
 [node name="QualityButton" type="Button" parent="Centre"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 14
+theme_override_fonts/font = ExtResource("3_body")
+theme_override_font_sizes/font_size = 15
 text = "Quality: HIGH"
 
 [node name="StatsLabel" type="Label" parent="Centre"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.560784, 0.639216, 0.698039, 1)
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 12
+theme_override_fonts/font = SubResource("Font_small")
+theme_override_font_sizes/font_size = 13
 text = ""
 horizontal_alignment = 1
 
@@ -99,8 +126,8 @@ offset_bottom = -12.0
 grow_vertical = 0
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.376471, 0.462745, 0.529412, 1)
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 11
+theme_override_fonts/font = SubResource("Font_small")
+theme_override_font_sizes/font_size = 12
 text = "v0.1.0"
 
 [node name="Hint" type="Label" parent="."]
@@ -116,7 +143,7 @@ grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
 theme_override_colors/font_color = Color(0.376471, 0.462745, 0.529412, 1)
-theme_override_fonts/font = ExtResource("2_font")
-theme_override_font_sizes/font_size = 11
+theme_override_fonts/font = SubResource("Font_small")
+theme_override_font_sizes/font_size = 12
 text = "F3 debug overlay · ESC menu"
 horizontal_alignment = 2
