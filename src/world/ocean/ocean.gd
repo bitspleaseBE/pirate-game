@@ -26,6 +26,29 @@ const SHOAL_WIDTH_FACTOR: float = 1.4
 ## a handful of rebuilds per voyage rather than one per frame.
 const SHOAL_REBUILD_DISTANCE: float = 128.0
 
+## Multiplier on real time for the whole wave field.
+const WAVE_SPEED: float = 1.0
+## The wave clock wraps here so the phase accumulator never grows large enough for
+## float32 to start quantising the fine chop. Same period Godot's own `TIME` uses.
+const TIME_ROLLOVER: float = 3600.0
+
+## The three leading lines of the shader's `WAVES` table, in the same units and
+## with the same crest shaping. Ships ride this, so it has to be literally the
+## water the player can see; if the two drift apart, hulls lift in the troughs.
+##
+## Only the swell is mirrored. The remaining five components have wavelengths
+## shorter than a hull, and a ship does not rise to chop it spans — it sits
+## through it. Skipping them also keeps this to three sines per ship per frame.
+const SWELL: Array[Vector4] = [
+	Vector4(0.00, 0.0057, 1.0000, 0.42),
+	Vector4(-0.47, 0.0101, 0.4290, 0.56),
+	Vector4(0.68, 0.0165, 0.2000, 0.72),
+]
+const SWELL_TOTAL: float = 1.6290
+
+## The live Ocean, for [method sample]. There is exactly one sea.
+static var instance: Ocean = null
+
 ## Source of the shallow-water shelves. Set by [Voyage] once the islands exist;
 ## until then the sea is uniformly deep, which is what an empty archipelago is.
 var archipelago: Archipelago = null:
@@ -39,8 +62,12 @@ var _all_shoals: PackedVector4Array = PackedVector4Array()
 var _shoals: PackedVector4Array = PackedVector4Array()
 var _last_shoal_center: Vector2 = Vector2.INF
 
+var _time: float = 0.0
+var _wind_angle: float = 0.0
+
 
 func _ready() -> void:
+	instance = self
 	z_index = -100
 	z_as_relative = false
 
@@ -59,10 +86,27 @@ func _ready() -> void:
 	_apply_quality()
 
 
-func _process(_delta: float) -> void:
+func _exit_tree() -> void:
+	if instance == self:
+		instance = null
+
+
+func _process(delta: float) -> void:
+	# Ahead of the camera check: the swell has to keep running for whatever is
+	# sailing on it even on a frame where there is nothing to draw it into.
+	_time = fmod(_time + delta * WAVE_SPEED, TIME_ROLLOVER)
+	# Swell runs with the wind. Doing this in the shader rather than with a HUD
+	# arrow alone means the player can read the wind by glancing at the sea, which
+	# is how you would actually read it.
+	if WindSystem.instance != null and WindSystem.instance.active:
+		_wind_angle = WindSystem.instance.direction.angle()
+
 	var camera: Camera2D = get_viewport().get_camera_2d()
 	if camera == null:
 		return
+
+	_material.set_shader_parameter("wave_time", _time)
+	_material.set_shader_parameter("wind_angle", _wind_angle)
 
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var zoom: Vector2 = camera.zoom
@@ -79,11 +123,34 @@ func _process(_delta: float) -> void:
 
 	_update_shoals(top_left + world_size * 0.5)
 
-	# Swell runs with the wind. Doing this in the shader rather than with a HUD
-	# arrow alone means the player can read the wind by glancing at the sea, which
-	# is how you would actually read it.
-	if WindSystem.instance != null and WindSystem.instance.active:
-		_material.set_shader_parameter("wind_angle", WindSystem.instance.direction.angle())
+
+## Height and surface slope of the swell at a world position, as
+## (height, d/dx, d/dy). Height is normalised to roughly -1..1; slope is in the
+## shader's raw units, so a caller wants to scale it against a reference rather
+## than read it as an angle.
+##
+## Static and null-safe because callers are ships, which exist in scenes that may
+## have no sea at all — a ship on dry land in a test rig gets flat water.
+static func sample(world_pos: Vector2) -> Vector3:
+	if instance == null:
+		return Vector3.ZERO
+	return instance.swell_at(world_pos)
+
+
+func swell_at(p: Vector2) -> Vector3:
+	var height: float = 0.0
+	var slope: Vector2 = Vector2.ZERO
+	for w: Vector4 in SWELL:
+		var angle: float = _wind_angle + w.x
+		var dir: Vector2 = Vector2(cos(angle), sin(angle))
+		var phase: float = p.dot(dir) * w.y - _time * w.w
+		var s: float = sin(phase)
+		var c: float = cos(phase)
+		# Same shaped crest the shader draws: h = 2u^2 - 1 for u = (sin + 1) / 2.
+		var u: float = s * 0.5 + 0.5
+		height += (2.0 * u * u - 1.0) * w.z
+		slope += dir * ((s + 1.0) * c) * w.z * w.y
+	return Vector3(height / SWELL_TOTAL, slope.x, slope.y)
 
 
 func _set_archipelago(value: Archipelago) -> void:
