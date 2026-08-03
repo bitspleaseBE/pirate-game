@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://src/ui/hud/hud.gd" id="1_hud"]
 [ext_resource type="Script" path="res://src/ui/hud/minimap.gd" id="2_minimap"]
@@ -45,6 +45,16 @@ border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
 border_color = Color(0.541176, 0.435294, 0.262745, 0.65)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_hit"]
+bg_color = Color(1, 1, 1, 0)
+
+[sub_resource type="StyleBoxFlat" id="Style_hit_hover"]
+bg_color = Color(0.941176, 0.752941, 0.290196, 0.14)
 corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
@@ -168,10 +178,17 @@ grow_vertical = 0
 alignment = 2
 theme_override_constants/separation = 8
 
+[node name="HideoutButton" type="Button" parent="Root/BottomRight"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_fonts/font = SubResource("Font_label")
+theme_override_font_sizes/font_size = 13
+text = "Hideout"
+
 [node name="FleetRow" type="PanelContainer" parent="Root/BottomRight"]
 layout_mode = 2
 size_flags_horizontal = 8
-mouse_filter = 2
 theme_override_styles/panel = SubResource("Style_panel")
 
 [node name="FleetBox" type="HBoxContainer" parent="Root/BottomRight/FleetRow"]
@@ -201,6 +218,14 @@ theme_override_fonts/font = SubResource("Font_number")
 theme_override_font_sizes/font_size = 20
 text = "1 / 1"
 vertical_alignment = 1
+
+[node name="FleetButton" type="Button" parent="Root/BottomRight/FleetRow"]
+unique_name_in_owner = true
+theme_override_styles/normal = SubResource("Style_hit")
+theme_override_styles/hover = SubResource("Style_hit_hover")
+theme_override_styles/pressed = SubResource("Style_hit_hover")
+theme_override_styles/focus = SubResource("Style_hit")
+theme_override_styles/disabled = SubResource("Style_hit")
 
 [node name="AmmoButton" type="Button" parent="Root/BottomRight"]
 unique_name_in_owner = true

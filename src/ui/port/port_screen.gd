@@ -69,6 +69,7 @@ var _rows: VBoxContainer
 var _gold_value: Label
 var _diamond_value: Label
 var _ship_label: Label
+var _fleet_label: Label
 
 
 func present(island_name: String) -> void:
@@ -114,6 +115,13 @@ func present(island_name: String) -> void:
 
 	_ship_label = _label("", 13, DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	column.add_child(_ship_label)
+
+	# What the fleet consists of, right under what the flagship consists of. The
+	# shop sells two things that both begin "a ship" — a bigger hull for the one
+	# you have, and a second hull alongside it — and buying either used to change
+	# nothing on screen but a price. This line is where the difference shows up.
+	_fleet_label = _label("", 12, DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	column.add_child(_fleet_label)
 
 	var rule := ColorRect.new()
 	rule.color = Color(0.55, 0.44, 0.26, 0.45)
@@ -165,19 +173,26 @@ func _refresh() -> void:
 		_guns_phrase(stats.cannons_per_side),
 		UpgradeLibrary.summarise(upgrades),
 	]
+	_fleet_label.text = _fleet_phrase()
 
 	for child: Node in _rows.get_children():
 		child.queue_free()
 
 	# A new hull first: it is the biggest jump available and the thing worth saving
 	# for, so it should be the first thing seen rather than buried under upgrades.
+	#
+	# It is titled as a *refit* rather than as a new ship, and says out loud what
+	# happens to the old hull. "NEW SHIP: Sloop" sitting directly above "ANOTHER
+	# SHIP: Dinghy" reads as two ways to buy a second hull; one of them is not, and
+	# a player who bought the wrong one watched the fleet badge stay on "1 / 1"
+	# with nothing anywhere explaining why.
 	var next_hull: StringName = ShipStatsLibrary.next_tier(hull_id)
 	if next_hull != &"":
 		var hull_cost: int = ShipStatsLibrary.upgrade_cost(hull_id)
 		var next_stats: ShipStats = ShipStatsLibrary.get_stats(next_hull)
 		_add_row(
-			"NEW SHIP: %s" % next_stats.display_name,
-			"%s, %d hull. Upgrades carry over." % [
+			"REFIT THE %s → %s" % [stats.display_name.to_upper(), next_stats.display_name],
+			"Trades her in: %s, %d hull. Upgrades carry over. Still one ship." % [
 				_guns_phrase(next_stats.cannons_per_side), roundi(next_stats.max_hull)
 			],
 			hull_cost,
@@ -218,6 +233,29 @@ func _refresh() -> void:
 
 func _guns_phrase(count: int) -> String:
 	return "1 gun a side" if count == 1 else "%d guns a side" % count
+
+
+## "Fleet: Sloop, Dinghy — they join you when you set sail."
+##
+## The roster grows the moment a hull is bought, but the hull itself is not built
+## until [method FleetController.refit] runs on the way out of the port, so a
+## player who has just spent a diamond on a second ship is looking at a fleet
+## badge that still says one. This is the line that tells them what they own,
+## rather than what is currently floating.
+func _fleet_phrase() -> String:
+	if GameState.fleet.size() <= 1:
+		return "One ship in the fleet"
+
+	var names: PackedStringArray = []
+	for entry: Dictionary in GameState.fleet:
+		names.append(
+			ShipStatsLibrary.get_stats(
+				entry.get("stats_id", GameState.STARTING_HULL)
+			).display_name
+		)
+	return "Fleet of %d — %s. They sail with you when you leave." % [
+		names.size(), ", ".join(names)
+	]
 
 
 ## Builds one shop card: icon tile, title and blurb, price pill.
@@ -415,9 +453,13 @@ func _add_fleet_slot_row(flagship_hull: StringName) -> void:
 		return
 
 	var stats: ShipStats = ShipStatsLibrary.get_stats(flagship_hull)
+	const ORDINAL: Array[String] = ["SECOND", "THIRD"]
 	_add_row(
-		"ANOTHER SHIP: %s" % stats.display_name,
-		"Sails beside you, holds station, and fires on whatever you target.",
+		"A %s SHIP: %s" % [ORDINAL[index], stats.display_name],
+		(
+			"Joins your fleet when you set sail. Sails beside you, holds station,"
+			+ " and fires on whatever you target."
+		),
 		FLEET_SLOT_GOLD[index],
 		_buy_fleet_slot.bind(flagship_hull),
 		ICON_WHEEL,
