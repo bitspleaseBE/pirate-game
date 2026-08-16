@@ -257,6 +257,7 @@ func _announce_rake(ball: Cannonball, victim: Node2D, credit: Node2D) -> void:
 	if shooter == null or shooter.team != Teams.PLAYER:
 		return
 	EventBus.rake_landed.emit(victim, ball.impact_point)
+	Audio.play_at(&"rake_hit", ball.impact_point, 1.0)
 	var node: Node2D = Pools.spawn_effect(
 		&"damage_number", ball.impact_point + Vector2(0.0, -34.0)
 	)

@@ -214,6 +214,12 @@ func _think_mortar(quarry: Node2D, delta: float) -> void:
 		_mortar_reload -= delta
 		return
 
+	# The warning goes out as the tube starts winding up, not as the shell lands.
+	# A bomb ketch out-ranges every hull the player owns, so its telegraph ring is
+	# routinely drawn on water nobody is looking at — the ears are the only
+	# channel that reaches a player whose eyes are on their own broadside.
+	if _mortar_charge <= 0.0:
+		Audio.play_at(&"mortar_incoming", global_position)
 	_mortar_charge += delta
 	_mortar_aim = _mortar_solution(quarry)
 	if _mortar_charge >= MORTAR_CHARGE:

@@ -195,6 +195,82 @@ def ui_cancel(_rng: random.Random) -> Signal:
     return normalise(mix(a, silence(0.05) + b), 0.5)
 
 
+def rake_hit(rng: random.Random) -> Signal:
+    """A ball going down the length of a gun deck rather than into one frame.
+
+    Deliberately the same family as `impact_wood` and deliberately longer and
+    lower: a rake is the reward for a manoeuvre, and it has to be tellable from
+    an ordinary hit with the eyes somewhere else. Structural, not sharp.
+    """
+    knock = envelope(one_pole_lowpass(noise(0.35, rng), 900.0), 0.0008, 0.10, 3.4)
+    rip = envelope(one_pole_highpass(noise(0.55, rng), 1800.0), 0.004, 0.22, 2.2)
+    groan = envelope(sine(0.6, 210.0, 62.0), 0.004, 0.20, 2.6)
+    return soft_clip(
+        normalise(mix(gain(knock, 1.0), gain(rip, 0.6), gain(groan, 0.85)), 0.8)
+    )
+
+
+def boarding_clash(rng: random.Random) -> Signal:
+    """Grapples over, and steel on steel.
+
+    A scatter of bright metallic hits rather than one, because a boarding is a
+    crowd, and it runs long because the action it accompanies takes seconds
+    rather than an instant.
+    """
+    hull = envelope(one_pole_lowpass(noise(0.5, rng), 500.0), 0.002, 0.16, 3.0)
+    clashes: Signal = silence(1.1)
+    for i in range(7):
+        freq = 1500.0 + rng.uniform(-350.0, 700.0)
+        ring = envelope(
+            mix(sine(0.16, freq), gain(sine(0.16, freq * 1.51), 0.4)), 0.0008, 0.05, 5.0
+        )
+        clashes = mix(clashes, silence(0.06 + i * 0.115) + ring)
+    return normalise(mix(gain(hull, 0.8), gain(clashes, 0.7)), 0.72)
+
+
+def prize_taken(_rng: random.Random) -> Signal:
+    """A hull taken rather than sunk. Warmer and lower than the capture fanfare,
+    so the two rewards are not the same sound with different words over them."""
+    parts: Signal = silence(0.0)
+    for i, freq in enumerate((293.66, 440.0, 587.33)):
+        note = envelope(
+            mix(sine(0.5, freq), gain(sine(0.5, freq * 2.0), 0.28)), 0.008, 0.20, 2.6
+        )
+        parts = mix(parts or silence(0.0), silence(0.13 * i) + note)
+    return normalise(parts, 0.66)
+
+
+def castle_breach(rng: random.Random) -> Signal:
+    """The end of a voyage: masonry, not timber.
+
+    The longest cue in the game, on purpose. It is the only sound that marks
+    something the player spent twenty minutes sailing towards, and a wall coming
+    down should outlast the explosion that did it.
+    """
+    blast = envelope(one_pole_lowpass(noise(1.6, rng), 700.0), 0.001, 0.45, 2.0)
+    boom = envelope(sine(1.4, 110.0, 26.0), 0.002, 0.40, 2.2)
+    rubble = envelope(one_pole_lowpass(noise(2.2, rng), 1600.0), 0.25, 0.9, 1.5)
+    grit = envelope(one_pole_highpass(noise(2.0, rng), 3000.0), 0.3, 0.8, 1.6)
+    return soft_clip(
+        normalise(
+            mix(gain(blast, 1.0), gain(boom, 1.0), gain(rubble, 0.55), gain(grit, 0.22))
+        )
+    )
+
+
+def mortar_incoming(rng: random.Random) -> Signal:
+    """A shell on its way down.
+
+    The most useful sound in the game and the only one that is pure information:
+    a bomb ketch out-ranges every hull the player owns, so the first warning is
+    often a ring drawn on water they are not looking at. A falling whistle is a
+    warning the ears cannot miss and the eyes do not have to be pointed at.
+    """
+    whistle = envelope(sine(1.3, 1450.0, 430.0), 0.06, 0.55, 1.3)
+    air = envelope(one_pole_highpass(noise(1.3, rng), 2400.0), 0.1, 0.5, 1.4)
+    return normalise(mix(gain(whistle, 1.0), gain(air, 0.18)), 0.55)
+
+
 CUES = {
     "cannon_fire": cannon_fire,
     "impact_wood": impact_wood,
@@ -206,6 +282,11 @@ CUES = {
     "ui_tap": ui_tap,
     "ui_confirm": ui_confirm,
     "ui_cancel": ui_cancel,
+    "rake_hit": rake_hit,
+    "boarding_clash": boarding_clash,
+    "prize_taken": prize_taken,
+    "castle_breach": castle_breach,
+    "mortar_incoming": mortar_incoming,
 }
 
 
