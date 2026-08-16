@@ -93,6 +93,19 @@ func health_fraction() -> float:
 	return clampf(health / MAX_HEALTH, 0.0, 1.0)
 
 
+## Where this structure's outline ends, for anything drawing over it. Duck-typed
+## alongside `health_fraction` so [WorldOverlay] can treat every shore structure
+## the same way rather than branching on class.
+func hit_radius() -> float:
+	return HIT_RADIUS
+
+
+## Masonry has no bow to be raked over. Answering the same duck-typed call the
+## projectile system makes of ships keeps that logic in one place.
+func rake_multiplier(_travel: Vector2) -> float:
+	return 1.0
+
+
 func _process(delta: float) -> void:
 	# Asleep until the island wakes up, and gone as a threat once it is taken. An
 	# archipelago holds dozens of these; none of them should cost anything until

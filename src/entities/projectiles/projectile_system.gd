@@ -19,6 +19,27 @@ static var instance: ProjectileSystem = null
 ## reloads never resolves and the player just watches splashes.
 const HIT_TOLERANCE: float = 44.0
 
+# --- Pricing a hit by where it came from -----------------------------------
+#
+# Two multipliers, and between them they are what makes the helm worth holding.
+# Neither exists to be realistic; both exist to answer "why should I manoeuvre?"
+# with a number the player can feel.
+#
+# Range falloff pulls the fight *in*. A ball that has flown to the edge of its
+# reach arrives spent, so plinking from maximum range — the safest and by far the
+# most boring thing a player can do — is also the weakest. Closing is rewarded,
+# and closing is where the interesting angles are.
+#
+# Raking (see Ship.rake_multiplier) pays for the angle once you are there.
+
+## Fraction of a gun's reach inside which a ball still lands at full weight.
+const POINT_BLANK_BAND: float = 0.45
+## What a ball is worth at the very limit of its reach.
+const SPENT_SHOT_DAMAGE: float = 0.62
+## A rake worth telling the player about, rather than a shot that happened to
+## arrive a few degrees off the beam.
+const RAKE_ANNOUNCE_MUL: float = 1.5
+
 ## Longest streak drawn behind a ball, in world units. Shortened near the muzzle
 ## and near the impact so a shot grows a tail as it leaves and loses it as it
 ## arrives, rather than a fixed dash sliding across the water.
@@ -70,6 +91,7 @@ func fire(
 	if ball == null:
 		return
 	ball.launch(from, aim_at, ammo, damage, shooter, team)
+	ball.reach = reach
 	_active.append(ball)
 
 
@@ -183,13 +205,23 @@ func _apply_damage(ball: Cannonball, victim: Node2D) -> void:
 	# landed, splashed, played its impact sound and dealt no damage at all. Silent,
 	# intermittent, and only in the one situation where the shot mattered most.
 	var credit: Node2D = ball.shooter if is_instance_valid(ball.shooter) else null
-	victim.call(&"apply_damage", ball.damage * falloff, int(ball.primary_bar), credit)
+
+	# Where the shot came from is worth as much as what it was loaded with.
+	var rake: float = 1.0
+	if victim.has_method(&"rake_multiplier"):
+		rake = float(victim.call(&"rake_multiplier", ball.travel_direction()))
+	var weight: float = falloff * rake * _range_falloff(ball)
+
+	victim.call(&"apply_damage", ball.damage * weight, int(ball.primary_bar), credit)
 
 	if ball.splash_bar_mul > 0.0:
-		var splash: float = ball.damage * ball.splash_bar_mul * falloff
+		var splash: float = ball.damage * ball.splash_bar_mul * weight
 		for bar: int in [AmmoType.Bar.HULL, AmmoType.Bar.SAILS, AmmoType.Bar.CANNONS]:
 			if bar != int(ball.primary_bar):
 				victim.call(&"apply_damage", splash, bar, credit)
+
+	if rake >= RAKE_ANNOUNCE_MUL:
+		_announce_rake(ball, victim, credit)
 
 	if ball.burn_dps > 0.0 and victim.has_method(&"apply_burn"):
 		victim.call(&"apply_burn", ball.burn_dps, ball.burn_duration)
@@ -197,3 +229,36 @@ func _apply_damage(ball: Cannonball, victim: Node2D) -> void:
 		victim.call(&"apply_crew_loss", ball.crew_kill)
 
 	EventBus.projectile_impact.emit(ball.impact_point, ball.impact_pool, victim)
+
+
+## What a ball is worth for the distance it flew.
+##
+## Full weight inside [constant POINT_BLANK_BAND] of the gun's reach, then a
+## smooth taper to [constant SPENT_SHOT_DAMAGE] at the limit. Smooth rather than
+## stepped on purpose: a cliff edge would have players hunting for an exact
+## distance, where a ramp just makes closing quietly the right answer.
+func _range_falloff(ball: Cannonball) -> float:
+	if ball.reach <= 1.0:
+		return 1.0
+	var travelled: float = ball.ground_distance() / ball.reach
+	var t: float = clampf(
+		inverse_lerp(POINT_BLANK_BAND, 1.0, travelled), 0.0, 1.0
+	)
+	return lerpf(1.0, SPENT_SHOT_DAMAGE, t * t)
+
+
+## Calls out a rake so the player learns the rule from having done it.
+##
+## Only for the player's own shots. Being told "RAKE" when the thing that just
+## happened was an enemy raking *you* teaches the opposite of the intended
+## lesson, and the damage number already says it plainly enough from that end.
+func _announce_rake(ball: Cannonball, victim: Node2D, credit: Node2D) -> void:
+	var shooter := credit as Ship
+	if shooter == null or shooter.team != Teams.PLAYER:
+		return
+	EventBus.rake_landed.emit(victim, ball.impact_point)
+	var node: Node2D = Pools.spawn_effect(
+		&"damage_number", ball.impact_point + Vector2(0.0, -34.0)
+	)
+	if node != null and node.has_method(&"show_flourish"):
+		node.call(&"show_flourish", "RAKE!")

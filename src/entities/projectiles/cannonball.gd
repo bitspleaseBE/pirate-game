@@ -39,6 +39,9 @@ var crew_kill: float = 0.0
 var impact_pool: StringName = &"impact"
 var shooter: Node2D = null
 var shooter_team: int = 0
+## The gun's maximum reach for this shot, so the impact can be priced against how
+## far the ball actually had to travel. See [ProjectileSystem._range_falloff].
+var reach: float = 1.0
 ## Colour of the streak [ProjectileSystem] draws behind this ball. Taken from the
 ## ammo's own tint, so the trail carries the same "what is in the air" information
 ## the ball does, at a size that is readable while it is still moving.
@@ -127,6 +130,13 @@ func _apply_altitude(height01: float) -> void:
 		)
 
 
+## Unit vector along the ball's ground track. What raking fire is measured
+## against — see [method Ship.rake_multiplier].
+func travel_direction() -> Vector2:
+	var track: Vector2 = impact_point - origin
+	return track.normalized() if track.length_squared() > 0.01 else Vector2.UP
+
+
 ## How far along the flight this ball is, 0 to 1.
 func progress() -> float:
 	return clampf(elapsed / maxf(0.001, flight_time), 0.0, 1.0)
@@ -155,5 +165,6 @@ func visual_position_at(t: float) -> Vector2:
 func _pool_release() -> void:
 	shooter = null
 	elapsed = 0.0
+	reach = 1.0
 	_visual_scale = 1.0
 	trail_color = Color(1, 1, 1, 0)

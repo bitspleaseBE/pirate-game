@@ -122,6 +122,29 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.muzzle_speed = 620.0
 			a.range_mul = 0.85
 			a.max_stock = 12
+		&"mortar":
+			# Enemy-only, and deliberately absent from ORDER: the player never
+			# loads it, so it is not part of the cycle and not part of the
+			# no-single-ball-may-sink-a-skiff check, which is about the player's
+			# own gunnery.
+			#
+			# Everything here is tuned to be *seen coming*. It flies slowly and
+			# arcs high so the shell is in the air for the best part of three
+			# seconds, and the ring [WorldOverlay] draws under it during the
+			# wind-up is the honest landing point. A mortar that could not be
+			# dodged would just be damage on a timer.
+			a.display_name = "Mortar Shell"
+			a.icon = ICON_FIRE
+			a.role = "shore bombardment"
+			a.tint = Color(0.98, 0.72, 0.38)
+			a.visual_scale = 1.45
+			a.damage_mul = 1.0
+			a.aoe_radius = 190.0
+			a.splash_bar_mul = 0.35
+			a.muzzle_speed = 430.0
+			a.arc_height = 150.0
+			a.impact_pool = &"explosion"
+			a.unlimited = true
 		&"grape":
 			a.display_name = "Grape Shot"
 			a.icon = ICON_CANNON

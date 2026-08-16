@@ -53,13 +53,44 @@ const TURN_SPEED_PENALTY: float = 0.28
 const PIVOT_FORWARD_RATIO: float = 0.55
 ## Chain shot against a hull that has almost no rigging to shred.
 const OARED_SAIL_DAMAGE_MUL: float = 0.15
+## Crew efficiency at or below which a deck can no longer be held against a
+## boarding party — the threshold grape shot exists to push a ship past.
+const BOARDABLE_CREW: float = 0.62
+## Or a hull so far gone its people are fighting the sea instead of you.
+const BOARDABLE_HULL: float = 0.35
 ## Fraction of gun range a ship tries to hold while engaging.
-const ENGAGE_RANGE_MUL: float = 0.72
+##
+## Pulled in from 0.72 to sit inside the band where shot still lands at full
+## weight (see [constant ProjectileSystem.POINT_BLANK_BAND]). A standoff chosen
+## where every ball arrives spent is a standoff that makes fights long and limp,
+## and it applies to the player's own assist as much as to the enemy.
+const ENGAGE_RANGE_MUL: float = 0.58
 ## How far off the direct line the standoff point sits. Bigger = wider circles.
 const ORBIT_OFFSET_RAD: float = 0.78
 ## Engagement steering re-evaluates at this rate. It is a course correction, not
 ## a per-frame servo, and running it at 60 Hz just produces a twitchy helm.
 const ENGAGE_HZ: float = 5.0
+
+# --- Raking fire -----------------------------------------------------------
+#
+# A ball that arrives along a ship's length travels the whole gun deck: it takes
+# out frames, dismounts guns and scythes down the crew, where the same ball on
+# the beam punches one hole and stops. Crossing an enemy's bow or stern to rake
+# them is *the* age-of-sail tactic, and it is the reason a fight should be about
+# where you are rather than about who reloads faster.
+#
+# Mechanically this is what pays for the helm being back in the player's hands.
+# Auto-orbit parks you on a beam-to-beam circle, which is precisely the angle
+# that rakes nobody; steering yourself is how you get across their stern, and
+# this is what you get for it.
+
+## Damage multiplier for a ball that arrives dead along the hull's axis.
+const RAKE_DAMAGE_MUL: float = 2.15
+## Alignment (as |cos| of the angle between the shot's track and the hull's axis)
+## at which the full multiplier applies, and where it fades out entirely.
+## ~20° and ~55° off the axis.
+const RAKE_ALIGN_FULL: float = 0.94
+const RAKE_ALIGN_NONE: float = 0.57
 
 # --- Riding the swell -------------------------------------------------------
 #
@@ -115,10 +146,25 @@ var selected: bool = false
 var loaded_ammo: AmmoType = null
 ## Reduced by grape shot. Multiplies reload speed.
 var crew_efficiency: float = 1.0
+## Set while grapples are across and a boarding party is fighting for this hull.
+## A grappled ship neither steers nor thinks — it is being fought over.
+var grappled: bool = false
 
 var lod: int = 0
 ## Set while fleeing, so a broken ship runs instead of politely presenting a beam.
 var suppress_engage_steering: bool = false
+## Set when the player steers this hull by hand while a target is still marked.
+##
+## The single most important flag in the combat model. Engagement steering used
+## to own the helm outright: tap an enemy and the ship sailed itself onto a fixed
+## orbit and shot from there, which left the player with exactly one decision per
+## fight. Now a course order wins — the target stays marked, the guns keep firing
+## the instant a beam bears, and *where the ship goes* is the player's problem.
+##
+## It clears itself on arrival (see [method _tick_engagement]) so the ship is
+## never left drifting with a target it is no longer working towards. That is
+## what keeps the assist an assist: it fills a vacuum, it does not take over.
+var manual_helm: bool = false
 ## Per-ship standoff, so a future "beach the ship" action can lower it without
 ## every other hull forgetting how to navigate.
 var coast_standoff: float = COAST_STANDOFF
@@ -214,6 +260,15 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		return
 	_tick_burn(delta)
+	# A grappled hull is lashed alongside and being fought over hand to hand. It
+	# still burns, still takes fire and can still be sunk under everyone's feet —
+	# it simply has no say in where it is going.
+	if grappled:
+		velocity = velocity.lerp(Vector2.ZERO, 1.0 - exp(-2.5 * delta))
+		move_and_slide()
+		Grid.update(self)
+		_ride_swell()
+		return
 	_tick_engagement(delta)
 	_steer(delta)
 	move_and_slide()
@@ -230,19 +285,29 @@ func _physics_process(delta: float) -> void:
 		_retaliate_left -= delta
 
 
-## Steers to bring a beam onto the target.
+## Steers to bring a beam onto the target — when, and only when, nobody else is
+## steering.
 ##
-## This is what "tap an enemy to attack" actually means. Guns only fire from the
-## port and starboard arcs, so a ship that merely sails at its target points the
-## one part of the hull that has no cannons on it and never fires a shot. Instead
-## it steers for a standoff point offset around the target, which puts it on a
-## tangential course — arriving beam-on, at gun range, already bearing.
+## This is what "tap an enemy to attack" means. Guns only fire from the port and
+## starboard arcs, so a ship that merely sails at its target points the one part
+## of the hull that has no cannons on it and never fires a shot. Left to itself
+## the ship steers for a standoff point offset around the target, which puts it
+## on a tangential course — arriving beam-on, at gun range, already bearing.
 ##
-## Overrides any movement order, which is consistent: tapping open water clears
-## the target, so having one means the player asked for a gun run.
+## It yields to the player. A course order sets [member manual_helm] and this
+## keeps its hands off until the ship gets where it was sent; the target stays
+## marked and the guns keep working throughout. That is the difference between an
+## autopilot and an assist, and it is the difference between watching a fight and
+## sailing one.
 func _tick_engagement(delta: float) -> void:
 	if suppress_engage_steering:
 		return
+	if manual_helm:
+		if has_nav_target:
+			return
+		# Arrived. The helm comes back to the solver rather than leaving a ship
+		# sitting still with an enemy marked and nothing happening.
+		manual_helm = false
 	if target == null or not is_instance_valid(target) or not _is_alive_target(target):
 		return
 
@@ -253,9 +318,21 @@ func _tick_engagement(delta: float) -> void:
 	set_course(broadside_station(target))
 
 
+## How far off a target this hull wants to sit while fighting.
+##
+## Per-hull rather than one constant, because it is most of what separates a
+## skiff from a bomb ketch: one wants to be inside your arc, the other wants to
+## be nowhere you can reach. See [enum ShipStats.Doctrine].
+func engage_range() -> float:
+	var mul: float = stats.engage_range_mul
+	if mul <= 0.0:
+		mul = ENGAGE_RANGE_MUL
+	return stats.cannon_range * mul
+
+
 ## The point to steer for in order to arrive beam-on to `shoot_at`.
 func broadside_station(shoot_at: Node2D) -> Vector2:
-	var ideal: float = stats.cannon_range * ENGAGE_RANGE_MUL
+	var ideal: float = engage_range()
 	var from_target: Vector2 = global_position - shoot_at.global_position
 	if from_target.length_squared() < 1.0:
 		from_target = Vector2.RIGHT
@@ -514,9 +591,52 @@ func _tick_guns(delta: float) -> void:
 			_begin_volley(side, shoot_at)
 
 
-## true when the gun deck is functional enough to fire at all.
+## true when the gun deck is functional enough to fire at all. A fireship has no
+## gun deck at all and must never enter the gunnery path.
 func can_shoot() -> bool:
-	return alive and cannons_fraction() > 0.05
+	return alive and stats.has_broadside() and cannons_fraction() > 0.05
+
+
+## How ready one battery is to fire, 0 (just fired) to 1 (loaded).
+##
+## Drawn on the selected hull by [WorldOverlay]. With the helm back in the
+## player's hands this stops being a nicety: the whole skill of the fight is
+## arriving beam-on at the moment a battery comes loaded, and you cannot time
+## something you cannot see.
+func reload_fraction(side: int) -> float:
+	if stats.reload_time <= 0.0:
+		return 1.0
+	return clampf(1.0 - _reload[side] / stats.reload_time, 0.0, 1.0)
+
+
+## true when this battery is loaded and the target is inside its arc.
+func battery_bears(side: int) -> bool:
+	var shoot_at: Node2D = target
+	if shoot_at == null or not is_instance_valid(shoot_at):
+		return false
+	return _reload[side] <= 0.0 and _bears_on(side, shoot_at)
+
+
+## Damage multiplier for a ball whose ground track runs along `travel`.
+##
+## Raking fire: a shot that enters over the bow or the stern runs the length of
+## the gun deck, where the same ball on the beam stops at the first frame it
+## hits. This is what makes crossing an enemy's stern worth the manoeuvre, and it
+## is the payoff for steering yourself instead of letting the assist park you on
+## a beam-to-beam circle where nobody rakes anybody.
+##
+## Symmetric about the hull's axis — bow and stern both count. A stern rake is
+## the more devastating of the two in reality, but telling them apart asks the
+## player to read a hull's facing to within a half-turn while it is manoeuvring,
+## which at gameplay zoom is a coin flip rather than a skill.
+func rake_multiplier(travel: Vector2) -> float:
+	if travel.length_squared() < 0.01:
+		return 1.0
+	var alignment: float = absf(travel.normalized().dot(forward()))
+	var t: float = clampf(
+		inverse_lerp(RAKE_ALIGN_NONE, RAKE_ALIGN_FULL, alignment), 0.0, 1.0
+	)
+	return lerpf(1.0, RAKE_DAMAGE_MUL, t)
 
 
 func _current_target() -> Node2D:
@@ -707,6 +827,14 @@ func heal(amount: float) -> void:
 	bars_changed.emit()
 
 
+## Prize crew coming back aboard. A successful boarding refills the ranks the
+## fight cost you, which is what stops a run of captures leaving the player with
+## a fleet that cannot reload.
+func repair_all_crew() -> void:
+	crew_efficiency = 1.0
+	bars_changed.emit()
+
+
 func repair_all() -> void:
 	hull = stats.max_hull
 	sails = stats.max_sails
@@ -744,6 +872,9 @@ func _sink(killer: Node2D) -> void:
 	Pools.spawn_effect(&"explosion", global_position, 0.0, 1.4)
 	if team == Teams.ENEMY:
 		GameState.stats_ships_sunk += 1
+		# A fireship that reaches its mark clears its own credit first, so blowing
+		# up on the player's bow is not a payday for the player. See
+		# [method EnemyShip._detonate].
 		_pay_bounty(killer if killer != null else _last_attacker)
 
 	died.emit(killer)
@@ -813,9 +944,33 @@ func is_crippled() -> bool:
 	return sails_fraction() <= 0.001
 
 
+## Whether this hull could be taken by a boarding party rather than sunk.
+##
+## The condition is that its people cannot hold it: either grape shot has swept
+## the deck, or the hull is so far gone the crew are fighting the water instead.
+## That is what finally gives grape a reason to exist — until now it cut a
+## reload speed the player could not see, on a ship they were about to sink
+## anyway, which is not a decision anyone was ever going to make twice.
+##
+## Sails and guns deliberately do not count. Shooting the rig off something is
+## how you stop it running away; it says nothing about whether its crew will
+## throw you back over the side.
+func is_boardable() -> bool:
+	return alive and (crew_efficiency <= BOARDABLE_CREW or hull_fraction() <= BOARDABLE_HULL)
+
+
 func set_course(world_pos: Vector2) -> void:
 	nav_target = clamp_to_navigable(world_pos)
 	has_nav_target = true
+
+
+## A course the *player* ordered. Identical to [method set_course] except that it
+## takes the helm off the engagement solver until the ship arrives — see
+## [member manual_helm]. Crucially it does not touch [member target]: steering
+## yourself must never mean holstering your guns.
+func steer_by_hand(world_pos: Vector2) -> void:
+	set_course(world_pos)
+	manual_helm = true
 
 
 func stop() -> void:
@@ -828,6 +983,10 @@ func set_target(node: Node2D) -> void:
 		# Steer this frame rather than waiting out the engagement tick, so tapping
 		# an enemy produces an immediate, visible turn onto them.
 		_engage_accum = 1.0 / ENGAGE_HZ
+		# Tapping an enemy is an order to go and fight it, so it hands the helm
+		# back to the solver — otherwise a ship still running out an old waypoint
+		# would acknowledge the order and sail away from it.
+		manual_helm = false
 	target = node
 
 

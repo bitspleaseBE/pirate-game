@@ -163,8 +163,16 @@ func _tap(screen_pos: Vector2) -> void:
 		world, PICK_RADIUS_ENEMY, SpatialGrid.KIND_ENEMY_SHIP | SpatialGrid.KIND_STRUCTURE
 	)
 	if hostile != null:
-		EventBus.intent_target.emit(hostile)
-		Audio.play_ui(&"ui_confirm")
+		# Tapping the enemy you are already engaging breaks off. Since a course
+		# order no longer clears the target — steering yourself must not mean
+		# holstering your guns — this is the gesture that does, and putting it on
+		# the target itself keeps it where the player is already looking.
+		if _is_current_target(hostile):
+			EventBus.intent_target.emit(null)
+			Audio.play_ui(&"ui_tap")
+		else:
+			EventBus.intent_target.emit(hostile)
+			Audio.play_ui(&"ui_confirm")
 		return
 
 	var island: Island = _island_at(world)
@@ -200,6 +208,13 @@ func _nearest_navigable(world: Vector2) -> Vector2:
 	if ship == null or not is_instance_valid(ship):
 		return world
 	return ship.clamp_to_navigable(world)
+
+
+func _is_current_target(entity: Node2D) -> bool:
+	if fleet == null or not is_instance_valid(fleet):
+		return false
+	var ship: Ship = fleet.selected
+	return ship != null and is_instance_valid(ship) and ship.target == entity
 
 
 func _island_at(world: Vector2) -> Island:

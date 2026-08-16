@@ -45,6 +45,11 @@ const SHAKE_PER_GUN: float = 1.5
 const SHAKE_HIT_BASE: float = 2.2
 const SHAKE_HIT_PER_DAMAGE: float = 0.09
 const SHAKE_SINK: float = 7.0
+## A rake landing. Between a hit and a sinking: the point is that it feels
+## different from an ordinary ball connecting, because it is.
+const SHAKE_RAKE: float = 4.5
+## A fireship detonating, which is the loudest thing that happens in this game.
+const SHAKE_DETONATION: float = 8.5
 ## Ceiling, so a Galleon broadside landing in a burning melee cannot make the
 ## screen unreadable. Shake is seasoning.
 const MAX_SHAKE: float = 9.0
@@ -84,6 +89,12 @@ func _ready() -> void:
 	EventBus.shot_fired.connect(_on_shot_fired)
 	EventBus.ship_damaged.connect(_on_ship_damaged)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
+	# The two moments in a fight that most deserve to be felt: a ball going down
+	# the length of something, and a powder hull going up. Neither is damage the
+	# player merely received — one is a manoeuvre paying off and the other is one
+	# that did not — so both get a kick of their own rather than only the hit.
+	EventBus.rake_landed.connect(_on_rake_landed)
+	EventBus.fireship_detonated.connect(_on_fireship_detonated)
 
 	EventBus.camera_registered.emit(self)
 
@@ -175,6 +186,17 @@ func _on_ship_sunk(ship: Node2D, killed_by: Node2D) -> void:
 	var killer := killed_by as Ship
 	if (hull != null and hull.team == Teams.PLAYER) or (killer != null and killer.team == Teams.PLAYER):
 		shake(SHAKE_SINK)
+
+
+func _on_rake_landed(_victim: Node2D, _at: Vector2) -> void:
+	shake(SHAKE_RAKE)
+
+
+## Felt wherever it happens, unlike a broadside. A fireship going up is either
+## the player's problem or the player's relief, and at the distance one detonates
+## from anything it matters to, both are worth the kick.
+func _on_fireship_detonated(_at: Vector2) -> void:
+	shake(SHAKE_DETONATION)
 
 
 ## `screen_delta` is the drag in screen pixels; the camera moves the opposite way

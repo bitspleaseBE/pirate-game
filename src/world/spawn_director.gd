@@ -15,14 +15,18 @@ const ENEMY_SCENE: PackedScene = preload("res://src/entities/ships/enemy_ship.ts
 const TICK_HZ: float = 2.0
 ## Seconds between reinforcement waves while a shipyard lives.
 const REINFORCE_INTERVAL: float = 22.0
-## Total reinforcement waves an island will ever send.
+## Total reinforcement waves an island will send while its slipway still stands.
 ##
-## Unbounded reinforcement is only fair if the player can stop it, and the
-## destructible shipyard that is supposed to do that is not built yet. Until it
-## is, an island has to be finite: an endless trickle against a starting hull is
-## not difficulty, it is a wall with no door. Remove this cap when killing the
-## shipyard actually cuts the supply.
-const MAX_REINFORCEMENT_WAVES: int = 2
+## Unbounded reinforcement is only fair if the player can stop it. For a long
+## time they could not — the destructible shipyard the design called for did not
+## exist — so this was a hard cap of two, with a comment asking for the cap to be
+## lifted once the yard was built. It is built now ([Shipyard]), so the door is
+## there: burn the yard and the waves stop.
+##
+## The cap survives, much higher, purely as a backstop against an island that is
+## somehow never resolved. It is not meant to be reached in play; what ends the
+## waves is the player deciding to go and end them.
+const MAX_REINFORCEMENT_WAVES: int = 12
 ## Garrison ships spawn this far outside the island's coast.
 const SPAWN_STANDOFF: float = 420.0
 ## Half-width of the arc defenders spawn within, centred on the player's bearing.
@@ -101,7 +105,9 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 			_begin_landing_approach(island)
 		return
 
-	if island.def.has_shipyard and int(_waves_sent.get(island, 0)) < MAX_REINFORCEMENT_WAVES:
+	# The slipway itself, not the flag on the def: burning it is what stops the
+	# waves, and that is the one tactical decision inside an island fight.
+	if island.can_reinforce() and int(_waves_sent.get(island, 0)) < MAX_REINFORCEMENT_WAVES:
 		var left: float = float(_reinforce_left.get(island, REINFORCE_INTERVAL)) - delta
 		if left <= 0.0:
 			_spawn_wave(island, _wave_size(island.def.tier))
@@ -187,26 +193,38 @@ func _spawn_wave(island: Island, count: int) -> void:
 	)
 
 
-## Tier decides the mix, and `index` is how many hulls this island has already
-## put on the water — so the heaviest hull leads the garrison and reinforcements
-## come in lighter behind it.
+## What each tier puts on the water, in the order it puts it there.
+##
+## Written out as a list per tier rather than a chain of ifs, because it *is* the
+## enemy ramp and the ramp is something to read down a column and argue with.
+## `index` is how many hulls this island has already launched, so the front of
+## each list leads the garrison and reinforcements arrive further down it; past
+## the end it wraps.
 ##
 ## The whole shape of the early game lives in the tier-2 line. It used to read
 ## `skiff if index % 2 == 0 else enemy_sloop`, which against a two-hull garrison
 ## meant a Navy Sloop *and* a skiff for a player who had, at that point, one gun
 ## a side and eighty-five points of hull. The step from island one to island two
-## is now a step in weight — one proper warship instead of one pop-gun boat —
-## rather than a step in numbers, and numbers do not start climbing until tier 3.
+## is a step in weight — one proper warship instead of one pop-gun boat — rather
+## than a step in numbers, and numbers do not start climbing until tier 3.
+##
+## Where the *variety* arrives is the other half of it. Tier 3 is where the
+## player meets something that is not a gun duel at all: a fireship, which cannot
+## be traded with and has to be shot off or dodged. Tier 4 adds the bomb ketch,
+## which cannot be dodged and has to be closed on. Between them they are what
+## stops the back half of a voyage being the front half with bigger numbers.
+const HULL_MIX: Dictionary = {
+	1: [&"skiff"],
+	2: [&"enemy_sloop"],
+	3: [&"enemy_sloop", &"fireship", &"skiff"],
+	4: [&"enemy_brig", &"bomb_ketch", &"enemy_sloop", &"fireship"],
+	5: [&"enemy_brig", &"bomb_ketch", &"enemy_sloop", &"fireship", &"enemy_brig", &"skiff"],
+}
+
+
 func _hull_for_tier(tier: int, index: int) -> StringName:
-	if tier <= 1:
-		return &"skiff"
-	if tier == 2:
-		return &"enemy_sloop"
-	if tier == 3:
-		return &"enemy_sloop" if index == 0 else &"skiff"
-	if tier == 4:
-		return &"enemy_brig" if index == 0 else &"enemy_sloop"
-	return &"enemy_brig" if index % 2 == 0 else &"enemy_sloop"
+	var mix: Array = HULL_MIX.get(clampi(tier, 1, 5), HULL_MIX[1])
+	return mix[index % mix.size()]
 
 
 ## Reinforcements per wave. A shipyard only exists from tier 3, and at tier 3 it

@@ -24,11 +24,19 @@ Needs Godot **4.7.1**. Open the project, or:
 godot src/scenes/voyage.tscn
 ```
 
-Controls: tap water to set a course, tap an enemy to engage (your ship will manoeuvre
-to bring a broadside to bear), pinch to zoom, drag to look around, `F3` for the debug
-overlay, `Esc` for the menu. Bottom right: **Hideout** sets a course home and opens the
-port when you get there, the **fleet badge** opens the roster, and the brass button
-cycles your shot.
+Controls: tap an enemy to **mark** it — your guns then fire on their own the instant she
+enters a broadside arc. Tap water to **steer**; that keeps the target marked, so sailing
+and shooting are the same activity and working the ship onto a good angle is the whole
+skill. Tap the marked enemy again to break off. Pinch to zoom, drag to look around, `F3`
+for the debug overlay, `Esc` for the menu. Bottom right: **Hideout** sets a course home
+and opens the port when you get there, the **fleet badge** opens the roster, the brass
+button cycles your shot, and a **BOARD** prompt appears above it whenever you are
+alongside a hull whose crew can no longer hold her.
+
+Two things reward sailing well rather than shooting often: shot loses weight at long
+range, so close; and a ball that arrives along a hull's bow-to-stern axis **rakes** her
+for over double damage, so crossing an enemy's stern is worth the manoeuvre. The gauges
+on either beam of your ship fill as that battery reloads and light up when it bears.
 
 ## Development commands
 
@@ -39,11 +47,46 @@ gates on:
 godot --headless src/scenes/voyage.tscn -- --smoke
 ```
 
+Measure how *busy* a fight is, which is the thing no other harness could see. `--smoke`
+sails at the deliberately gentle opening island and asserts that combat happened; for a
+long time what happened was three shots in eighty seconds, and it passed every time. This
+puts a mid-game hull in front of a mid-game island and counts shots, hits, rakes, kills
+and damage taken per minute, with a floor under the shot rate:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --arena
+```
+
+Prove the two enemies that are not gun duels still do their one thing — a fireship has to
+close and detonate, a bomb ketch has to telegraph *before* it fires. Both fail silently:
+the ships still spawn and still get shot at, so nothing else here would notice:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --doctrine
+```
+
+Drive a boarding end to end in both the outcomes it has — kept when a berth is free,
+stripped for cargo when not — through the same prompt the player presses:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --board
+```
+
 Capture gameplay frames to `user://shots/` — the only reliable way to check art, scale
 and z-order:
 
 ```bash
 godot src/scenes/voyage.tscn -- --shot
+```
+
+Frame an actual engagement instead. The plain `--shot` run mostly photographs open water,
+so none of its frames reliably contains a marked target — which means none of them shows
+the firing arcs, the reload gauges inside them, a mortar's telegraph ring or a boarding.
+Those are unreadable-or-fine rather than working-or-broken, and only a rendered frame can
+tell the difference:
+
+```bash
+godot src/scenes/voyage.tscn -- --shot-combat
 ```
 
 Frame each island's harbour instead — hostile, held, and unloading — which is the only way

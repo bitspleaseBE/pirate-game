@@ -108,6 +108,10 @@ func _ready() -> void:
 		or "--shot-harbour" in harness_args
 		or "--shot-fleet" in harness_args
 		or "--hideout" in harness_args
+		or "--arena" in harness_args
+		or "--doctrine" in harness_args
+		or "--board" in harness_args
+		or "--shot-combat" in harness_args
 	)
 
 	_update_wind_availability()
@@ -148,6 +152,14 @@ func _ready() -> void:
 		_capture_fleet()
 	elif "--hideout" in args:
 		_run_hideout_test()
+	elif "--arena" in args:
+		_run_arena_test()
+	elif "--doctrine" in args:
+		_run_doctrine_test()
+	elif "--board" in args:
+		_run_boarding_test()
+	elif "--shot-combat" in args:
+		_capture_combat()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -357,6 +369,534 @@ func _run_hideout_test() -> void:
 		for line: String in failures:
 			push_error("HIDEOUT FAIL: %s" % line)
 		await _quit_cleanly(1)
+
+
+## Measures how *busy* a real fight is, which is the one thing about this game
+## that no other harness could see.
+##
+##   godot --headless src/scenes/voyage.tscn -- --arena
+##
+## `--smoke` sails at the nearest island, which is deliberately one skiff on a
+## still sea, and then reports whatever happened. For a long time what happened
+## was three shots in eighty seconds — and it passed, every time, because nothing
+## it asserts is about density. "Is the combat any good" is not a question you can
+## answer by checking that combat occurred.
+##
+## So this one picks the heaviest island in the voyage, puts a mid-game hull in
+## front of it, and counts: shots fired, hits landed, rakes, kills, and damage
+## taken, per minute of fighting. Those numbers are the argument for every balance
+## change in the combat model, and a regression in them is a regression in the
+## game whether or not anything is broken.
+func _run_arena_test() -> void:
+	const SECONDS: float = 90.0
+	const TIME_SCALE: float = 6.0
+	const WALL_CLOCK_LIMIT_SEC: float = 120.0
+	## Shots per minute below which the fight has gone quiet again. Set well under
+	## what the run actually produces: this is a floor against regression, not a
+	## target to tune towards.
+	const MIN_SHOTS_PER_MIN: float = 12.0
+	## And a fight the player never has to react to is not a fight. If nothing the
+	## enemy does lands, the difficulty is a formality.
+	const MIN_DAMAGE_TAKEN: float = 1.0
+
+	var tally: Dictionary = {"shots": 0, "impacts": 0, "sunk": 0, "rakes": 0, "taken": 0.0}
+	EventBus.shot_fired.connect(func(from: Node2D, _b: StringName, _c: Vector2, _d: Vector2) -> void:
+		var ship := from as Ship
+		if ship != null and ship.team == Teams.PLAYER:
+			tally["shots"] += 1
+	)
+	EventBus.projectile_impact.connect(func(_a: Vector2, _b: StringName, hit: Node2D) -> void:
+		if hit != null and not (hit is Ship and (hit as Ship).team == Teams.PLAYER):
+			tally["impacts"] += 1
+	)
+	EventBus.ship_sunk.connect(func(ship: Node2D, _b: Node2D) -> void:
+		if ship is Ship and (ship as Ship).team == Teams.ENEMY:
+			tally["sunk"] += 1
+	)
+	EventBus.rake_landed.connect(func(_v: Node2D, _p: Vector2) -> void:
+		tally["rakes"] += 1
+	)
+	EventBus.ship_damaged.connect(func(ship: Node2D, amount: float, _bar: StringName) -> void:
+		if ship is Ship and (ship as Ship).team == Teams.PLAYER:
+			tally["taken"] = float(tally["taken"]) + amount
+	)
+
+	# A mid-game hull against a mid-game island, which is the matchup worth
+	# measuring: the opening Dinghy cannot exercise the combat model at all — one
+	# gun a side, no rig, no wind — and the far end of the voyage is a fleet
+	# fight this single-hull harness has no way to represent.
+	GameState.fleet = [{"stats_id": &"brig", "upgrades": {&"plating": 2, &"gunnery": 1}}]
+	GameState.banked_gold = 400
+	fleet.refit()
+	await get_tree().process_frame
+
+	var arena: Island = _heaviest_island()
+	if arena == null:
+		push_error("ARENA FAIL: voyage has no hostile island")
+		get_tree().quit(1)
+		return
+
+	# Just outside the alert radius, so the run includes the approach — which is
+	# when the shore batteries get their free shots and is half of what makes an
+	# island an island.
+	var bearing: Vector2 = (arena.anchor_point - arena.global_position).normalized()
+	var standoff: Vector2 = arena.global_position + bearing * (
+		arena.def.radius + arena.def.alert_radius * 0.95
+	)
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = ship.clamp_to_navigable(standoff)
+	camera.snap_to(fleet.centroid())
+	await get_tree().process_frame
+
+	Log.info(
+		"ARENA: %s, tier %d, %d defenders, %d batteries, shipyard=%s"
+		% [
+			arena.def.display_name, arena.def.tier, arena.def.garrison_ships,
+			arena.def.fort_cannons, arena.def.has_shipyard,
+		],
+		"Arena"
+	)
+
+	# Dictionaries, not locals: GDScript lambdas capture by value, so a plain bool
+	# set from the handler below would be set on a copy. The same note is on the
+	# tally above and on the smoke test's counters.
+	var outcome: Dictionary = {"wiped": false, "done": false, "started": Time.get_ticks_msec()}
+
+	# A wipe is data, not a failure. The harness sails straight at whatever is
+	# nearest and never once uses the helm it is here to measure, so losing a
+	# single hull to the heaviest island in the voyage says nothing about the
+	# game. What it must not do is hang: a wipe routes to the main menu, which
+	# frees this node mid-await — the coroutine stops, nothing calls quit(), and
+	# the run dies at its timeout with no output. So the report is a method both
+	# paths call, and the wipe path calls it immediately rather than racing the
+	# scene change.
+	fleet.fleet_emptied.connect(func() -> void:
+		if bool(outcome["done"]):
+			return
+		outcome["wiped"] = true
+		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+	)
+
+	Engine.time_scale = TIME_SCALE
+	var elapsed: float = 0.0
+	while elapsed < SECONDS and not bool(outcome["wiped"]):
+		var lead: Ship = fleet.selected
+		if lead != null and is_instance_valid(lead) and lead.alive:
+			var enemy: Node2D = Grid.query_nearest(
+				lead.global_position, 3000.0,
+				SpatialGrid.KIND_ENEMY_SHIP | SpatialGrid.KIND_STRUCTURE
+			)
+			if enemy != null:
+				EventBus.intent_target.emit(enemy)
+			elif not arena.is_captured:
+				lead.set_course(arena.global_position)
+		await get_tree().create_timer(0.5).timeout
+		elapsed += 0.5
+
+		if float(Time.get_ticks_msec() - int(outcome["started"])) / 1000.0 > WALL_CLOCK_LIMIT_SEC:
+			break
+
+	if not bool(outcome["done"]):
+		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## Frames an actual engagement, which is the only way to check the combat readout.
+##
+##   godot src/scenes/voyage.tscn -- --shot-combat
+##
+## The plain `--shot` run sails at an island and photographs whatever it finds,
+## and what it mostly finds is open water — none of its fourteen frames reliably
+## contains a marked target, so none of them shows the firing arcs, the reload
+## meter inside them, a mortar's telegraph ring or a boarding. Those are exactly
+## the things that are unreadable-or-fine rather than working-or-broken, and a
+## rendered frame is the only thing that can tell the difference.
+func _capture_combat() -> void:
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	Quality.set_tier_manual(Quality.Tier.HIGH)
+
+	GameState.fleet = [{"stats_id": &"brig", "upgrades": {&"plating": 2}}]
+	GameState.banked_gold = 400
+	fleet.refit()
+	await get_tree().process_frame
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+
+	var arena: Island = _heaviest_island(3)
+	if arena == null:
+		push_error("--shot-combat: no hostile island to fight")
+		get_tree().quit(1)
+		return
+
+	var bearing: Vector2 = (arena.anchor_point - arena.global_position).normalized()
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = ship.clamp_to_navigable(
+			arena.global_position + bearing * (arena.def.radius + arena.def.alert_radius * 0.8)
+		)
+	camera.snap_to(fleet.centroid())
+	camera.target_zoom = 0.7
+	await get_tree().process_frame
+
+	fleet.fleet_emptied.connect(func() -> void:
+		print("COMBAT SHOTS: fleet lost — stopping early. %s"
+			% ProjectSettings.globalize_path(dir))
+		get_tree().quit(0)
+	)
+
+	for shot: int in 10:
+		var lead: Ship = fleet.selected
+		if lead != null and is_instance_valid(lead) and lead.alive:
+			var enemy: Node2D = Grid.query_nearest(
+				lead.global_position, 2400.0,
+				SpatialGrid.KIND_ENEMY_SHIP | SpatialGrid.KIND_STRUCTURE
+			)
+			if enemy != null:
+				EventBus.intent_target.emit(enemy)
+			else:
+				lead.set_course(arena.global_position)
+		await get_tree().create_timer(2.2).timeout
+		if hud.has_method(&"dismiss_briefing"):
+			hud.call(&"dismiss_briefing")
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(
+			"%s/combat_%02d.png" % [dir, shot]
+		)
+
+	print("COMBAT SHOTS: %s" % ProjectSettings.globalize_path(dir))
+	get_tree().quit(0)
+
+
+## Drives a boarding end to end, in both the outcomes it has.
+##
+##   godot --headless src/scenes/voyage.tscn -- --board
+##
+## Boarding is the only way in this game to end a fight with the other ship still
+## floating, and it is the only reason grape shot exists. It is also the most
+## conditional thing in the game — it needs a marked target, a thinned crew and
+## two hulls alongside at the same moment — so it is exactly the feature that can
+## rot untouched while every other harness goes on passing.
+##
+## Both branches are exercised, because they are different code and the wrong one
+## silently firing is a real bug the player would read as the game eating a prize:
+## with a berth free the hull must join the fleet; with none it must pay out
+## instead. And it goes through the same prompt the player does — a boarding that
+## works but cannot be reached is not a feature.
+func _run_boarding_test() -> void:
+	const TIME_SCALE: float = 3.0
+	const PATIENCE: float = 14.0
+
+	director.set_process(false)
+	var taken: Dictionary = {"kept": 0, "stripped": 0}
+	EventBus.prize_taken.connect(func(_name: String, kept: bool) -> void:
+		taken["kept" if kept else "stripped"] += 1
+	)
+
+	var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+	camera.set_world_bounds(Rect2(open - Vector2(8000.0, 8000.0), Vector2(16000.0, 16000.0)))
+
+	var failures: PackedStringArray = []
+	Engine.time_scale = TIME_SCALE
+
+	# Round one: no spare berth, so the prize must be stripped for cargo.
+	var stripped: Dictionary = await _board_once(open, 1, PATIENCE)
+	if not bool(stripped["boarded"]):
+		failures.append("with no berth free, the boarding prompt never appeared or never resolved")
+	elif int(taken["stripped"]) != 1 or int(taken["kept"]) != 0:
+		failures.append(
+			"a prize taken with no berth free should be stripped, not kept (kept=%d stripped=%d)"
+			% [int(taken["kept"]), int(taken["stripped"])]
+		)
+	elif int(stripped["gold_after"]) <= int(stripped["gold_before"]):
+		failures.append("stripping a prize paid nothing")
+
+	# Round two: a berth standing empty, so the hull must actually join.
+	var owned_before: int = 0
+	taken["kept"] = 0
+	taken["stripped"] = 0
+	GameState.fleet_slots = 2
+	var kept: Dictionary = await _board_once(open + Vector2(0.0, 5000.0), 2, PATIENCE)
+	owned_before = int(kept["fleet_before"])
+	if not bool(kept["boarded"]):
+		failures.append("with a berth free, the boarding never resolved")
+	elif int(taken["kept"]) != 1:
+		failures.append("a prize taken with a berth free was not kept")
+	elif GameState.fleet.size() != owned_before + 1:
+		failures.append(
+			"the captured hull never reached the roster (%d hulls, expected %d)"
+			% [GameState.fleet.size(), owned_before + 1]
+		)
+	elif fleet.living_ships().size() < 2:
+		failures.append("the captured hull is on the roster but not on the water")
+
+	Engine.time_scale = 1.0
+	if failures.is_empty():
+		print("BOARD PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("BOARD FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## Sets up one boardable enemy alongside the player and takes it, through the
+## HUD's own prompt rather than by calling the fleet controller directly — the
+## button being wired to the action is half of what is under test.
+func _board_once(at: Vector2, slots: int, patience: float) -> Dictionary:
+	GameState.fleet_slots = slots
+	GameState.fleet = [{"stats_id": &"brig", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+
+	var boarder: Ship = fleet.selected
+	boarder.global_position = at
+	boarder.stop()
+	camera.snap_to(at)
+
+	var prize: EnemyShip = _spawn_test_enemy(&"enemy_sloop", at + Vector2(90.0, 0.0))
+	# Grape shot's job, applied directly: sweep the deck until the crew cannot
+	# hold her. This is the state the whole ammo system exists to produce.
+	prize.apply_crew_loss(0.5)
+	prize.stop()
+	await get_tree().process_frame
+	Cull.force_tick()
+
+	# Mark her, which is what a player does before boarding anything.
+	EventBus.intent_target.emit(prize)
+
+	var result: Dictionary = {
+		"boarded": false,
+		"gold_before": GameState.total_gold(),
+		"gold_after": 0,
+		"fleet_before": GameState.fleet.size(),
+	}
+
+	var waited: float = 0.0
+	var pressed: bool = false
+	while waited < patience:
+		# Both hulls held still: the grapple range is a real distance and two
+		# ships left to their own devices drift out of it.
+		if is_instance_valid(boarder):
+			boarder.stop()
+		if is_instance_valid(prize) and prize.alive:
+			prize.stop()
+
+		if not pressed:
+			var button: Button = hud.find_child("BoardButton", true, false) as Button
+			if button != null and button.visible:
+				button.pressed.emit()
+				pressed = true
+		elif not fleet.is_boarding():
+			result["boarded"] = true
+			break
+
+		await get_tree().create_timer(0.2).timeout
+		waited += 0.2
+
+	result["gold_after"] = GameState.total_gold()
+	return result
+
+
+## Proves the two enemies that are not gun duels actually do their one thing.
+##
+##   godot --headless src/scenes/voyage.tscn -- --doctrine
+##
+## A fireship that never reaches anything is a slow skiff with no guns, and a
+## bomb ketch whose telegraph never appears is unavoidable damage from off
+## screen. Both fail *silently* — the ships still spawn, still sail, still get
+## shot at, and every other harness in the project would go on passing. So each
+## is put in front of a stationary target and asked to perform.
+##
+## Deliberately in open water rather than at an island: this is a test of two
+## brains, and running it inside a live garrison would let a stray broadside from
+## something else decide the result.
+func _run_doctrine_test() -> void:
+	const TIME_SCALE: float = 4.0
+	const PATIENCE: float = 26.0
+
+	# The archipelago is live around us and its garrisons contain both of the
+	# hulls under test. Left running, the director alerts whatever island the mark
+	# was parked near and the counters below happily tally *its* fireships and
+	# *its* shells — which is exactly how the first version of this test reported
+	# a fireship doing six detonations' worth of damage and a bomb ketch firing
+	# with no telegraph. Silence the director; nothing here needs it.
+	director.set_process(false)
+
+	var fired: Dictionary = {"mortar": 0, "detonations": 0}
+	EventBus.shot_fired.connect(func(_a: Node2D, ammo: StringName, _c: Vector2, _d: Vector2) -> void:
+		if ammo == &"mortar":
+			fired["mortar"] += 1
+	)
+	EventBus.fireship_detonated.connect(func(_at: Vector2) -> void:
+		fired["detonations"] += 1
+	)
+
+	# A hull tough enough to survive being tested on, held still: the point is
+	# what the *enemy* does, and a target manoeuvring away would make a failure to
+	# arrive ambiguous.
+	GameState.fleet = [{"stats_id": &"galleon", "upgrades": {&"plating": 4}}]
+	fleet.refit()
+	await get_tree().process_frame
+
+	var mark: Ship = fleet.selected
+	if mark == null:
+		push_error("DOCTRINE FAIL: no player hull to test against")
+		get_tree().quit(1)
+		return
+	# Outside the archipelago entirely, not merely in a gap in it. The centre of
+	# the world bounds is open water on a map but it sits inside somebody's alert
+	# radius on most seeds, and a coastline in reach would have the enemies under
+	# test steering around land instead of at the mark.
+	var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+	mark.global_position = open
+	mark.stop()
+	# The camera is clamped to the voyage bounds, and this test water is outside
+	# them on purpose — so the limits have to come too. Without this the camera
+	# stays pinned at the edge of the archipelago, the cull rect never covers the
+	# test, and every ship in it goes DORMANT: nothing runs, nothing happens, and
+	# both doctrines "fail" without ever having been asked a question.
+	camera.set_world_bounds(Rect2(open - Vector2(8000.0, 8000.0), Vector2(16000.0, 16000.0)))
+	camera.snap_to(open)
+	Cull.force_tick()
+
+	var failures: PackedStringArray = []
+	Engine.time_scale = TIME_SCALE
+
+	# --- The fireship has to arrive and go up -------------------------------
+	var burner: EnemyShip = _spawn_test_enemy(&"fireship", open + Vector2(1500.0, 0.0))
+	var hull_before: float = mark.hull
+	var waited: float = 0.0
+	while waited < PATIENCE and int(fired["detonations"]) == 0:
+		mark.stop()
+		await get_tree().create_timer(0.25).timeout
+		waited += 0.25
+	if int(fired["detonations"]) == 0:
+		failures.append(
+			"a fireship spent %.0fs closing on a stationary hull and never detonated" % waited
+		)
+	elif mark.hull >= hull_before:
+		failures.append("a fireship detonated alongside and did no damage")
+	else:
+		print("DOCTRINE: fireship closed and detonated in %.0fs for %.0f hull" % [
+			waited, hull_before - mark.hull
+		])
+	if is_instance_valid(burner):
+		burner.queue_free()
+
+	# --- The bomb ketch has to telegraph, then fire --------------------------
+	mark.repair_all()
+	var ketch: EnemyShip = _spawn_test_enemy(&"bomb_ketch", open + Vector2(0.0, -1000.0))
+	var saw_ring: bool = false
+	waited = 0.0
+	while waited < PATIENCE and int(fired["mortar"]) == 0:
+		mark.stop()
+		if is_instance_valid(ketch) and not ketch.mortar_telegraph().is_empty():
+			saw_ring = true
+		await get_tree().create_timer(0.25).timeout
+		waited += 0.25
+	if int(fired["mortar"]) == 0:
+		failures.append("a bomb ketch held station for %.0fs and never fired" % waited)
+	elif not saw_ring:
+		# The shell landing is not the feature. Being able to see where it will
+		# land, before it is fired, is the entire feature.
+		failures.append("a bomb ketch fired with no telegraph — the shell is undodgeable")
+	else:
+		print("DOCTRINE: bomb ketch telegraphed and fired in %.0fs" % waited)
+	if is_instance_valid(ketch):
+		ketch.queue_free()
+
+	Engine.time_scale = 1.0
+	if failures.is_empty():
+		print("DOCTRINE PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("DOCTRINE FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+func _spawn_test_enemy(hull: StringName, at: Vector2) -> EnemyShip:
+	var enemy: EnemyShip = preload(
+		"res://src/entities/ships/enemy_ship.tscn"
+	).instantiate() as EnemyShip
+	enemy.stats = ShipStatsLibrary.get_stats(hull)
+	enemy.global_position = at
+	ships_parent.add_child(enemy)
+	enemy.assign_station(at, 400.0, 4000.0)
+	return enemy
+
+
+## Reports an arena run and quits. Called either when the clock runs out or the
+## instant the fleet is lost, whichever comes first — see [method _run_arena_test].
+func _finish_arena(
+	arena: Island,
+	tally: Dictionary,
+	outcome: Dictionary,
+	time_scale: float,
+	min_shots_per_min: float,
+	min_damage_taken: float
+) -> void:
+	outcome["done"] = true
+	# Game time actually fought, taken off the wall clock: the wipe path can
+	# arrive between two ticks of the loop's own counter.
+	var elapsed: float = maxf(
+		0.5, float(Time.get_ticks_msec() - int(outcome["started"])) / 1000.0 * time_scale
+	)
+	Engine.time_scale = 1.0
+
+	var shots_per_min: float = float(tally["shots"]) / maxf(0.01, elapsed / 60.0)
+	print(
+		("ARENA: island=%s tier=%d fought=%.0fs shots=%d (%.1f/min) hits=%d rakes=%d"
+		+ " sunk=%d damage_taken=%.0f captured=%s survived=%s")
+		% [
+			arena.def.display_name, arena.def.tier, elapsed,
+			int(tally["shots"]), shots_per_min, int(tally["impacts"]), int(tally["rakes"]),
+			int(tally["sunk"]), float(tally["taken"]), arena.is_captured,
+			not bool(outcome["wiped"]),
+		]
+	)
+
+	var failures: PackedStringArray = []
+	if shots_per_min < min_shots_per_min:
+		failures.append(
+			"only %.1f shots a minute — the fight has gone quiet (floor is %.0f)"
+			% [shots_per_min, min_shots_per_min]
+		)
+	if int(tally["impacts"]) == 0:
+		failures.append("nothing the player fired ever connected")
+	if int(tally["sunk"]) == 0:
+		failures.append("a mid-game hull sank nothing in %.0fs" % elapsed)
+	if float(tally["taken"]) < min_damage_taken:
+		failures.append("the garrison never landed a single hit — there is no fight here")
+
+	if failures.is_empty():
+		print("ARENA PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("ARENA FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## The island the arena fights: the heaviest one at or below [param max_tier].
+##
+## Deliberately the middle of the voyage rather than the end of it. The outer
+## islands are balanced against a fleet of two or three hulls, and this harness
+## drives exactly one, badly — it sails at whatever is nearest and never uses the
+## helm it exists to measure. Pointing it at a tier-5 island measures nothing
+## except that five guns beat one, which was never in doubt.
+func _heaviest_island(max_tier: int = 3) -> Island:
+	var best: Island = null
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw):
+			continue
+		var island: Island = raw
+		if island == archipelago.home or island.is_captured or island.def.has_castle:
+			continue
+		if island.def.tier > max_tier:
+			continue
+		if best == null or island.def.tier > best.def.tier:
+			best = island
+	return best
 
 
 ## Screenshots the fleet roster with every card state in one frame.
@@ -621,6 +1161,15 @@ func _run_smoke_test() -> void:
 				SMOKE_ACQUIRE_RANGE,
 				SpatialGrid.KIND_ENEMY_SHIP
 			)
+			# Only the garrison of the island under test. Islands sit 2,200 m
+			# apart and this acquires at 2,600, so the moment the first island
+			# fell the harness would lock onto the *next* island's defenders and
+			# charge them — a Dinghy that has never been to a shop against a Navy
+			# Sloop, which is a fight the design intends it to lose. That is one
+			# island loop more than a test of one island loop, and it made "the
+			# game works" a coin flip on how fast the first fight resolved.
+			if enemy != null and not _near_island(enemy, goal):
+				enemy = null
 			if enemy != null:
 				EventBus.intent_target.emit(enemy)
 			elif goal.is_captured:
@@ -715,6 +1264,19 @@ func _run_smoke_test() -> void:
 	else:
 		push_error("SMOKE FAIL: " + "; ".join(failures))
 		await _quit_cleanly(1)
+
+
+## Is this hull part of `island`'s defence, rather than a neighbour's?
+##
+## Measured by proximity rather than by asking the spawn director which garrison
+## it belongs to: a defender that has chased the player halfway to the next
+## island has stopped being that island's problem in every sense the harness
+## cares about.
+func _near_island(entity: Node2D, island: Island) -> bool:
+	return (
+		entity.global_position.distance_to(island.global_position)
+		<= island.def.radius + island.def.alert_radius * 2.0
+	)
 
 
 ## The wind must stay asleep behind an oared hull, and its polar must have the

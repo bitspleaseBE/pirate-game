@@ -18,18 +18,34 @@ signal intent_dig(island: Node2D)
 ## hideout when the fleet gets there.
 signal intent_sail_home()
 signal intent_cycle_ammo()
+## "Put a party over the side onto that." Only ever emitted while
+## [method FleetController.boarding_candidate] has something to offer.
+signal intent_board(entity: Node2D)
 
 # --- Combat ---
 signal shot_fired(from: Node2D, ammo_id: StringName, origin: Vector2, target: Vector2)
 signal projectile_impact(world_pos: Vector2, ammo_id: StringName, hit: Node2D)
 signal ship_damaged(ship: Node2D, amount: float, bar: StringName)
+## The player put a ball down the length of something. Worth its own signal
+## rather than a flag on `ship_damaged`: it is the one hit the game wants to
+## celebrate, because it is the one the player had to manoeuvre for.
+signal rake_landed(victim: Node2D, world_pos: Vector2)
 signal ship_sunk(ship: Node2D, killed_by: Node2D)
 signal ship_crippled(ship: Node2D)
+signal fireship_detonated(world_pos: Vector2)
+signal boarding_started(boarder: Node2D, prize: Node2D)
+## A hull was taken rather than sunk. `kept` is true when it joined the fleet and
+## false when there was no berth for it and it was stripped instead.
+signal prize_taken(hull_name: String, kept: bool)
 
 # --- World / progression ---
 signal island_discovered(island: Node2D)
 signal island_alerted(island: Node2D)
 signal island_captured(island: Node2D)
+## An island's slipway has been burned: no more reinforcements from it. Worth its
+## own signal because it is a thing the player *chose* to do, and the game should
+## say so out loud — see [Shipyard].
+signal shipyard_destroyed(island: Node2D)
 signal treasure_dug(island: Node2D, loot: Dictionary)
 signal loot_collected(loot: Dictionary)
 signal gold_changed(new_total: int, delta: int)

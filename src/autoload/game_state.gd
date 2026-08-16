@@ -36,6 +36,7 @@ const STARTING_HULL: StringName = &"dinghy"
 
 var stats_islands_captured: int = 0
 var stats_ships_sunk: int = 0
+var stats_ships_boarded: int = 0
 var stats_voyages_completed: int = 0
 
 
@@ -62,6 +63,7 @@ func reset_run() -> void:
 	seen_briefings.clear()
 	stats_islands_captured = 0
 	stats_ships_sunk = 0
+	stats_ships_boarded = 0
 	stats_voyages_completed = 0
 
 
@@ -239,6 +241,7 @@ func to_dict() -> Dictionary:
 		"stats": {
 			"islands_captured": stats_islands_captured,
 			"ships_sunk": stats_ships_sunk,
+			"ships_boarded": stats_ships_boarded,
 			"voyages_completed": stats_voyages_completed,
 		},
 	}
@@ -274,6 +277,7 @@ func from_dict(data: Dictionary) -> void:
 	var stats: Dictionary = data.get("stats", {})
 	stats_islands_captured = int(stats.get("islands_captured", 0))
 	stats_ships_sunk = int(stats.get("ships_sunk", 0))
+	stats_ships_boarded = int(stats.get("ships_boarded", 0))
 	stats_voyages_completed = int(stats.get("voyages_completed", 0))
 
 	EventBus.gold_changed.emit(total_gold(), 0)

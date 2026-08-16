@@ -37,8 +37,10 @@ and "see one ship's detail". Ships point bow-up at rotation 0.
 
 | Gesture | Result |
 |---|---|
-| Tap open water | Selected ship(s) set course for that point |
+| Tap open water | Selected ship sets course for that point — **and keeps its target** |
 | Tap enemy ship / fort | Mark as target — your ships auto-fire when it enters a broadside arc |
+| Tap the marked target again | Break off |
+| Tap **BOARD** | Put a party onto a hull whose crew can no longer hold her |
 | Tap own ship | Select it |
 | Tap the fleet badge | Open the roster — a card per hull, tap one to take its helm |
 | Tap Hideout | Set a course for the home port; it opens when you arrive |
@@ -51,6 +53,11 @@ and "see one ship's detail". Ships point bow-up at rotation 0.
 **Automatic behaviours** (so the player is never punished for not micromanaging):
 
 - Return fire when hit, if the attacker is in range and arc.
+- Steer onto a firing beam **only while the player is not steering**. A course order takes
+  the helm and the assist keeps its hands off until the ship arrives. This is the single
+  most important rule in the combat model: engagement steering used to own the helm
+  outright, so tapping an enemy played the fight for you and the player's whole
+  contribution was one tap.
 - Unselected ships hold a loose escort formation on the selected one.
 - Auto-reload; auto-anchor at the beach node once an island is cleared.
 - Ships steer around land rather than beaching themselves.
@@ -126,6 +133,18 @@ Cannonballs have travel time and an arc — they render with a shadow beneath so
 read altitude, and they splash on a miss. You lead a moving target. Range is a hard cap;
 beyond it the ball splashes short.
 
+### 5.2b Where the shot came from is worth as much as what it was loaded with
+
+Two multipliers, and between them they are what makes holding the helm worth anything.
+
+- **Range falloff.** A ball that has flown to the edge of its reach arrives spent (0.62x),
+  full weight inside 45% of reach. Plinking from maximum range — the safest and by far the
+  most boring thing a player can do — is also the weakest.
+- **Raking.** A ball that arrives along a hull's bow-to-stern axis runs the length of her
+  gun deck: **2.15x** damage, tapering to nothing by ~55 degrees off the axis. Crossing an
+  enemy's stern is the age-of-sail tactic, and it is precisely the angle that auto-orbit
+  never produces — a beam-to-beam circle rakes nobody.
+
 ### 5.3 Three damage bars, not one
 
 Readable at a glance, and each one changes how the ship plays:
@@ -151,21 +170,32 @@ Readable at a glance, and each one changes how the ship plays:
 - **Ram & batter** — hold a collision course at speed. Damage scales with tonnage and
   closing speed; you take bow damage too. Great for a Galleon against skiffs, suicidal
   for a Dinghy.
-- **Board** — pull alongside a crew-thinned ship and hold. Resolves on crew count with a
-  single timed tap for a bonus. Success captures the hull (a free ship, if you have a
-  slot) or strips its cargo.
+- **Board** — *built.* Grape shot sweeps a deck until its crew can no longer hold her
+  (crew <= 0.62, or hull <= 0.35); pull alongside and a **BOARD** prompt appears. Hold the
+  grapples ~2.8s — seconds spent stopped, alongside, in the middle of a fight, which is
+  the cost — and she is yours: a hull that joins the fleet if a berth is standing empty,
+  or three times her prize money and a restock of shot if not. This is the only reason
+  grape shot exists; before it, grape cut a reload speed the player could not see on a
+  ship they were about to sink anyway.
 
 ### 5.6 Enemy roster
+
+Each hull carries a **doctrine** (`ShipStats.Doctrine`) rather than every enemy running one
+brain. Skiff, Sloop and Brig used to be literally the same behaviour at three sizes, so the
+only thing that changed across a whole voyage was how much health was pointed at you, and
+the player was never asked to *do* anything different. LINE is the honest broadside duel;
+SWARM presses to knife range and never runs; RAMMER and MORTAR are the important two,
+because they are the only enemies that make the player move.
 
 | Enemy | Behaviour |
 |---|---|
 | **Skiff** | Swarms, fast, one pop-gun, dies to anything. Appears in packs of 4–8. |
 | **Sloop** | The standard duel. Circles for broadsides. |
 | **Brig** | Tanky, heavy broadside, slow to turn — punish its stern. |
-| **Bomb ketch** | Lobs mortars from outside your range. Telegraphed impact circles. Must be closed on. |
-| **Fireship** | Beelines to ram and explode. Chain-shot it or dodge. |
+| **Bomb ketch** | *Built.* Out-ranges every hull in the game and lobs telegraphed shells — an honest ring on the water, re-solved while the tube charges. Cannot be traded with; has to be closed on. Runs if you get inside 32% of its reach. |
+| **Fireship** | *Built.* No guns at all: it *is* the weapon. Beelines at you and detonates for 70 in a 210 radius. Glass — two clean hits kill it — and it steers for where you are rather than where you will be, so committing to a turn makes it overshoot. |
 | **Fort cannon** | Static, long range, high damage, long visible wind-up. |
-| **Shipyard** | Not a combatant — spawns reinforcement waves. Destroy it to stop the bleeding. |
+| **Shipyard** | *Built.* Not a combatant. Stands on the far side of the island from its harbour, so reaching it means a circuit of the coast past the batteries while the garrison is still afloat. Burn it and the waves stop. That trip is the decision inside every island fight. |
 | **Castle keep** | Island boss: several batteries with independent HP, plus a guard fleet. |
 
 ## 6. The island loop
