@@ -205,7 +205,7 @@ func _run_wipe_test() -> void:
 	var hulls: Array[Ship] = fleet.living_ships()
 	if hulls.is_empty():
 		push_error("WIPE FAIL: voyage started with no player ship")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	for ship: Ship in hulls:
 		ship.apply_damage(999_999.0, AmmoType.Bar.HULL, null)
@@ -227,7 +227,7 @@ func _run_wipe_test() -> void:
 	if not failures.is_empty():
 		for line: String in failures:
 			push_error("WIPE FAIL: %s" % line)
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	print("WIPE: fleet sunk, %d hull(s) issued, %d gold still banked" % [
@@ -254,17 +254,17 @@ func _check_voyage_after_wipe() -> void:
 	var afloat: int = fleet.living_ships().size()
 	if afloat < 1:
 		push_error("WIPE FAIL: new voyage after a wipe has no player ship")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	if fleet.selected == null:
 		push_error("WIPE FAIL: new voyage after a wipe has no ship under command")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
 		afloat, GameState.banked_gold
 	])
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Frames each island's [Port] and writes the frames to `user://shots/`.
@@ -309,7 +309,7 @@ func _capture_harbours() -> void:
 		shot += 1
 
 	print("HARBOUR SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Drives the Hideout button end to end and asserts the port actually opens.
@@ -330,7 +330,7 @@ func _run_hideout_test() -> void:
 	var home: Island = archipelago.home
 	if home == null:
 		push_error("HIDEOUT FAIL: no home port was generated")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Stand the fleet off, or it starts inside the arrival radius and the test
@@ -351,7 +351,7 @@ func _run_hideout_test() -> void:
 	var button: Button = hud.find_child("HideoutButton", true, false) as Button
 	if button == null:
 		push_error("HIDEOUT FAIL: the HUD has no hideout button")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	button.pressed.emit()
 
@@ -458,7 +458,7 @@ func _run_arena_test() -> void:
 	var arena: Island = _heaviest_island()
 	if arena == null:
 		push_error("ARENA FAIL: voyage has no hostile island")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Just outside the alert radius, so the run includes the approach — which is
@@ -1033,7 +1033,7 @@ func _capture_combat() -> void:
 	var arena: Island = _heaviest_island(3)
 	if arena == null:
 		push_error("--shot-combat: no hostile island to fight")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	var bearing: Vector2 = (arena.anchor_point - arena.global_position).normalized()
@@ -1048,7 +1048,7 @@ func _capture_combat() -> void:
 	fleet.fleet_emptied.connect(func() -> void:
 		print("COMBAT SHOTS: fleet lost — stopping early. %s"
 			% ProjectSettings.globalize_path(dir))
-		get_tree().quit(0)
+		await _quit_cleanly(0)
 	)
 
 	for shot: int in 10:
@@ -1071,7 +1071,7 @@ func _capture_combat() -> void:
 		)
 
 	print("COMBAT SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Drives a boarding end to end, in both the outcomes it has.
@@ -1248,7 +1248,7 @@ func _run_doctrine_test() -> void:
 	var mark: Ship = fleet.selected
 	if mark == null:
 		push_error("DOCTRINE FAIL: no player hull to test against")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	# Outside the archipelago entirely, not merely in a gap in it. The centre of
 	# the world bounds is open water on a map but it sits inside somebody's alert
@@ -1441,7 +1441,7 @@ func _capture_fleet() -> void:
 	var hulls: Array[Ship] = fleet.living_ships()
 	if hulls.is_empty():
 		push_error("--shot-fleet: no player ship to photograph")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	hulls[0].apply_damage(46.0, AmmoType.Bar.HULL, null)
 	hulls[0].apply_damage(22.0, AmmoType.Bar.SAILS, null)
@@ -1459,14 +1459,14 @@ func _capture_fleet() -> void:
 	var badge: Button = hud.find_child("FleetButton", true, false) as Button
 	if badge == null:
 		push_error("--shot-fleet: the HUD has no fleet badge to press")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	badge.pressed.emit()
 	await get_tree().create_timer(0.6).timeout
 	var panel: Node = hud.get_node_or_null(^"Fleet")
 	if panel == null:
 		push_error("--shot-fleet: pressing the fleet badge opened nothing")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/fleet_00.png" % dir)
@@ -1486,7 +1486,7 @@ func _capture_fleet() -> void:
 	get_viewport().get_texture().get_image().save_png("%s/fleet_02_hud.png" % dir)
 
 	print("FLEET SHOT: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Screenshots the port screen on the home island. The port is a modal over a
@@ -1505,7 +1505,7 @@ func _capture_port() -> void:
 			break
 	if port == null:
 		push_error("--shot-port: no captured island to open a port on")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Clear any briefing first — show_port refuses to stack modals, correctly.
@@ -1525,7 +1525,7 @@ func _capture_port() -> void:
 	get_viewport().get_texture().get_image().save_png("%s/port_00.png" % dir)
 
 	print("PORT SHOT: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Sails to the nearest hostile island and writes frames to `user://shots/`.
@@ -1552,7 +1552,7 @@ func _capture_screenshots() -> void:
 	# nearest with no regard for its own hull.
 	fleet.fleet_emptied.connect(func() -> void:
 		print("SHOTS: fleet lost — stopping early. %s" % ProjectSettings.globalize_path(dir))
-		get_tree().quit(0)
+		await _quit_cleanly(0)
 	)
 
 	var shot: int = 0
@@ -1590,7 +1590,7 @@ func _capture_screenshots() -> void:
 			hud.call(&"dismiss_port")
 
 	print("SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Headless smoke test: sail at the nearest hostile island, let the fight happen,
@@ -1632,7 +1632,7 @@ func _run_smoke_test() -> void:
 	# output explaining why.
 	fleet.fleet_emptied.connect(func() -> void:
 		push_error("SMOKE FAIL: player fleet was wiped out")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 	)
 
 	var start: Vector2 = fleet.centroid()
@@ -1647,7 +1647,7 @@ func _run_smoke_test() -> void:
 			goal = island
 	if goal == null:
 		push_error("SMOKE FAIL: archipelago has no hostile island")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	Log.info(
@@ -1716,7 +1716,7 @@ func _run_smoke_test() -> void:
 				"SMOKE FAIL: wall-clock limit hit after %.0fs (only %.0fs of game time)"
 				% [wall, elapsed]
 			)
-			get_tree().quit(1)
+			await _quit_cleanly(1)
 			return
 	Engine.time_scale = 1.0
 
@@ -1838,6 +1838,19 @@ func _check_wind() -> PackedStringArray:
 ## stream behind it alive at exit — reported as leaked instances. Stopping
 ## everything and yielding a couple of frames lets the server drain, which keeps
 ## the leak check in CI meaningful instead of permanently noisy.
+## The only way a harness may leave the game.
+##
+## Every automated exit goes through here, and since the score started playing
+## that is a hard rule rather than a tidiness one: the music stems and the sea
+## ambience never stop, so at the moment any run ends there are always four
+## streams live in the audio server. A bare `get_tree().quit()` tears the process
+## down before the server gets a beat to release them, and Godot reports four
+## leaked resources and eight leaked objects — which CI fails the build on.
+##
+## That is exactly how it presented: `--wipe` was the one gate that had never
+## been routed through here, because when it was written nothing happened to be
+## playing at the moment it quit. Nothing about the wipe path changed; what
+## changed is that silence is no longer the default state of the game.
 func _quit_cleanly(code: int) -> void:
 	Engine.time_scale = 1.0
 	Audio.shutdown()
