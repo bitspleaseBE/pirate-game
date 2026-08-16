@@ -67,6 +67,16 @@ nothing ever asked what was on it. (Run with a display and it also frames the ke
 godot --headless src/scenes/voyage.tscn -- --castle
 ```
 
+Assert a beaten ship that gets clear stops counting as a defender. Two full arena runs
+produced zero routs — a competent hull kills a runner long before it reaches open water —
+so this path never executes in ordinary play and would sit there rotting. If it broke, the
+symptom would be an island that refuses to be captured while a ship the player cannot see
+sails away from it forever:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --rout
+```
+
 Check that ramming costs both hulls, and costs the smaller one more. The risk is not that
 it breaks but that it quietly does nothing, which is the state hull collisions shipped in
 for months:

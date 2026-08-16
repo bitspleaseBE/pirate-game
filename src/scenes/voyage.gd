@@ -114,6 +114,7 @@ func _ready() -> void:
 		or "--shot-combat" in harness_args
 		or "--castle" in harness_args
 		or "--ram" in harness_args
+		or "--rout" in harness_args
 	)
 
 	_update_wind_availability()
@@ -166,6 +167,8 @@ func _ready() -> void:
 		_run_castle_test()
 	elif "--ram" in args:
 		_run_ram_test()
+	elif "--rout" in args:
+		_run_rout_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -504,6 +507,122 @@ func _run_arena_test() -> void:
 
 	if not bool(outcome["done"]):
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## A beaten ship that gets clear must stop counting as a defender.
+##
+##   godot --headless src/scenes/voyage.tscn -- --rout
+##
+## Written because two full arena runs produced zero routs: a competent hull kills
+## a fleeing ship long before it reaches open water, so the path never executes in
+## ordinary play and would sit there rotting. It matters in exactly the case the
+## harness cannot reach — the player who lets one go — and if it broke, the
+## symptom would be an island that simply refuses to be captured while a ship the
+## player cannot even see sails away from it forever.
+func _run_rout_test() -> void:
+	const TIME_SCALE: float = 4.0
+	const PATIENCE: float = 20.0
+
+	await get_tree().create_timer(0.4).timeout
+
+	# Tier 2 or better, deliberately. The opening island fields skiffs, and a skiff
+	# is SWARM doctrine — it is sent to be spent and never breaks off, so it can
+	# never rout. Pointing this test at the nearest island picked exactly that
+	# hull, which then charged back in and got shot, and the failure read as
+	# "pruned by dying, not by routing". The enemy has to be one that can run.
+	var goal: Island = null
+	var nearest: float = INF
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw) or raw == archipelago.home:
+			continue
+		var island: Island = raw
+		if island.def.tier < 2:
+			continue
+		var d: float = island.distance_to_coast(fleet.centroid())
+		if d < nearest:
+			nearest = d
+			goal = island
+	if goal == null:
+		push_error("ROUT FAIL: no island above tier 1 to rout a defender from")
+		await _quit_cleanly(1)
+		return
+
+	# Sail in far enough to wake the garrison up.
+	var toward: Vector2 = (fleet.centroid() - goal.global_position).normalized()
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = ship.clamp_to_navigable(
+			goal.global_position + toward * (goal.def.radius + goal.def.alert_radius * 0.5)
+		)
+	camera.snap_to(fleet.centroid())
+
+	Engine.time_scale = TIME_SCALE
+	var waited: float = 0.0
+	while waited < PATIENCE and director.active_enemy_count() == 0:
+		await get_tree().create_timer(0.25).timeout
+		waited += 0.25
+
+	var before: int = director.active_enemy_count()
+	var failures: PackedStringArray = []
+	if before == 0:
+		failures.append("the island never fielded a garrison to rout")
+	else:
+		# Beat one hull and put it where a beaten hull ends up. Both halves are
+		# required: the rout condition is "broken *and* clear", so a ship that is
+		# merely damaged or merely distant must not count.
+		var beaten: EnemyShip = null
+		for node: Node in ships_parent.get_children():
+			var enemy := node as EnemyShip
+			if enemy == null or not enemy.alive:
+				continue
+			# Only a hull whose doctrine lets it break off in the first place.
+			if enemy.stats.doctrine == ShipStats.Doctrine.SWARM:
+				continue
+			beaten = enemy
+			break
+
+		if beaten == null:
+			failures.append("the garrison spawned nothing that is able to break off")
+		else:
+			# Call the fleet off first: a ball already in the air, or a fresh
+			# broadside, sinks the runner and the test measures the wrong pruning
+			# path — which is precisely how the first version failed.
+			EventBus.intent_target.emit(null)
+			for ship: Ship in fleet.living_ships():
+				ship.set_target(null)
+			beaten.hull = beaten.stats.max_hull * 0.1
+			var away: Vector2 = (
+				beaten.global_position - goal.global_position
+			).normalized()
+			beaten.global_position = goal.global_position + away * (
+				goal.def.radius + goal.def.alert_radius * 2.0
+			)
+			Grid.update(beaten)
+
+			waited = 0.0
+			while waited < PATIENCE and director.active_enemy_count() >= before:
+				await get_tree().create_timer(0.25).timeout
+				waited += 0.25
+
+			if director.active_enemy_count() >= before:
+				failures.append(
+					"a broken defender %d m clear of the island still counts as a garrison"
+					% roundi(goal.distance_to_coast(beaten.global_position))
+				)
+			elif not beaten.alive:
+				failures.append("the defender was pruned by dying, not by routing")
+			else:
+				print("ROUT: garrison %d -> %d with the runner still afloat, in %.0fs" % [
+					before, director.active_enemy_count(), waited
+				])
+
+	Engine.time_scale = 1.0
+	if failures.is_empty():
+		print("ROUT PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("ROUT FAIL: %s" % line)
+		await _quit_cleanly(1)
 
 
 ## Ramming has to hurt both parties, and hurt the small one more.

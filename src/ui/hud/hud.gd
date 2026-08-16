@@ -65,6 +65,7 @@ func _ready() -> void:
 	EventBus.shipyard_destroyed.connect(_on_shipyard_destroyed)
 	EventBus.prize_taken.connect(_on_prize_taken)
 	EventBus.keep_shrugged_off.connect(_on_keep_shrugged_off)
+	EventBus.enemy_routed.connect(_on_enemy_routed)
 	EventBus.castle_breached.connect(_on_castle_breached)
 	EventBus.treasure_dug.connect(_on_treasure_dug)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
@@ -183,6 +184,15 @@ func _on_board_pressed() -> void:
 		return
 	EventBus.intent_board.emit(prize)
 	_board_button.visible = false
+
+
+## Prize money that just sailed over the horizon. Worth saying, because the
+## garrison count dropping with nothing having sunk is otherwise unreadable.
+func _on_enemy_routed(ship: Node2D, _island: Node2D) -> void:
+	var hull: String = "A defender"
+	if ship is Ship and is_instance_valid(ship):
+		hull = (ship as Ship).stats.display_name
+	show_toast("%s strikes her colours and runs — her prize money with her." % hull)
 
 
 ## The castle is shrugging off broadsides. Said the moment it first happens,

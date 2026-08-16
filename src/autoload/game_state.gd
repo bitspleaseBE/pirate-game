@@ -54,7 +54,11 @@ func reset_run() -> void:
 	# broadsides and the capture loop on a still sea. The wind arrives with your
 	# first set of sails — see WindSystem.
 	fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
-	ammo_stock = {&"fire": 6, &"explosive": 4, &"chain": 6, &"grape": 6}
+	# Sized to be *used*, not hoarded. These were set when a broadside took five
+	# seconds; reloads have since roughly halved, so the same numbers were a third
+	# of the fight's worth of shot and the rational play was to save them forever
+	# and fire round shot — which is how five shot types became one.
+	ammo_stock = {&"fire": 10, &"explosive": 6, &"chain": 12, &"grape": 12}
 	selected_ammo = &"round"
 	voyage_seed = 0
 	voyage_active = false

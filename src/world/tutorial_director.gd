@@ -31,6 +31,7 @@ var _queue: Array[StringName] = []
 
 
 func _ready() -> void:
+	EventBus.enemy_routed.connect(_on_enemy_routed)
 	EventBus.island_alerted.connect(_on_island_alerted)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 	EventBus.island_captured.connect(_on_island_captured)
@@ -87,6 +88,25 @@ func _on_island_alerted(island: Node2D) -> void:
 		],
 		"SHOW ME",
 		enemy.global_position if enemy != null else island.global_position
+	)
+
+
+## The first time a beaten ship gets away.
+##
+## This is the moment chain shot means something, and no earlier: told up front
+## it is one of five identical-looking buttons, told here it is the answer to a
+## thing that has just visibly cost the player money. The lesson is also the
+## reassurance — the island is still yours, you did not have to chase it — which
+## matters because a garrison count dropping with nothing sunk looks like a bug.
+func _on_enemy_routed(_ship: Node2D, _island: Node2D) -> void:
+	_show(
+		&"first_rout",
+		"SHE RUNS",
+		[
+			"A beaten ship makes for open water, and she takes her prize money with her. She has stopped defending the island, so the place is still yours to take.",
+			"If you would rather have the gold: chain shot shreds rigging, and a hull with no rig left makes half speed and gets nowhere.",
+			"That is the choice at the end of most fights — let them run, or cut them down and collect.",
+		]
 	)
 
 

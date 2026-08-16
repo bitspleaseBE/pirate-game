@@ -240,8 +240,28 @@ func _wave_size(tier: int) -> int:
 	return 1 if tier <= 3 else 2
 
 
+## Drops the dead — and the routed — from an island's garrison.
+##
+## A defender used to leave the roll only by sinking, which meant a ship that
+## broke off and ran held the island hostage: the capture condition wants an
+## empty garrison, so the player had to chase a beaten hull across open water to
+## claim an island they had plainly already won. That is not tension, it is
+## admin, and it is the single most annoying thing a fight could end with.
+##
+## Letting a routed ship go is now a real option, which is also what finally gives
+## chain shot a job. A hull whose rigging you have shredded makes 45% speed and
+## cannot reach the routed distance, so the choice at the end of every fight is:
+## let them run and take the island now, or chain them, run them down and take the
+## prize money too. That decision costs a shot type, which is the entire point of
+## having shot types.
 func _prune_garrison(island: Island) -> void:
+	## How far past the alert radius a beaten ship has to get before it counts as
+	## gone rather than merely running.
+	const ROUTED_MARGIN: float = 1.25
+
 	var garrison: Array = _garrisons.get(island, [])
+	var routed: float = island.def.radius + island.def.alert_radius * ROUTED_MARGIN
+
 	for i: int in range(garrison.size() - 1, -1, -1):
 		# Read untyped first: assigning an already-freed object to a *typed*
 		# variable raises "Trying to assign invalid previously freed instance"
@@ -250,6 +270,22 @@ func _prune_garrison(island: Island) -> void:
 		var entry: Variant = garrison[i]
 		if not is_instance_valid(entry) or not (entry as EnemyShip).alive:
 			garrison.remove_at(i)
+			continue
+
+		var enemy: EnemyShip = entry
+		if enemy.is_routed(island.global_position, routed):
+			garrison.remove_at(i)
+			# Still afloat, still worth prize money, and it will still fight if the
+			# player goes after it — it has simply stopped being this island's
+			# problem. Announced, because a garrison count silently dropping is
+			# indistinguishable from a bug.
+			EventBus.enemy_routed.emit(enemy, island)
+			Log.info(
+				"%s routed from %s — garrison now %d"
+				% [enemy.stats.display_name, island.def.display_name, garrison.size()],
+				"Spawn"
+			)
+
 	_garrisons[island] = garrison
 
 

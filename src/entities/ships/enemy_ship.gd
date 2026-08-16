@@ -352,6 +352,16 @@ func mortar_telegraph() -> Dictionary:
 	return {"at": _mortar_aim, "t": clampf(_mortar_charge / MORTAR_CHARGE, 0.0, 1.0)}
 
 
+## Has this hull broken off and actually got away?
+##
+## Running is not the same as escaping. A ship that has struck its colours and is
+## still inside the fight is a ship the player can still catch — and catching it
+## is exactly what chain shot is for, because a hull with its rigging shredded
+## makes 45% speed and is not going anywhere. This is the line between the two.
+func is_routed(from: Vector2, beyond: float) -> bool:
+	return alive and state == AiState.FLEE and global_position.distance_to(from) > beyond
+
+
 ## Called by the spawn director so a garrison patrols its own island.
 func assign_station(position_: Vector2, radius: float, aggro: float) -> void:
 	home_position = position_

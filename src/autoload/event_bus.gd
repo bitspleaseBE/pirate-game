@@ -32,6 +32,9 @@ signal ship_damaged(ship: Node2D, amount: float, bar: StringName)
 signal rake_landed(victim: Node2D, world_pos: Vector2)
 signal ship_sunk(ship: Node2D, killed_by: Node2D)
 signal ship_crippled(ship: Node2D)
+## A defender broke off and got clear. It is alive, it still carries its bounty,
+## and it has stopped counting towards its island's garrison.
+signal enemy_routed(ship: Node2D, island: Node2D)
 signal fireship_detonated(world_pos: Vector2)
 ## Two hulls met. `force` is 0..1.6, the closing speed against a bow-to-bow
 ## reference — so listeners can tell a scrape from a proper ram.

@@ -209,7 +209,12 @@ This is the beat the whole game repeats.
    music layers in.
 2. **Fight.** Waves come from the island's shipyard. Killing the shipyard cuts off
    reinforcements — the tactical decision of the fight is whether to push for it early.
-3. **Clear.** All defenders and batteries destroyed → the island flips to your flag.
+3. **Clear.** All defenders and batteries destroyed → the island flips to your flag. A
+   defender that breaks off and gets well clear counts as **routed**: it stops holding the
+   island hostage, but it takes its prize money over the horizon with it. That is the
+   choice at the end of most fights, and it is what chain shot is *for* — a hull with its
+   rigging shredded makes 45% speed and gets nowhere. (Skiffs are SWARM doctrine and never
+   break off, so they can never rout.)
 4. **Moor.** Every island has a harbour on its sheltered coast — a quay, a jetty and a
    mooring buoy off the end of it. Your ship auto-sets a course for the buoy.
 5. **Unload.** A longboat leaves the quay with the chest and rows out to you. The whole
