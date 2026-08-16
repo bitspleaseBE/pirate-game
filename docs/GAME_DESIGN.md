@@ -344,6 +344,34 @@ Sea ambience under everything. Creaking timbers when a hull is damaged. Cannon r
 a distant echo tail. Splashes, wood splinter, crew shouts on a hit. Shanty music that
 layers instruments in as a fight escalates and strips back to solo accordion at sea.
 
+### 10.1 The score is a gameplay system
+
+*Built.* Three stems — `calm`, `tense`, `combat` — in one key, one tempo, and the same
+length to the sample. They all start together, none of them ever stops, and
+[MusicDirector] moves their volumes. Escalation is **additive**: the calm bed never fades,
+because `tense` and `combat` are things laid on top of it rather than replacements for it.
+
+This is information, not decoration. Music that thickens the moment a garrison wakes tells
+the player something has changed before they have finished parsing the screen, through the
+one channel nothing else in the game is using — the HUD is busy, the screen is busy, and
+the ears are free.
+
+Intensity is read off the world at 4 Hz, and the loudest of three things wins:
+
+| Source | What it catches |
+|---|---|
+| **Company** — hostile hulls and shore guns near the fleet | first contact through to the last kill |
+| **Violence** — damage dealt *or taken* in the last 6 s | the difference between circling and fighting |
+| **The castle** — flat maximum | the end of a voyage |
+
+Company alone tops out at 0.72, so a stand-off never sounds like a melee. Gains rise fast
+and fall slowly: the music should arrive with the fight, and a reload lull is not the end
+of a battle.
+
+Whole-track crossfading was rejected. It needs a musically safe moment to switch, which
+means either waiting for one — so the music reacts after the fight it is reacting to — or
+cutting on the beat, which puts a seam in every time a skiff appears.
+
 ## 11. Out of scope for v1
 
 Multiplayer · weather simulation · crew management sim · dialogue trees · 3D · IAP

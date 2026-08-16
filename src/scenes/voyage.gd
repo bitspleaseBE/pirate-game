@@ -35,6 +35,9 @@ static var _wipe_harness_ran: bool = false
 @onready var ships_parent: Node2D = %Ships
 @onready var wind: WindSystem = %WindSystem
 @onready var tutorial: TutorialDirector = %Tutorial
+
+## Built once the world exists — see the note where it is created.
+var music: MusicDirector = null
 @onready var hud: CanvasLayer = %Hud
 
 ## Set while the fleet is under orders for the hideout, so arriving there opens
@@ -115,6 +118,7 @@ func _ready() -> void:
 		or "--castle" in harness_args
 		or "--ram" in harness_args
 		or "--rout" in harness_args
+		or "--audio" in harness_args
 	)
 
 	_update_wind_availability()
@@ -127,6 +131,14 @@ func _ready() -> void:
 	EventBus.intent_move.connect(_on_intent_move)
 	EventBus.island_captured.connect(_on_island_captured)
 	director.landing_started.connect(_on_landing_started)
+
+	# The sea and the shanty. Started here rather than in `_ready` because the
+	# score is a reading of the world, and until the fleet and the archipelago
+	# exist there is nothing to read.
+	music = MusicDirector.new()
+	music.name = "MusicDirector"
+	add_child(music)
+	music.begin(fleet, archipelago)
 
 	GameState.voyage_active = true
 	EventBus.voyage_started.emit(GameState.voyage_seed)
@@ -169,6 +181,8 @@ func _ready() -> void:
 		_run_ram_test()
 	elif "--rout" in args:
 		_run_rout_test()
+	elif "--audio" in args:
+		_run_audio_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -408,7 +422,9 @@ func _run_arena_test() -> void:
 	## enemy does lands, the difficulty is a formality.
 	const MIN_DAMAGE_TAKEN: float = 1.0
 
-	var tally: Dictionary = {"shots": 0, "impacts": 0, "sunk": 0, "rakes": 0, "taken": 0.0}
+	var tally: Dictionary = {
+		"shots": 0, "impacts": 0, "sunk": 0, "rakes": 0, "taken": 0.0, "music_peak": 0.0,
+	}
 	EventBus.shot_fired.connect(func(from: Node2D, _b: StringName, _c: Vector2, _d: Vector2) -> void:
 		var ship := from as Ship
 		if ship != null and ship.team == Teams.PLAYER:
@@ -499,6 +515,12 @@ func _run_arena_test() -> void:
 				EventBus.intent_target.emit(enemy)
 			elif not arena.is_captured:
 				lead.set_course(arena.global_position)
+		# The score is a gameplay system, so it is measured like one. A fight the
+		# music never notices is a bug in the same way a fight with no shots in it
+		# is, and it is just as invisible from a log.
+		if music != null and is_instance_valid(music):
+			tally["music_peak"] = maxf(float(tally["music_peak"]), music.measure_intensity())
+
 		await get_tree().create_timer(0.5).timeout
 		elapsed += 0.5
 
@@ -507,6 +529,134 @@ func _run_arena_test() -> void:
 
 	if not bool(outcome["done"]):
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## Every cue has a file behind it, and the music actually reacts to the game.
+##
+##   godot --headless src/scenes/voyage.tscn -- --audio
+##
+## Audio is the one subsystem whose entire failure mode is silence, and this
+## project is already built to fail that way politely: [AudioManager] skips a
+## missing file with one warning at boot and then plays nothing, forever, with no
+## error at any call site. A cue whose path is wrong is indistinguishable from a
+## cue nobody has triggered yet.
+##
+## The music needs its own check for a different reason. `Audio.play_music()` had
+## a working crossfade and was never called from anywhere in the project — the
+## only thing in the codebase that referenced music at all was the save file,
+## faithfully persisting the volume of a bus with nothing on it. Layered music is
+## a *gameplay* system, so "does the score respond to a fight" is a functional
+## question, and it is answered here by moving the intensity and reading the
+## faders rather than by anyone putting headphones on.
+func _run_audio_test() -> void:
+	var failures: PackedStringArray = []
+
+	# --- Every declared cue resolves ---------------------------------------
+	var silent: PackedStringArray = []
+	for id: StringName in Audio.LIBRARY:
+		var path: String = Audio.LIBRARY[id]["path"]
+		if not ResourceLoader.exists(path):
+			silent.append("%s (%s)" % [id, path])
+	if not silent.is_empty():
+		failures.append(
+			"%d cue(s) have no file and would be silent: %s"
+			% [silent.size(), ", ".join(silent)]
+		)
+
+	# --- The stems exist and are the same length ---------------------------
+	var lengths: Array[float] = []
+	for id: StringName in Audio.MUSIC_LAYERS:
+		var path: String = Audio.MUSIC_LAYER_PATHS[id]
+		if not ResourceLoader.exists(path):
+			failures.append("music stem '%s' is missing (%s)" % [id, path])
+			continue
+		var stream: AudioStream = load(path)
+		lengths.append(stream.get_length())
+		var wav := stream as AudioStreamWAV
+		# A stem that does not loop leaves the score playing once and then
+		# stopping dead, which reads as the game having crashed its audio.
+		if wav != null and wav.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+			failures.append("music stem '%s' is not set to loop" % id)
+	if lengths.size() > 1:
+		for length: float in lengths:
+			# Stems are only stems if they stay in lockstep. Drift would not error;
+			# it would slowly turn a chord into a cluster over a voyage.
+			if absf(length - lengths[0]) > 0.001:
+				failures.append("music stems differ in length: %s" % str(lengths))
+				break
+
+	if not ResourceLoader.exists(Audio.AMBIENCE_PATH):
+		failures.append("the sea ambience is missing (%s)" % Audio.AMBIENCE_PATH)
+
+	# --- It is actually running --------------------------------------------
+	if music == null or not is_instance_valid(music):
+		failures.append("the voyage built no MusicDirector")
+	elif not Audio.is_music_playing():
+		failures.append("the music stems are not playing")
+	elif not Audio.is_ambience_playing():
+		failures.append("the sea is not playing")
+	else:
+		# --- And it reacts -------------------------------------------------
+		# The director is silenced for this half. It samples the world at 4 Hz and
+		# writes the result over whatever is set, so driving the faders by hand
+		# while it runs means measuring the fleet sitting quietly at Port Royal —
+		# which is what the first version of this did, and it reported that the
+		# combat stem never comes up. Its own reading is checked separately below.
+		music.set_process(false)
+		var readings: Dictionary = {}
+		for intensity: float in [0.0, 1.0]:
+			Audio.set_music_intensity(intensity)
+			# Waited in seconds, not frames. A headless frame is a few milliseconds,
+			# so forty of them is a fraction of a second — the first version of
+			# this read the calm bed at 0.38 while it was still travelling and
+			# reported that the stems were not additive.
+			#
+			# Four seconds covers the slow fall as well: the rise and fall rates
+			# are deliberately asymmetric, and settling back down takes the longer
+			# of the two.
+			await get_tree().create_timer(4.0).timeout
+			var row: Dictionary = {}
+			for id: StringName in Audio.MUSIC_LAYERS:
+				row[id] = Audio.music_layer_gain(id)
+			readings[intensity] = row
+
+		var quiet: Dictionary = readings[0.0]
+		var loud: Dictionary = readings[1.0]
+		if float(loud[&"combat"]) <= float(quiet[&"combat"]):
+			failures.append(
+				"the combat stem does not come up with intensity (%.2f quiet, %.2f loud)"
+				% [float(quiet[&"combat"]), float(loud[&"combat"])]
+			)
+		if float(quiet[&"combat"]) > 0.05:
+			failures.append(
+				"the combat stem is audible on an empty sea (%.2f)" % float(quiet[&"combat"])
+			)
+		if float(loud[&"calm"]) < 0.9:
+			# Additive, not exclusive: the bed stays under everything, or the
+			# escalation is a track change with extra steps.
+			failures.append(
+				"the calm bed drops out under combat (%.2f) — the stems are not additive"
+				% float(loud[&"calm"])
+			)
+		else:
+			print("AUDIO: quiet %s / loud %s" % [str(quiet), str(loud)])
+
+		# --- Derived from the world, not from a timer ----------------------
+		music.set_process(true)
+		var measured: float = music.measure_intensity()
+		if measured > 0.35:
+			failures.append(
+				"intensity reads %.2f with the fleet alone at its home port" % measured
+			)
+
+	print("AUDIO: %d cues, %d stems" % [Audio.LIBRARY.size(), Audio.MUSIC_LAYERS.size()])
+	if failures.is_empty():
+		print("AUDIO PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("AUDIO FAIL: %s" % line)
+		await _quit_cleanly(1)
 
 
 ## A beaten ship that gets clear must stop counting as a defender.
@@ -1204,12 +1354,12 @@ func _finish_arena(
 	var shots_per_min: float = float(tally["shots"]) / maxf(0.01, elapsed / 60.0)
 	print(
 		("ARENA: island=%s tier=%d fought=%.0fs shots=%d (%.1f/min) hits=%d rakes=%d"
-		+ " sunk=%d damage_taken=%.0f captured=%s survived=%s")
+		+ " sunk=%d damage_taken=%.0f music_peak=%.2f captured=%s survived=%s")
 		% [
 			arena.def.display_name, arena.def.tier, elapsed,
 			int(tally["shots"]), shots_per_min, int(tally["impacts"]), int(tally["rakes"]),
-			int(tally["sunk"]), float(tally["taken"]), arena.is_captured,
-			not bool(outcome["wiped"]),
+			int(tally["sunk"]), float(tally["taken"]), float(tally["music_peak"]),
+			arena.is_captured, not bool(outcome["wiped"]),
 		]
 	)
 
@@ -1225,6 +1375,14 @@ func _finish_arena(
 		failures.append("a mid-game hull sank nothing in %.0fs" % elapsed)
 	if float(tally["taken"]) < min_damage_taken:
 		failures.append("the garrison never landed a single hit — there is no fight here")
+	if float(tally["music_peak"]) < 0.4:
+		# 0.4 is where the combat stem starts coming in. A whole island fight that
+		# never crosses it means the score sat on the calm bed through a battle,
+		# which is the failure the layering exists to prevent.
+		failures.append(
+			"the music never escalated past %.2f during an entire island fight"
+			% float(tally["music_peak"])
+		)
 
 	if failures.is_empty():
 		print("ARENA PASS")

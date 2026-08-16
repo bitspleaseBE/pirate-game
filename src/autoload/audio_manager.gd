@@ -35,7 +35,75 @@ const LIBRARY: Dictionary = {
 	&"ui_tap": {"path": "res://assets/audio/sfx/ui_tap.wav", "bus": &"UI", "cooldown": 0.05},
 	&"ui_confirm": {"path": "res://assets/audio/sfx/ui_confirm.wav", "bus": &"UI", "cooldown": 0.1},
 	&"ui_cancel": {"path": "res://assets/audio/sfx/ui_cancel.wav", "bus": &"UI", "cooldown": 0.1},
+	# The mechanics added since the combat rework. Each of these marks something
+	# the player did or something about to happen to them; none of them had a
+	# sound, which for the mortar warning in particular meant the only notice of
+	# an incoming shell was a ring drawn on water off the side of the screen.
+	&"rake_hit": {"path": "res://assets/audio/sfx/rake_hit.wav", "bus": &"SFX", "cooldown": 0.12, "pitch_variation": 0.08},
+	&"boarding_clash": {"path": "res://assets/audio/sfx/boarding_clash.wav", "bus": &"SFX", "cooldown": 0.4},
+	&"prize_taken": {"path": "res://assets/audio/sfx/prize_taken.wav", "bus": &"SFX", "cooldown": 0.5},
+	&"castle_breach": {"path": "res://assets/audio/sfx/castle_breach.wav", "bus": &"SFX", "cooldown": 1.0},
+	# Long cooldown: a battery of ketches all winding up at once should sound like
+	# incoming fire, not like a klaxon.
+	&"mortar_incoming": {"path": "res://assets/audio/sfx/mortar_incoming.wav", "bus": &"SFX", "cooldown": 0.9, "volume_db": -3.0},
 }
+
+# --- Layered music ---------------------------------------------------------
+#
+# The three stems are one piece of music, not three tracks. They share a key, a
+# tempo and a length to the sample (see tools/audio/make_placeholder_music.py),
+# they all start together and none of them ever stops — the director only moves
+# their volumes.
+#
+# That is what makes the music able to react *immediately*. Crossfading whole
+# tracks needs a musically safe moment to switch, which means either waiting for
+# one — so the music arrives after the fight it is reacting to, which is worse
+# than no music — or cutting on the beat, which puts a seam in every time a
+# skiff appears. Volumes have neither problem.
+
+## Stems, quietest first. Order is the escalation order and [method
+## set_music_intensity] indexes into it, so it is meaningful rather than cosmetic.
+const MUSIC_LAYERS: Array[StringName] = [&"calm", &"tense", &"combat"]
+const MUSIC_LAYER_PATHS: Dictionary = {
+	&"calm": "res://assets/audio/music/mus_layer_calm.wav",
+	&"tense": "res://assets/audio/music/mus_layer_tense.wav",
+	&"combat": "res://assets/audio/music/mus_layer_combat.wav",
+}
+## Intensity at which each layer starts and finishes fading in. Deliberately
+## overlapping: a layer that arrives exactly as the one below it finishes reads
+## as a switch, where an overlap reads as the music thickening.
+const MUSIC_LAYER_RAMP: Dictionary = {
+	# The bed never fades. A degenerate ramp (end <= start) means "always on", and
+	# that is what "strips back to solo accordion at sea" actually asks for: the
+	# calm stem is the piece of music, and tense and combat are things added to
+	# it. Ramping it in from zero made an empty sea silent and, worse, made the
+	# escalation a crossfade — the bed dropping out as the drums arrived, which is
+	# a track change with extra steps.
+	&"calm": Vector2(0.0, 0.0),
+	&"tense": Vector2(0.12, 0.45),
+	&"combat": Vector2(0.40, 0.80),
+}
+## Full volume for each stem, in dB. The bed sits under the parts that carry the
+## information, so a fight is legible over it rather than competing with it.
+const MUSIC_LAYER_DB: Dictionary = {
+	&"calm": -4.0,
+	&"tense": -6.0,
+	&"combat": -5.0,
+}
+## Below this a layer is silenced outright rather than left running at a level
+## nobody can hear but every device still has to mix.
+const MUSIC_LAYER_FLOOR_DB: float = -40.0
+## How fast a layer's gain chases its target, per second, rising and falling.
+##
+## Asymmetric on purpose. Music should arrive with the fight — a broadside out of
+## a silent sea is the moment escalation exists for — and leave slowly, because
+## an ambush that ends in two seconds should not take the score with it, and a
+## reload lull is not the end of a battle.
+const MUSIC_RISE_PER_SEC: float = 2.4
+const MUSIC_FALL_PER_SEC: float = 0.45
+
+const AMBIENCE_PATH: String = "res://assets/audio/music/amb_sea.wav"
+const AMBIENCE_DB: float = -6.0
 
 var _streams: Dictionary = {}       # StringName -> AudioStream
 var _last_played: Dictionary = {}   # StringName -> msec
@@ -47,6 +115,13 @@ var _music_b: AudioStreamPlayer
 var _music_active_is_a: bool = true
 var _music_tween: Tween
 var _current_music_id: StringName = &""
+## Stem id -> AudioStreamPlayer, all playing whenever the music is running.
+var _layers: Dictionary = {}
+## Stem id -> current gain, 0..1. Chases the target set by the intensity.
+var _layer_gain: Dictionary = {}
+var _music_intensity: float = 0.0
+var _layers_playing: bool = false
+var _ambience: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -72,6 +147,7 @@ func _exit_tree() -> void:
 ## a browser tab closes or a phone backgrounds the app.
 func shutdown() -> void:
 	stop_music()
+	stop_ambience()
 	for player: AudioStreamPlayer2D in _spatial:
 		player.stop()
 		player.stream = null
@@ -82,6 +158,14 @@ func shutdown() -> void:
 		_music_a.stream = null
 	if _music_b != null:
 		_music_b.stream = null
+	# The stems and the sea hold references too, and they are the longest-lived
+	# streams in the game — exactly the ones that would be reported as leaked.
+	for id: StringName in MUSIC_LAYERS:
+		var layer: AudioStreamPlayer = _layers.get(id)
+		if layer != null:
+			layer.stream = null
+	if _ambience != null:
+		_ambience.stream = null
 	_streams.clear()
 	_last_played.clear()
 
@@ -132,6 +216,26 @@ func _build_players() -> void:
 	_music_b.bus = &"Music"
 	_music_b.name = "MusicB"
 	add_child(_music_b)
+
+	for id: StringName in MUSIC_LAYERS:
+		var player := AudioStreamPlayer.new()
+		player.bus = &"Music"
+		player.name = "Layer_%s" % id
+		player.volume_db = MUSIC_LAYER_FLOOR_DB
+		var path: String = MUSIC_LAYER_PATHS[id]
+		if ResourceLoader.exists(path):
+			player.stream = load(path)
+		add_child(player)
+		_layers[id] = player
+		_layer_gain[id] = 0.0
+
+	_ambience = AudioStreamPlayer.new()
+	_ambience.bus = &"Ambience"
+	_ambience.name = "Ambience"
+	_ambience.volume_db = AMBIENCE_DB
+	if ResourceLoader.exists(AMBIENCE_PATH):
+		_ambience.stream = load(AMBIENCE_PATH)
+	add_child(_ambience)
 
 
 ## Positional sound effect. Returns false if it was dropped by the cooldown or
@@ -211,6 +315,109 @@ func stop_music() -> void:
 		_music_tween.kill()
 	_music_a.stop()
 	_music_b.stop()
+	stop_music_layers()
+
+
+# --- Layered music ---------------------------------------------------------
+
+## Starts every stem at once, silent, and lets [method set_music_intensity]
+## decide what is audible.
+##
+## All of them, always, including the ones nobody will hear for another ten
+## minutes: starting a stem late means starting it out of phase with the others,
+## and three bars of shanty running against themselves is worse than no music at
+## all. They are cheap — three streams on one bus, decoded once.
+func start_music_layers(initial_intensity: float = 0.0) -> void:
+	if _layers_playing:
+		return
+	_music_intensity = clampf(initial_intensity, 0.0, 1.0)
+	for id: StringName in MUSIC_LAYERS:
+		var player: AudioStreamPlayer = _layers[id]
+		if player.stream == null:
+			continue
+		_layer_gain[id] = _target_gain(id)
+		_apply_layer_gain(id)
+		player.play()
+	_layers_playing = true
+
+
+func stop_music_layers() -> void:
+	_layers_playing = false
+	for id: StringName in MUSIC_LAYERS:
+		var player: AudioStreamPlayer = _layers[id]
+		player.stop()
+		_layer_gain[id] = 0.0
+		player.volume_db = MUSIC_LAYER_FLOOR_DB
+
+
+## How loud the fight is, 0 (empty sea) to 1 (the castle). Set every frame by
+## [MusicDirector]; the smoothing lives here so callers can hand over a raw,
+## twitchy reading without having to filter it themselves.
+func set_music_intensity(value: float) -> void:
+	_music_intensity = clampf(value, 0.0, 1.0)
+
+
+func music_intensity() -> float:
+	return _music_intensity
+
+
+## Current audible gain of one stem, 0..1. Exists for the audio harness: "is the
+## music reacting" is otherwise a question only a human with speakers can answer.
+func music_layer_gain(id: StringName) -> float:
+	return float(_layer_gain.get(id, 0.0))
+
+
+func is_music_playing() -> bool:
+	return _layers_playing
+
+
+func start_ambience() -> void:
+	if _ambience != null and _ambience.stream != null and not _ambience.playing:
+		_ambience.play()
+
+
+func stop_ambience() -> void:
+	if _ambience != null:
+		_ambience.stop()
+
+
+func is_ambience_playing() -> bool:
+	return _ambience != null and _ambience.playing
+
+
+func _process(delta: float) -> void:
+	if not _layers_playing:
+		return
+	for id: StringName in MUSIC_LAYERS:
+		var current: float = float(_layer_gain[id])
+		var target: float = _target_gain(id)
+		var rate: float = MUSIC_RISE_PER_SEC if target > current else MUSIC_FALL_PER_SEC
+		_layer_gain[id] = move_toward(current, target, rate * delta)
+		_apply_layer_gain(id)
+
+
+## Where a stem should sit at the current intensity, from its own ramp.
+func _target_gain(id: StringName) -> float:
+	var ramp: Vector2 = MUSIC_LAYER_RAMP.get(id, Vector2(0.0, 1.0))
+	if ramp.y <= ramp.x:
+		return 1.0 if _music_intensity >= ramp.y else 0.0
+	return clampf(inverse_lerp(ramp.x, ramp.y, _music_intensity), 0.0, 1.0)
+
+
+func _apply_layer_gain(id: StringName) -> void:
+	var player: AudioStreamPlayer = _layers[id]
+	if player == null:
+		return
+	var gain: float = float(_layer_gain[id])
+	if gain <= 0.001:
+		player.volume_db = MUSIC_LAYER_FLOOR_DB
+		return
+	# Gain is a musical fader, so it moves in dB rather than linearly — a linear
+	# ramp spends most of its travel in the range where nothing audibly changes
+	# and then arrives all at once.
+	player.volume_db = lerpf(
+		MUSIC_LAYER_FLOOR_DB, float(MUSIC_LAYER_DB.get(id, -6.0)), gain
+	)
 
 
 func set_bus_volume(bus_name: StringName, linear: float) -> void:

@@ -177,6 +177,10 @@ func _process(delta: float) -> void:
 	# battery and a bomb ketch, so a ship that holds its course is hit and a ship
 	# that breaks away is not. The telegraph has to be honest or dodging it is
 	# guesswork, and a boss you cannot dodge is just damage on a clock.
+	# Same warning the bomb ketch gives, for the same reason — and here it also
+	# marks the beat of the fight, because the salvo is the castle's only attack.
+	if _charge <= 0.0:
+		Audio.play_at(&"mortar_incoming", global_position, 2.0)
 	_charge += delta
 	_aim_at = _solution(_quarry)
 	queue_redraw()
@@ -258,7 +262,7 @@ func _breach() -> void:
 			0.0,
 			2.0
 		)
-	Audio.play_at(&"explosion", global_position)
+	Audio.play_at(&"castle_breach", global_position, 2.0)
 	EventBus.castle_breached.emit(_island)
 	destroyed.emit()
 	queue_free()

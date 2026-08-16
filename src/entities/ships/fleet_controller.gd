@@ -168,7 +168,7 @@ func _on_intent_board(_entity: Node2D) -> void:
 	selected.grappled = true
 	prize.stop()
 	prize.grappled = true
-	Audio.play_ui(&"ui_confirm")
+	Audio.play_at(&"boarding_clash", prize.global_position)
 	EventBus.boarding_started.emit(selected, prize)
 	boarding_changed.emit()
 
@@ -231,6 +231,7 @@ func _take_prize(boarder: Ship, prize: Ship) -> void:
 			GameState.add_ammo(ammo, 2)
 		EventBus.prize_taken.emit(stats.display_name, false)
 
+	Audio.play_at(&"prize_taken", prize.global_position)
 	GameState.stats_ships_boarded += 1
 	# Off the board without going through _sink: this hull was taken, not sunk,
 	# so it pays no prize money and counts as nobody's kill.

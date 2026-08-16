@@ -67,6 +67,15 @@ nothing ever asked what was on it. (Run with a display and it also frames the ke
 godot --headless src/scenes/voyage.tscn -- --castle
 ```
 
+Assert every sound cue has a file behind it and the music actually reacts to the game.
+Audio is the one subsystem whose entire failure mode is silence — a missing file is
+skipped at boot with one warning and then plays nothing, forever, with no error at any
+call site — so a cue with a wrong path is indistinguishable from one nobody has triggered:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --audio
+```
+
 Assert a beaten ship that gets clear stops counting as a defender. Two full arena runs
 produced zero routs — a competent hull kills a runner long before it reaches open water —
 so this path never executes in ordinary play and would sit there rotting. If it broke, the
@@ -156,10 +165,20 @@ on arrival, so a course that quietly fails looks exactly like a dead button:
 godot --headless src/scenes/voyage.tscn -- --hideout
 ```
 
-Regenerate the placeholder sound effects (deterministic; safe to re-run):
+Regenerate the placeholder sound effects (deterministic; safe to re-run — each cue is
+seeded from its own name, so adding one cannot change any of the others):
 
 ```bash
 python3 tools/audio/make_placeholder_sfx.py
+```
+
+Regenerate the placeholder music stems and the sea ambience. The three stems are one piece
+of music in one key and tempo, the same length to the sample, and the script refuses to
+finish if they ever differ — drift would not error, it would slowly turn a chord into a
+cluster over the course of a voyage:
+
+```bash
+python3 tools/audio/make_placeholder_music.py
 ```
 
 Rebuild the Wave 0 art from its masters:
