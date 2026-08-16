@@ -59,6 +59,10 @@ const OPENING_ISLAND_RADIUS: float = 380.0
 ## The castle island. Bigger than anything else in the voyage, because it is the
 ## one the player is sailing the whole chain to reach.
 const CASTLE_ISLAND_RADIUS: float = 900.0
+## Batteries ringing the castle. More than any ordinary island, because silencing
+## them is the first phase of the boss — the keep shrugs off everything while one
+## of them still stands. See [CastleKeep].
+const CASTLE_FORT_CANNONS: int = 4
 ## How far off the bearing of home's own harbour the opening island may sit.
 ##
 ## The fleet starts at Port Royal's mooring buoy, not at the middle of the island,
@@ -264,7 +268,13 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		# Batteries start at tier 3 for the same reason. The tier-2 island is the
 		# player's first real duel, and it should be a duel rather than a duel
 		# fought inside somebody else's field of fire.
-		def.fort_cannons = 0 if is_final else clampi(tier - 2, 0, 3)
+		# The castle rings itself with batteries rather than having none at all.
+		# It used to be authored with `0 if is_final`, which made the objective of
+		# the entire voyage the least defended island on the map — strictly easier
+		# than the tier-4 islands on the way to it, which field two batteries, a
+		# slipway and a bomb ketch. The ring is also what the keep's armour is
+		# keyed to, so it is the first half of the boss fight.
+		def.fort_cannons = CASTLE_FORT_CANNONS if is_final else clampi(tier - 2, 0, 3)
 		# One defender through tier 2, then one more per tier. The count is only
 		# half of it — [method SpawnDirector._hull_for_tier] decides *what* they
 		# are, and tier 2's single hull is a Navy Sloop rather than a skiff, so the

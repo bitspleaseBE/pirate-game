@@ -22,7 +22,12 @@ const FONT: String = "res://assets/fonts/Alegreya.ttf"
 const PANEL_WIDTH: float = 620.0
 const AMMO_RESTOCK_COST: int = 45
 ## Rounds of each limited shot type a restock buys.
-const AMMO_RESTOCK_AMOUNT: int = 5
+##
+## A restock has to actually restock. At five rounds a type it bought back less
+## than one island's worth of shot, so the purchase never felt like it undid
+## anything and the habit it encouraged was not firing the good shot in the first
+## place.
+const AMMO_RESTOCK_AMOUNT: int = 10
 
 ## Price of the second and third hull in the fleet, indexed by the slot being
 ## bought minus two.

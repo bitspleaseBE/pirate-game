@@ -31,6 +31,7 @@ var _queue: Array[StringName] = []
 
 
 func _ready() -> void:
+	EventBus.enemy_routed.connect(_on_enemy_routed)
 	EventBus.island_alerted.connect(_on_island_alerted)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 	EventBus.island_captured.connect(_on_island_captured)
@@ -70,6 +71,7 @@ func wind_came_up(compass: String) -> void:
 
 func _on_island_alerted(island: Node2D) -> void:
 	if GameState.has_seen(&"first_enemies"):
+		_maybe_teach_shipyard(island as Island)
 		return
 	# Point the camera at what we are talking about. "There are enemies" is a
 	# sentence; seeing them turn toward you is the actual information.
@@ -80,12 +82,56 @@ func _on_island_alerted(island: Node2D) -> void:
 		&"first_enemies",
 		"ENEMY SHIPS",
 		[
-			"Tap an enemy to attack it. Your ship will work its way around to bring its guns to bear.",
-			"Cannons fire from the sides, never the bow — so charging straight at something is the one way to hit nothing.",
-			"Sink every defender and the island is yours.",
+			"Tap an enemy to mark it. Your guns fire the instant she comes into a broadside arc — you never have to tap to shoot.",
+			"Cannons fire from the sides, never the bow, so charging straight at something is the one way to hit nothing. Keep tapping the water: you have the helm, and putting her beam-on is your job.",
+			"The arcs either side of your ship fill as the guns reload, and light up when they bear. Sink every defender and the island is yours.",
 		],
 		"SHOW ME",
 		enemy.global_position if enemy != null else island.global_position
+	)
+
+
+## The first time a beaten ship gets away.
+##
+## This is the moment chain shot means something, and no earlier: told up front
+## it is one of five identical-looking buttons, told here it is the answer to a
+## thing that has just visibly cost the player money. The lesson is also the
+## reassurance — the island is still yours, you did not have to chase it — which
+## matters because a garrison count dropping with nothing sunk looks like a bug.
+func _on_enemy_routed(_ship: Node2D, _island: Node2D) -> void:
+	_show(
+		&"first_rout",
+		"SHE RUNS",
+		[
+			"A beaten ship makes for open water, and she takes her prize money with her. She has stopped defending the island, so the place is still yours to take.",
+			"If you would rather have the gold: chain shot shreds rigging, and a hull with no rig left makes half speed and gets nowhere.",
+			"That is the choice at the end of most fights — let them run, or cut them down and collect.",
+		]
+	)
+
+
+## The first island that can replace what you sink.
+##
+## Reinforcements are the one mechanic in the game that reads as the game being
+## unfair rather than as a problem with a solution — you clear the water, and
+## more of them arrive. It stops reading that way the instant the player knows
+## there is a building on the beach making them, so this fires the first time
+## they meet one, and points the camera at it.
+func _maybe_teach_shipyard(island: Island) -> void:
+	if island == null or not is_instance_valid(island) or not island.can_reinforce():
+		return
+	if GameState.has_seen(&"first_shipyard"):
+		return
+	_show(
+		&"first_shipyard",
+		"THEY ARE BUILDING MORE",
+		[
+			"There is a slipway on the far side of that island, and it will keep launching hulls at you for as long as it stands.",
+			"You can grind the defenders down and eat every wave, or take the long way round the coast, past the guns, and burn it.",
+			"That choice is the fight. Tap the yard to mark it, same as a ship.",
+		],
+		"UNDERSTOOD",
+		island.shipyard.global_position if is_instance_valid(island.shipyard) else island.global_position
 	)
 
 
@@ -102,8 +148,8 @@ func _on_ship_sunk(ship: Node2D, killer: Node2D) -> void:
 		"ONE DOWN",
 		[
 			"That is the whole game: read the angle, get your side facing them, let the broadside do the rest.",
-			"The button bottom-right cycles your shot. Each one says what it is for — chain shreds sails so nothing escapes, grape kills crew so nothing shoots back.",
-			"Clear the rest of the defenders to take the island.",
+			"Two things pay for good sailing. Shot loses its weight at long range, so close. And a ball that goes in over a ship's bow or stern runs the whole length of her — cross their end-on and you hit twice as hard. Watch for RAKE.",
+			"The button bottom-right cycles your shot. Chain shreds sails so nothing escapes; grape kills crew, and a ship whose crew cannot hold her can be boarded and taken instead of sunk.",
 		]
 	)
 

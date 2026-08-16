@@ -57,6 +57,11 @@ var is_captured: bool = false
 ## Living shore batteries. An island is not taken until this is empty — see
 ## [SpawnDirector].
 var forts: Array[Fort] = []
+## The slipway, while it stands. Null on islands that never had one and on any
+## island whose yard has been burned. See [Shipyard].
+var shipyard: Shipyard = null
+## The castle keep, on the one island in a voyage that has one. See [CastleKeep].
+var keep: CastleKeep = null
 
 ## Distance from the centre to the furthest point of the coastline. Registered as
 ## the island's grid radius so that a proximity query cannot miss a headland that
@@ -91,6 +96,8 @@ func setup(island_def: IslandDef) -> void:
 	_build_collision()
 	_build_port()
 	_build_forts()
+	_build_shipyard()
+	_build_keep()
 	_build_flag()
 
 	Grid.add(self, SpatialGrid.KIND_ISLAND, outer_radius)
@@ -288,6 +295,73 @@ func _build_forts() -> void:
 		forts.append(fort)
 
 
+## Builds the slipway that feeds this island's reinforcement waves.
+##
+## Placed on the far side of the island from its harbour, which is the whole
+## point of it being a place rather than a number: the yard is the one target on
+## an island that is not on the way to anything. Reaching it means committing to a
+## circuit of the coast, past whatever batteries are on that side, while the
+## garrison is still afloat behind you. That is the decision — go for the yard
+## and take the trip, or grind the escorts down and pay for it in waves.
+##
+## A captured island keeps no yard, on the same rule as its guns: an island the
+## player took on an earlier visit must not quietly rebuild its defences.
+func _build_shipyard() -> void:
+	if is_captured or not def.has_shipyard:
+		return
+	shipyard = Shipyard.new()
+	add_child(shipyard)
+	shipyard.setup(self, harbour_bearing() + PI)
+	shipyard.destroyed.connect(_on_shipyard_destroyed)
+
+
+func _on_shipyard_destroyed() -> void:
+	shipyard = null
+
+
+## Builds the castle, on the one island in a voyage that has one.
+func _build_keep() -> void:
+	if is_captured or not def.has_castle:
+		return
+	keep = CastleKeep.new()
+	add_child(keep)
+	keep.setup(self)
+	keep.destroyed.connect(_on_keep_destroyed)
+	keep.shrugged_off.connect(_on_keep_shrugged_off)
+
+
+func _on_keep_destroyed() -> void:
+	keep = null
+
+
+## The player has just put a broadside into the castle and watched it do almost
+## nothing. That needs a sentence, immediately — an armoured target the game
+## never explains is indistinguishable from a bug, and the player's next move
+## after "my guns do not work" is to close the game rather than to go and silence
+## the batteries the armour is keyed to.
+func _on_keep_shrugged_off() -> void:
+	EventBus.keep_shrugged_off.emit(self)
+
+
+## true while the castle still stands. An island with a keep is not taken until
+## the keep is broken, however quiet the water around it has gone.
+func keep_standing() -> bool:
+	return is_instance_valid(keep) and keep.alive
+
+
+## Bearing, in island-local space, of the harbour. Both the slipway and the keep
+## are placed opposite it, so the one stretch of coast the player has to sail to
+## is never the one bristling with the things they came to destroy.
+func harbour_bearing() -> float:
+	return _shore_local.angle()
+
+
+## true while this island can still send reinforcements. Read every tick by the
+## spawn director.
+func can_reinforce() -> bool:
+	return is_instance_valid(shipyard) and shipyard.alive
+
+
 func _on_fort_destroyed(fort: Fort) -> void:
 	forts.erase(fort)
 
@@ -352,6 +426,16 @@ func capture() -> void:
 	# starts calling the player in to collect.
 	if port != null:
 		port.refresh()
+	# And the slipway stops being a threat. An island can be taken without ever
+	# burning its yard — grind down enough waves and the garrison empties anyway —
+	# so this is the case where the player won the argument the long way and the
+	# yard has to stop existing regardless.
+	if is_instance_valid(shipyard):
+		shipyard.queue_free()
+	shipyard = null
+	if is_instance_valid(keep):
+		keep.queue_free()
+	keep = null
 	GameState.mark_island(def.id, true, true)
 	Audio.play_at(&"island_captured", global_position)
 	EventBus.island_captured.emit(self)

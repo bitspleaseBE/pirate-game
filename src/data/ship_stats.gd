@@ -18,12 +18,45 @@ enum Propulsion { SAIL, OAR }
 ## Fore-and-aft points higher upwind; square rigs own the broad reach.
 enum Rig { FORE_AFT, MIXED, SQUARE }
 
+## How a hull fights, which is the difference between an enemy roster and a list
+## of the same ship at three sizes.
+##
+## Skiff, Sloop and Brig all ran the identical brain — close, circle, trade
+## broadsides — so the only thing that changed as the voyage got harder was how
+## much health was pointed at you. Nothing ever asked the player to do something
+## *different*, and a fight you win the same way every time stops being a fight.
+##
+## Each doctrine exists to demand a specific answer:
+##   * LINE     — the honest broadside duel. The baseline, and still most hulls.
+##   * SWARM    — cheap, fast, presses to knife range and never runs. Answer:
+##                grape, and not letting them get behind you.
+##   * RAMMER   — a fireship. Ignores its guns, steers straight at you and
+##                detonates. Answer: kill it at range, or turn and it overshoots.
+##   * MORTAR   — outranges everything you own and lobs telegraphed shells.
+##                Answer: close, under fire, and do not sail in a straight line.
+##
+## The last two are the important ones: they are the only enemies in the game
+## that make the player *move* rather than pick a target and hold an angle.
+enum Doctrine { LINE, SWARM, RAMMER, MORTAR }
+
 @export var id: StringName = &"sloop"
 @export var display_name: String = "Sloop"
 ## 1 = Dinghy … 4 = Galleon. Drives shop ordering and enemy scaling.
 @export_range(1, 4) var tier: int = 2
 @export var propulsion: Propulsion = Propulsion.SAIL
 @export var rig: Rig = Rig.FORE_AFT
+## How this hull fights. Read only by [EnemyShip]; the player's hulls are steered
+## by the player.
+@export var doctrine: Doctrine = Doctrine.LINE
+
+@export_group("Doctrine")
+## Fraction of gun range this hull tries to hold while engaging, overriding
+## [constant Ship.ENGAGE_RANGE_MUL]. A swarmer wants to be inside your arc; a
+## mortar hull wants to be nowhere near it.
+@export var engage_range_mul: float = 0.0
+## RAMMER only: hull damage dealt in a radius when it detonates alongside.
+@export var detonation_damage: float = 0.0
+@export var detonation_radius: float = 0.0
 
 @export_group("Durability")
 @export var max_hull: float = 100.0
@@ -54,14 +87,20 @@ enum Rig { FORE_AFT, MIXED, SQUARE }
 @export var cannon_range: float = 620.0
 ## Half-angle of the broadside arc, in degrees, measured off the beam.
 @export var broadside_arc_deg: float = 55.0
-## Seconds between volleys from one side. Long on purpose: a broadside should be
-## an event you set up and then watch land, not a stream of fire.
-@export var reload_time: float = 5.0
+## Seconds between volleys from one side.
+##
+## A broadside is still an event you set up rather than a stream of fire, but it
+## used to be a five-to-seven second event, and with the ship steering itself
+## there was nothing to do in the gap. A full opening island came to three shots
+## in eighty seconds. These are now roughly halved across the board, with damage
+## trimmed to match: the same fight, at twice the number of decisions.
+@export var reload_time: float = 2.8
 ## Seconds between individual guns in one broadside. Long enough that the volley
 ## rolls audibly down the hull instead of cracking off as one noise.
 @export var gun_stagger: float = 0.22
-## Damage per ball. High, to match the slow reload — every shot should matter.
-@export var base_damage: float = 24.0
+## Damage per ball, before the two things that price a hit by where it came from:
+## range falloff and raking. See [ProjectileSystem].
+@export var base_damage: float = 18.0
 
 @export_group("Physical")
 ## Used for collision, hit tests, culling extents and ram damage.
@@ -97,6 +136,12 @@ func speed_multiplier(sails_fraction: float) -> float:
 
 func is_oared() -> bool:
 	return propulsion == Propulsion.OAR
+
+
+## Whether this hull has a gun deck at all. A fireship does not — it *is* the
+## weapon — and neither does anything whose guns have been shot away.
+func has_broadside() -> bool:
+	return cannons_per_side > 0
 
 
 ## Feeds [method WindSystem.speed_multiplier]. Positive favours upwind.
