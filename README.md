@@ -31,7 +31,8 @@ skill. Tap the marked enemy again to break off. Pinch to zoom, drag to look arou
 for the debug overlay, `Esc` for the menu. Bottom right: **Hideout** sets a course home
 and opens the port when you get there, the **fleet badge** opens the roster, the brass
 button cycles your shot, and a **BOARD** prompt appears above it whenever you are
-alongside a hull whose crew can no longer hold her.
+alongside a hull whose crew can no longer hold her. Running a hull down damages you both,
+scaled by tonnage — worth doing in a Galleon, suicide in a Dinghy.
 
 Two things reward sailing well rather than shooting often: shot loses weight at long
 range, so close; and a ball that arrives along a hull's bow-to-stern axis **rakes** her
@@ -55,6 +56,23 @@ and damage taken per minute, with a floor under the shot rate:
 
 ```bash
 godot --headless src/scenes/voyage.tscn -- --arena
+```
+
+Assert the objective of a voyage is actually the hardest thing in it — four batteries, an
+armoured keep, and a keep that cannot be hurt while a battery still stands. The castle
+shipped for months as the *least* defended island on the map and nothing noticed, because
+nothing ever asked what was on it. (Run with a display and it also frames the keep.)
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --castle
+```
+
+Check that ramming costs both hulls, and costs the smaller one more. The risk is not that
+it breaks but that it quietly does nothing, which is the state hull collisions shipped in
+for months:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --ram
 ```
 
 Prove the two enemies that are not gun duels still do their one thing — a fireship has to

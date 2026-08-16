@@ -112,6 +112,8 @@ func _ready() -> void:
 		or "--doctrine" in harness_args
 		or "--board" in harness_args
 		or "--shot-combat" in harness_args
+		or "--castle" in harness_args
+		or "--ram" in harness_args
 	)
 
 	_update_wind_availability()
@@ -160,6 +162,10 @@ func _ready() -> void:
 		_run_boarding_test()
 	elif "--shot-combat" in args:
 		_capture_combat()
+	elif "--castle" in args:
+		_run_castle_test()
+	elif "--ram" in args:
+		_run_ram_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -498,6 +504,239 @@ func _run_arena_test() -> void:
 
 	if not bool(outcome["done"]):
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## Ramming has to hurt both parties, and hurt the small one more.
+##
+##   godot --headless src/scenes/voyage.tscn -- --ram
+##
+## Hulls have always collided and the collision has always done nothing, so the
+## risk here is not that ramming breaks — it is that it quietly does not happen
+## at all, which is indistinguishable from the state this shipped in for months.
+## The asymmetry is the design: the same manoeuvre is a massacre in a Galleon and
+## suicide in a Dinghy, and it falls out of the tonnage ratio rather than a
+## special case, so it is worth pinning down that the ratio is the right way up.
+## Puts the fleet off the castle's seaward side and photographs it.
+##
+## The fleet has to be moved rather than only the camera: [GameCamera] re-reads
+## the fleet centroid every frame, so a bare `snap_to` somewhere else is undone
+## on the next `_process` and the frame comes back as open water — which is
+## exactly what the first version of this produced.
+func _frame_castle(castle: Island) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	DirAccess.make_dir_recursive_absolute("user://shots")
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+
+	# Framed on the keep itself, not the middle of the island — the keep is set
+	# back on the far coast and the island is 900 units across, so centring the
+	# island puts the thing we came to photograph off the edge of the frame.
+	var keep_at: Vector2 = castle.keep.global_position
+	var outward: Vector2 = (keep_at - castle.global_position).normalized()
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = ship.clamp_to_navigable(keep_at + outward * 620.0)
+	camera.set_world_bounds(Rect2(
+		castle.global_position - Vector2(5000.0, 5000.0), Vector2(10000.0, 10000.0)
+	))
+	camera.target_zoom = 0.62
+	camera.snap_to(keep_at)
+	# `snap_to` alone is not enough: GameCamera re-reads the fleet centroid every
+	# frame, so the view slides straight back off the keep. `point_out` is the
+	# API that actually holds a look somewhere.
+	camera.point_out(keep_at, 6.0)
+	Cull.force_tick()
+	await get_tree().create_timer(1.4).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("user://shots/castle_00.png")
+	print("CASTLE SHOT: %s" % ProjectSettings.globalize_path("user://shots/castle_00.png"))
+
+
+func _run_ram_test() -> void:
+	const TIME_SCALE: float = 3.0
+	const PATIENCE: float = 16.0
+
+	director.set_process(false)
+	var hits: Dictionary = {"count": 0}
+	EventBus.ships_collided.connect(func(_a: Node2D, _b: Node2D, _f: float) -> void:
+		hits["count"] += 1
+	)
+
+	var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+	camera.set_world_bounds(Rect2(open - Vector2(8000.0, 8000.0), Vector2(16000.0, 16000.0)))
+
+	# A Galleon against a Skiff: the most lopsided pairing in the game, so if the
+	# ratio is inverted it will be unmistakable rather than a rounding error.
+	GameState.fleet = [{"stats_id": &"galleon", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+
+	var heavy: Ship = fleet.selected
+	heavy.global_position = open
+	camera.snap_to(open)
+
+	var light: EnemyShip = _spawn_test_enemy(&"skiff", open + Vector2(900.0, 0.0))
+	await get_tree().process_frame
+	Cull.force_tick()
+
+	var heavy_before: float = heavy.hull
+	var light_before: float = light.hull
+
+	# Drive them together. Both are ordered straight at each other so the closing
+	# speed is unambiguous — a glancing contact is deliberately not a ram, and a
+	# test that produced one would be testing the wrong thing.
+	Engine.time_scale = TIME_SCALE
+	var waited: float = 0.0
+	while waited < PATIENCE and int(hits["count"]) == 0:
+		if is_instance_valid(heavy) and heavy.alive and is_instance_valid(light) and light.alive:
+			heavy.set_target(null)
+			heavy.nav_target = light.global_position
+			heavy.has_nav_target = true
+			light.suppress_engage_steering = true
+			light.nav_target = heavy.global_position
+			light.has_nav_target = true
+		await get_tree().create_timer(0.2).timeout
+		waited += 0.2
+	Engine.time_scale = 1.0
+
+	var failures: PackedStringArray = []
+	if int(hits["count"]) == 0:
+		failures.append("two hulls driven straight at each other never registered a collision")
+	else:
+		var heavy_took: float = heavy_before - heavy.hull
+		var light_took: float = (light_before - light.hull) if is_instance_valid(light) else light_before
+		if light_took <= 0.0:
+			failures.append("the rammed skiff took no damage")
+		elif heavy_took <= 0.0:
+			# Both parties, always. A free ram is a dominant strategy and it would
+			# make every other verb in the game pointless.
+			failures.append("the ramming galleon took no damage — ramming must cost both")
+		elif light_took <= heavy_took:
+			failures.append(
+				"the skiff took %.0f and the galleon %.0f — the tonnage ratio is inverted"
+				% [light_took, heavy_took]
+			)
+		else:
+			print("RAM: galleon took %.0f, skiff took %.0f, in %.0fs" % [
+				heavy_took, light_took, waited
+			])
+
+	if failures.is_empty():
+		print("RAM PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("RAM FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## The castle at the end of a voyage has to be the hardest thing in it, and its
+## two-phase shape has to actually hold.
+##
+##   godot --headless src/scenes/voyage.tscn -- --castle
+##
+## For most of this project the final island was the *least* defended one on the
+## map: the generator authored `fort_cannons = 0` and `has_shipyard = false` for
+## it, so the climax of a twenty-minute run was four ships in open water, and a
+## tier-4 island on the way there was strictly harder. Nothing caught it, because
+## nothing ever asked what was on the objective.
+##
+## Four things are asserted, and every one of them is a way the boss can silently
+## stop being a boss: the castle exists and is ringed with batteries; the keep
+## shrugs off fire while any battery stands; it becomes vulnerable when the last
+## one falls; and the island cannot be captured with the walls still up.
+func _run_castle_test() -> void:
+	director.set_process(false)
+
+	var castle: Island = null
+	for raw: Variant in archipelago.islands:
+		if is_instance_valid(raw) and (raw as Island).def.has_castle:
+			castle = raw
+			break
+
+	var failures: PackedStringArray = []
+	if castle == null:
+		push_error("CASTLE FAIL: the voyage generated no castle island at all")
+		await _quit_cleanly(1)
+		return
+
+	# --- It has to be defended ---------------------------------------------
+	if castle.def.fort_cannons <= 0:
+		failures.append(
+			"%s is the objective of the voyage and fields no batteries"
+			% castle.def.display_name
+		)
+	if not castle.keep_standing():
+		failures.append("the castle island has no keep on it")
+	if castle.def.garrison_ships < 3:
+		failures.append("the castle fields only %d defenders" % castle.def.garrison_ships)
+
+	if castle.keep_standing():
+		var keep: CastleKeep = castle.keep
+		var batteries: int = castle.forts_remaining()
+
+		# --- Armoured while the ring stands --------------------------------
+		if batteries <= 0:
+			failures.append("the castle's batteries were gone before the fight started")
+		elif not keep.is_armoured():
+			failures.append("the keep is not armoured despite %d batteries standing" % batteries)
+		else:
+			var before: float = keep.health
+			keep.apply_damage(100.0, AmmoType.Bar.HULL, null)
+			var soaked: float = before - keep.health
+			if soaked > 100.0 * CastleKeep.ARMOURED_DAMAGE_MUL * 1.5:
+				failures.append(
+					"the armoured keep took %.0f of a 100-point broadside — the walls do nothing"
+					% soaked
+				)
+			elif soaked <= 0.0:
+				# Zero is its own failure: a target that visibly cannot be hurt at
+				# all reads as a bug, and the player concludes the game is broken
+				# rather than that they are shooting the wrong thing.
+				failures.append("the armoured keep took no damage at all, which reads as a bug")
+
+			# Framed while the ring is still standing, which is the only moment
+			# the armour shell exists to be looked at. The keep is drawn from
+			# vector shapes with no authored art and its armour is a *rule*
+			# expressed as a graphic — neither is something a headless assertion
+			# can judge.
+			await _frame_castle(castle)
+
+			# --- And it must not be capturable with the walls up ------------
+			for entry: Variant in castle.forts.duplicate():
+				if is_instance_valid(entry):
+					(entry as Fort).apply_damage(9999.0, AmmoType.Bar.HULL, null)
+			await get_tree().process_frame
+
+			if castle.forts_remaining() != 0:
+				failures.append("the batteries survived being shot to pieces")
+			elif keep.is_armoured():
+				failures.append("the keep is still armoured with every battery silenced")
+			else:
+				var open_before: float = keep.health
+				keep.apply_damage(100.0, AmmoType.Bar.HULL, null)
+				var open_soaked: float = open_before - keep.health
+				if open_soaked < 90.0:
+					failures.append(
+						"an unarmoured keep still soaked %.0f of a 100-point broadside"
+						% (100.0 - open_soaked)
+					)
+				else:
+					print(
+						"CASTLE: %s — %d batteries, keep %.0f hp; armoured hit %.0f, open hit %.0f"
+						% [
+							castle.def.display_name, batteries, CastleKeep.MAX_HEALTH,
+							soaked, open_soaked,
+						]
+					)
+
+	if failures.is_empty():
+		print("CASTLE PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("CASTLE FAIL: %s" % line)
+		await _quit_cleanly(1)
 
 
 ## Frames an actual engagement, which is the only way to check the combat readout.
@@ -1801,6 +2040,42 @@ func _check_forts() -> PackedStringArray:
 
 	if with_forts == 0:
 		out.append("no island in this voyage has a single shore battery")
+	return out
+
+
+## The objective of a voyage has to be the hardest thing in it.
+##
+## Cheap enough to run in the smoke test, and it belongs there rather than only
+## in `--castle`: CI gates on `--smoke` alone, and the failure this guards against
+## is one that survived undetected for the whole project so far. The generator
+## authored the final island with `fort_cannons = 0` and no shipyard, so the
+## climax of a twenty-minute run was four ships in open water — strictly easier
+## than the tier-4 islands on the way to it. Nothing errored. Nothing looked
+## wrong. The voyage just quietly had no ending worth sailing to.
+func _check_castle() -> PackedStringArray:
+	var out: PackedStringArray = []
+
+	var castle: Island = null
+	for raw: Variant in archipelago.islands:
+		if is_instance_valid(raw) and (raw as Island).def.has_castle:
+			castle = raw
+			break
+	if castle == null:
+		out.append("the voyage has no castle island — there is nothing to sail to")
+		return out
+
+	if castle.def.fort_cannons <= 0:
+		out.append(
+			"%s is the objective and fields no batteries" % castle.def.display_name
+		)
+	# Only meaningful while it is still hostile: the smoke run can, on a short
+	# archipelago, have taken the thing before this runs.
+	if not castle.is_captured and not castle.keep_standing():
+		out.append("%s has no keep — the castle is just a big island" % castle.def.display_name)
+	if castle.def.garrison_ships < 3:
+		out.append(
+			"%s fields only %d defenders" % [castle.def.display_name, castle.def.garrison_ships]
+		)
 	return out
 
 

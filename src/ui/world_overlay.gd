@@ -97,24 +97,30 @@ func _draw() -> void:
 ## batteries' telegraph, and deliberately the same shape, because they are the
 ## same message.
 func _draw_incoming(s: float) -> void:
-	for node: Node2D in Grid.query_rect(Cull.get_cull_rect(), SpatialGrid.KIND_ENEMY_SHIP):
-		var enemy := node as EnemyShip
-		if enemy == null or not enemy.has_method(&"mortar_telegraph"):
+	var mask: int = SpatialGrid.KIND_ENEMY_SHIP | SpatialGrid.KIND_STRUCTURE
+	for node: Node2D in Grid.query_rect(Cull.get_cull_rect(), mask):
+		if not node.has_method(&"mortar_telegraph"):
 			continue
-		var shot: Dictionary = enemy.mortar_telegraph()
+		var shot: Dictionary = node.call(&"mortar_telegraph")
 		if shot.is_empty():
 			continue
 
 		var at: Vector2 = shot["at"]
 		var t: float = shot["t"]
 		var alpha: float = 0.3 + 0.6 * t
+		# `spread` sizes the ring to whatever is actually coming. A bomb ketch
+		# drops one shell and the ring closes to a point; a castle fires a
+		# scattered salvo, and its ring has to enclose the whole pattern or the
+		# telegraph would be lying about where it is safe to stand.
+		var spread: float = float(shot.get("spread", 74.0))
 		draw_arc(
-			at, lerpf(230.0, 74.0, t), 0.0, TAU, 32, Color(COLOR_TARGET, alpha), 3.0 * s, false
+			at, lerpf(spread + 156.0, spread, t), 0.0, TAU, 32,
+			Color(COLOR_TARGET, alpha), 3.0 * s, false
 		)
 		# A thread back to the tube, so a player under fire from three directions
 		# can tell which of them each ring belongs to.
 		draw_line(
-			enemy.global_position, at, Color(COLOR_TARGET, alpha * 0.3), 2.0 * s
+			node.global_position, at, Color(COLOR_TARGET, alpha * 0.3), 2.0 * s
 		)
 
 

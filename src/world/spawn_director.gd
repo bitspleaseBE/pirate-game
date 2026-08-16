@@ -95,10 +95,16 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 
 	_prune_garrison(island)
 
-	# Both, not either. Clearing the garrison and leaving the batteries firing is
+	# All three, not any. Clearing the garrison and leaving the batteries firing is
 	# not holding an island, and it is the fort that makes the last stretch of the
-	# fight about position rather than about who reloads faster.
-	if _garrison_count(island) == 0 and island.forts_remaining() == 0:
+	# fight about position rather than about who reloads faster. The keep is the
+	# same argument at the end of a voyage: a castle whose walls are intact has
+	# not fallen because the water around it went quiet.
+	if (
+		_garrison_count(island) == 0
+		and island.forts_remaining() == 0
+		and not island.keep_standing()
+	):
 		island.capture()
 		_reinforce_left.erase(island)
 		if island.def.is_treasure_remaining():

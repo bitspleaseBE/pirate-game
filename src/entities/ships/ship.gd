@@ -53,6 +53,32 @@ const TURN_SPEED_PENALTY: float = 0.28
 const PIVOT_FORWARD_RATIO: float = 0.55
 ## Chain shot against a hull that has almost no rigging to shred.
 const OARED_SAIL_DAMAGE_MUL: float = 0.15
+# --- Ramming ---------------------------------------------------------------
+#
+# Hulls have always collided; the collision just did nothing. Two ships would
+# grind against each other at full speed and trade paint, which quietly said that
+# the most physical thing that can happen at sea does not count.
+#
+# It costs both parties, scaled by tonnage and by closing speed, so it is a real
+# decision rather than a free attack: a Galleon running down a skiff is a
+# massacre, and the same manoeuvre in a Dinghy is suicide. That asymmetry falls
+# out of the tonnage ratio without a special case anywhere.
+
+## Damage at a full-speed head-on collision between two equal hulls, before the
+## tonnage ratio is applied.
+const RAM_BASE_DAMAGE: float = 34.0
+## Closing speed below which a bump is just a bump. Ships drift into each other
+## constantly in a melee and none of that should be an attack.
+const RAM_MIN_CLOSING_SPEED: float = 55.0
+## Reference closing speed for full damage — about two hulls meeting bow to bow.
+const RAM_REFERENCE_SPEED: float = 220.0
+## Ceiling on the tonnage ratio, so a Galleon against a skiff is devastating
+## rather than arbitrarily large.
+const RAM_TONNAGE_RATIO_MAX: float = 3.2
+## Seconds before the same pair can collide again. Without it a grinding contact
+## resolves every physics frame and deletes both ships in under a second.
+const RAM_COOLDOWN: float = 1.1
+
 ## Crew efficiency at or below which a deck can no longer be held against a
 ## boarding party — the threshold grape shot exists to push a ship past.
 const BOARDABLE_CREW: float = 0.62
@@ -169,6 +195,9 @@ var manual_helm: bool = false
 ## every other hull forgetting how to navigate.
 var coast_standoff: float = COAST_STANDOFF
 
+## Seconds until this hull can be involved in another ram. Without it a grinding
+## contact resolves every physics frame and deletes both ships in under a second.
+var _ram_cooldown: float = 0.0
 var _orbit_dir: float = 1.0
 var _engage_accum: float = 0.0
 var _speed: float = 0.0
@@ -272,6 +301,7 @@ func _physics_process(delta: float) -> void:
 	_tick_engagement(delta)
 	_steer(delta)
 	move_and_slide()
+	_resolve_collisions()
 	# Belt and braces. Steering holds the standoff and collision holds the
 	# waterline, but "a ship is never on land" is a rule of the game, not an
 	# emergent property of two approximations — one shove from another hull or
@@ -283,6 +313,8 @@ func _physics_process(delta: float) -> void:
 	_update_ship_art_visibility()
 	if _retaliate_left > 0.0:
 		_retaliate_left -= delta
+	if _ram_cooldown > 0.0:
+		_ram_cooldown -= delta
 
 
 ## Steers to bring a beam onto the target — when, and only when, nobody else is
@@ -615,6 +647,75 @@ func battery_bears(side: int) -> bool:
 	if shoot_at == null or not is_instance_valid(shoot_at):
 		return false
 	return _reload[side] <= 0.0 and _bears_on(side, shoot_at)
+
+
+## Turns a hull-to-hull collision into damage on both parties.
+##
+## `move_and_slide` already resolved the physics; this only prices what happened.
+## Both ships take it, scaled by the tonnage ratio between them, which is what
+## makes ramming a decision rather than a free attack — the same manoeuvre is a
+## massacre in a Galleon and suicide in a Dinghy, and neither case is special
+## -cased anywhere.
+##
+## Only the heavier party's own tick needs to fire: it damages both sides, and the
+## cooldown then suppresses the mirror-image resolution on the other hull's tick.
+## Doing it from both would double every ram.
+func _resolve_collisions() -> void:
+	for i: int in get_slide_collision_count():
+		var collision: KinematicCollision2D = get_slide_collision(i)
+		var other := collision.get_collider() as Ship
+		if other == null or not other.alive or other.team == team:
+			continue
+		if _ram_cooldown > 0.0 or other._ram_cooldown > 0.0:
+			continue
+
+		# Closing speed along the line between the hulls, not raw speed: two ships
+		# running parallel and rubbing shoulders are not ramming each other.
+		var axis: Vector2 = (other.global_position - global_position)
+		if axis.length_squared() < 1.0:
+			continue
+		axis = axis.normalized()
+		var closing: float = (velocity - other.velocity).dot(axis)
+		if closing < RAM_MIN_CLOSING_SPEED:
+			continue
+
+		var force: float = clampf(closing / RAM_REFERENCE_SPEED, 0.0, 1.6)
+		var ratio: float = clampf(
+			stats.tonnage / maxf(1.0, other.stats.tonnage), 1.0 / RAM_TONNAGE_RATIO_MAX,
+			RAM_TONNAGE_RATIO_MAX
+		)
+
+		_ram_cooldown = RAM_COOLDOWN
+		other._ram_cooldown = RAM_COOLDOWN
+
+		# Some hulls answer contact with something other than taking the blow. A
+		# fireship is the whole reason this hook exists: without it the tonnage
+		# ratio simply crushes one — 40 tons against a Galleon's 460 is over a
+		# hundred points of ram damage against its 46 of hull — so the enemy whose
+		# entire design is "it reaches you and goes off" was being deleted by the
+		# act of reaching you.
+		if _on_ram_contact(other) or other._on_ram_contact(self):
+			continue
+
+		Pools.spawn_effect(&"impact", global_position.lerp(other.global_position, 0.5))
+		Audio.play_at(&"impact_wood", global_position)
+		EventBus.ships_collided.emit(self, other, force)
+
+		# Order matters: damage the other hull first. If we sink on our own ram —
+		# which a light hull ramming a heavy one absolutely should — `_sink` frees
+		# nothing immediately but does clear state, and the blow we dealt has to
+		# have landed before ours does.
+		other.apply_damage(RAM_BASE_DAMAGE * force * ratio, AmmoType.Bar.HULL, self)
+		apply_damage(RAM_BASE_DAMAGE * force / ratio, AmmoType.Bar.HULL, other)
+
+
+## Hook for hulls that answer a collision with something other than taking it.
+##
+## Returns true when this ship handled the contact, which cancels the ordinary
+## ram damage for both parties. Overridden by [EnemyShip] for fireships; the
+## default is that a ship is simply hit, which is what ramming means.
+func _on_ram_contact(_other: Ship) -> bool:
+	return false
 
 
 ## Damage multiplier for a ball whose ground track runs along `travel`.

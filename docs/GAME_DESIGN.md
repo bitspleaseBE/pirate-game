@@ -167,9 +167,12 @@ Readable at a glance, and each one changes how the ship plays:
 
 ### 5.5 Melee
 
-- **Ram & batter** — hold a collision course at speed. Damage scales with tonnage and
-  closing speed; you take bow damage too. Great for a Galleon against skiffs, suicidal
-  for a Dinghy.
+- **Ram & batter** — *built.* Hulls always collided; the collision did nothing. It now
+  costs **both** parties, scaled by closing speed and by the tonnage ratio between them
+  (capped at 3.2x either way). A Galleon running down a skiff is a massacre and the same
+  manoeuvre in a Dinghy is suicide, and neither is special-cased — it falls out of the
+  ratio. A fireship answers contact by detonating rather than by being crushed, which is
+  the one exception and the reason the collision hook is virtual.
 - **Board** — *built.* Grape shot sweeps a deck until its crew can no longer hold her
   (crew <= 0.62, or hull <= 0.35); pull alongside and a **BOARD** prompt appears. Hold the
   grapples ~2.8s — seconds spent stopped, alongside, in the middle of a fight, which is
@@ -196,7 +199,7 @@ because they are the only enemies that make the player move.
 | **Fireship** | *Built.* No guns at all: it *is* the weapon. Beelines at you and detonates for 70 in a 210 radius. Glass — two clean hits kill it — and it steers for where you are rather than where you will be, so committing to a turn makes it overshoot. |
 | **Fort cannon** | Static, long range, high damage, long visible wind-up. |
 | **Shipyard** | *Built.* Not a combatant. Stands on the far side of the island from its harbour, so reaching it means a circuit of the coast past the batteries while the garrison is still afloat. Burn it and the waves stop. That trip is the decision inside every island fight. |
-| **Castle keep** | Island boss: several batteries with independent HP, plus a guard fleet. |
+| **Castle keep** | *Built.* The one boss in a voyage, and a **two-phase** fight. A ring of four batteries plus a guard fleet, and a keep that is **armoured — 10% damage — while any battery still stands**. Silence the ring, then break the walls. It lobs a scattered three-shell salvo behind the same honest telegraph the bomb ketch uses. The island cannot be captured while it stands. |
 
 ## 6. The island loop
 
@@ -317,7 +320,7 @@ Difficulty is a written-out ladder, not a formula, because it *is* the argument:
 | 4th–6th | 3 | a sloop and a skiff | 1 | 1 hull a wave |
 | 7th–9th | 4 | a brig and two sloops | 2 | 2 hulls a wave |
 | 10th+ | 5 | brigs and sloops, four hulls | 3 | 2 hulls a wave |
-| Castle | 5 | four hulls, twice the treasure | — | — |
+| Castle | 5 | four hulls, **four batteries and an armoured keep**, twice the treasure | — | — |
 
 The second island is the one that decides whether a new player keeps playing, and for a
 while it was a Navy Sloop *and* a skiff, with a shore battery and two reinforcement waves

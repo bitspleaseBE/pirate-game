@@ -60,6 +60,8 @@ var forts: Array[Fort] = []
 ## The slipway, while it stands. Null on islands that never had one and on any
 ## island whose yard has been burned. See [Shipyard].
 var shipyard: Shipyard = null
+## The castle keep, on the one island in a voyage that has one. See [CastleKeep].
+var keep: CastleKeep = null
 
 ## Distance from the centre to the furthest point of the coastline. Registered as
 ## the island's grid radius so that a proximity query cannot miss a headland that
@@ -95,6 +97,7 @@ func setup(island_def: IslandDef) -> void:
 	_build_port()
 	_build_forts()
 	_build_shipyard()
+	_build_keep()
 	_build_flag()
 
 	Grid.add(self, SpatialGrid.KIND_ISLAND, outer_radius)
@@ -308,12 +311,49 @@ func _build_shipyard() -> void:
 		return
 	shipyard = Shipyard.new()
 	add_child(shipyard)
-	shipyard.setup(self, _shore_local.angle() + PI)
+	shipyard.setup(self, harbour_bearing() + PI)
 	shipyard.destroyed.connect(_on_shipyard_destroyed)
 
 
 func _on_shipyard_destroyed() -> void:
 	shipyard = null
+
+
+## Builds the castle, on the one island in a voyage that has one.
+func _build_keep() -> void:
+	if is_captured or not def.has_castle:
+		return
+	keep = CastleKeep.new()
+	add_child(keep)
+	keep.setup(self)
+	keep.destroyed.connect(_on_keep_destroyed)
+	keep.shrugged_off.connect(_on_keep_shrugged_off)
+
+
+func _on_keep_destroyed() -> void:
+	keep = null
+
+
+## The player has just put a broadside into the castle and watched it do almost
+## nothing. That needs a sentence, immediately — an armoured target the game
+## never explains is indistinguishable from a bug, and the player's next move
+## after "my guns do not work" is to close the game rather than to go and silence
+## the batteries the armour is keyed to.
+func _on_keep_shrugged_off() -> void:
+	EventBus.keep_shrugged_off.emit(self)
+
+
+## true while the castle still stands. An island with a keep is not taken until
+## the keep is broken, however quiet the water around it has gone.
+func keep_standing() -> bool:
+	return is_instance_valid(keep) and keep.alive
+
+
+## Bearing, in island-local space, of the harbour. Both the slipway and the keep
+## are placed opposite it, so the one stretch of coast the player has to sail to
+## is never the one bristling with the things they came to destroy.
+func harbour_bearing() -> float:
+	return _shore_local.angle()
 
 
 ## true while this island can still send reinforcements. Read every tick by the
@@ -393,6 +433,9 @@ func capture() -> void:
 	if is_instance_valid(shipyard):
 		shipyard.queue_free()
 	shipyard = null
+	if is_instance_valid(keep):
+		keep.queue_free()
+	keep = null
 	GameState.mark_island(def.id, true, true)
 	Audio.play_at(&"island_captured", global_position)
 	EventBus.island_captured.emit(self)

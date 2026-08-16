@@ -293,6 +293,22 @@ func _detonate() -> void:
 	_sink(null)
 
 
+## A fireship that touches anything goes off, rather than being rammed.
+##
+## This is also the backstop for the proximity check in [method _think_rammer].
+## That runs at 5 Hz, and a fireship covers nearly thirty units between thinks at
+## full speed, so it can cross the whole detonation band and make physical
+## contact before it next gets to think — at which point, without this, the hull
+## with the smallest tonnage in the game is on the receiving end of a ram.
+func _on_ram_contact(other: Ship) -> bool:
+	if stats.doctrine != ShipStats.Doctrine.RAMMER or not alive:
+		return false
+	if other.team == team:
+		return false
+	_detonate()
+	return true
+
+
 func _hull_radius_of(node: Node2D) -> float:
 	var ship := node as Ship
 	return ship.stats.hull_radius if ship != null else 0.0

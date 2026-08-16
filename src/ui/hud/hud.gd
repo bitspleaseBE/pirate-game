@@ -64,6 +64,8 @@ func _ready() -> void:
 	EventBus.island_discovered.connect(_on_island_discovered)
 	EventBus.shipyard_destroyed.connect(_on_shipyard_destroyed)
 	EventBus.prize_taken.connect(_on_prize_taken)
+	EventBus.keep_shrugged_off.connect(_on_keep_shrugged_off)
+	EventBus.castle_breached.connect(_on_castle_breached)
 	EventBus.treasure_dug.connect(_on_treasure_dug)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 
@@ -181,6 +183,17 @@ func _on_board_pressed() -> void:
 		return
 	EventBus.intent_board.emit(prize)
 	_board_button.visible = false
+
+
+## The castle is shrugging off broadsides. Said the moment it first happens,
+## because a target that ignores your guns with no explanation reads as the game
+## being broken rather than as a rule with an answer.
+func _on_keep_shrugged_off(_island: Node2D) -> void:
+	show_toast("The walls hold — silence the shore batteries first!")
+
+
+func _on_castle_breached(_island: Node2D) -> void:
+	show_toast("The keep is breached!")
 
 
 func _on_prize_taken(hull_name: String, kept: bool) -> void:

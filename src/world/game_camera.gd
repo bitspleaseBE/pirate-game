@@ -95,6 +95,8 @@ func _ready() -> void:
 	# that did not — so both get a kick of their own rather than only the hit.
 	EventBus.rake_landed.connect(_on_rake_landed)
 	EventBus.fireship_detonated.connect(_on_fireship_detonated)
+	EventBus.castle_breached.connect(_on_castle_breached)
+	EventBus.ships_collided.connect(_on_ships_collided)
 
 	EventBus.camera_registered.emit(self)
 
@@ -186,6 +188,21 @@ func _on_ship_sunk(ship: Node2D, killed_by: Node2D) -> void:
 	var killer := killed_by as Ship
 	if (hull != null and hull.team == Teams.PLAYER) or (killer != null and killer.team == Teams.PLAYER):
 		shake(SHAKE_SINK)
+
+
+## Timber on timber, scaled by how hard they met. Only when one of them is ours —
+## two enemies fouling each other across the bay is not something the player feels.
+func _on_ships_collided(a: Node2D, b: Node2D, force: float) -> void:
+	for entry: Node2D in [a, b]:
+		var ship := entry as Ship
+		if ship != null and ship.team == Teams.PLAYER:
+			shake(SHAKE_SINK * 0.55 * force)
+			return
+
+
+## The end of a voyage. The only thing in the game allowed the full kick.
+func _on_castle_breached(_island: Node2D) -> void:
+	shake(MAX_SHAKE)
 
 
 func _on_rake_landed(_victim: Node2D, _at: Vector2) -> void:

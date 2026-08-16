@@ -33,6 +33,9 @@ signal rake_landed(victim: Node2D, world_pos: Vector2)
 signal ship_sunk(ship: Node2D, killed_by: Node2D)
 signal ship_crippled(ship: Node2D)
 signal fireship_detonated(world_pos: Vector2)
+## Two hulls met. `force` is 0..1.6, the closing speed against a bow-to-bow
+## reference — so listeners can tell a scrape from a proper ram.
+signal ships_collided(a: Node2D, b: Node2D, force: float)
 signal boarding_started(boarder: Node2D, prize: Node2D)
 ## A hull was taken rather than sunk. `kept` is true when it joined the fleet and
 ## false when there was no berth for it and it was stripped instead.
@@ -46,6 +49,11 @@ signal island_captured(island: Node2D)
 ## own signal because it is a thing the player *chose* to do, and the game should
 ## say so out loud — see [Shipyard].
 signal shipyard_destroyed(island: Node2D)
+## The castle's walls are down. The end of a voyage, and the loudest moment in it.
+signal castle_breached(island: Node2D)
+## A shot bounced off the keep's armour. Emitted once per castle, so the rule can
+## be explained at the exact moment the player runs into it.
+signal keep_shrugged_off(island: Node2D)
 signal treasure_dug(island: Node2D, loot: Dictionary)
 signal loot_collected(loot: Dictionary)
 signal gold_changed(new_total: int, delta: int)
