@@ -119,6 +119,12 @@ func _capture_menu() -> void:
 		)
 
 	print("MENU SHOT: %s" % ProjectSettings.globalize_path(dir))
+	# Same rule as Voyage._quit_cleanly: the sea and the stems are playing by the
+	# time any run ends, and quitting out from under the audio server leaks every
+	# stream still live in it.
+	Audio.shutdown()
+	await get_tree().create_timer(0.25, true, false, true).timeout
+	Audio.shutdown()
 	get_tree().quit(0)
 
 

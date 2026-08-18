@@ -13,8 +13,23 @@ permissions:
   id-token: write
 
 # Never let two deploys race; a half-uploaded Pages site is worse than a stale one.
+#
+# Keyed per ref, not globally. A constant group name means *every* run in the
+# repository shares one slot, so with `cancel-in-progress` any push to any branch
+# kills whatever else is in flight — and two open pull requests will sit there
+# cancelling each other's builds indefinitely. That is not a hypothetical: with
+# two PRs open, pushing the second cancelled the first's run, and re-running the
+# first then cancelled the second's. Both reported `cancelled`, which at a glance
+# is indistinguishable from a real failure and makes the status meaningless on
+# both.
+#
+# The race this guard exists to prevent is between *deploys*, and only `main`
+# deploys — the deploy job is gated on `github.ref == 'refs/heads/main'`. Every
+# run on `main` still shares the group `pages-refs/heads/main`, so that guarantee
+# is untouched. What changes is that a pull request now only ever cancels its own
+# earlier run, which is the behaviour you actually want from a validation build.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:

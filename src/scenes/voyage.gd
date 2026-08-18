@@ -35,6 +35,9 @@ static var _wipe_harness_ran: bool = false
 @onready var ships_parent: Node2D = %Ships
 @onready var wind: WindSystem = %WindSystem
 @onready var tutorial: TutorialDirector = %Tutorial
+
+## Built once the world exists — see the note where it is created.
+var music: MusicDirector = null
 @onready var hud: CanvasLayer = %Hud
 
 ## Set while the fleet is under orders for the hideout, so arriving there opens
@@ -115,6 +118,7 @@ func _ready() -> void:
 		or "--castle" in harness_args
 		or "--ram" in harness_args
 		or "--rout" in harness_args
+		or "--audio" in harness_args
 	)
 
 	_update_wind_availability()
@@ -127,6 +131,14 @@ func _ready() -> void:
 	EventBus.intent_move.connect(_on_intent_move)
 	EventBus.island_captured.connect(_on_island_captured)
 	director.landing_started.connect(_on_landing_started)
+
+	# The sea and the shanty. Started here rather than in `_ready` because the
+	# score is a reading of the world, and until the fleet and the archipelago
+	# exist there is nothing to read.
+	music = MusicDirector.new()
+	music.name = "MusicDirector"
+	add_child(music)
+	music.begin(fleet, archipelago)
 
 	GameState.voyage_active = true
 	EventBus.voyage_started.emit(GameState.voyage_seed)
@@ -169,6 +181,8 @@ func _ready() -> void:
 		_run_ram_test()
 	elif "--rout" in args:
 		_run_rout_test()
+	elif "--audio" in args:
+		_run_audio_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -191,7 +205,7 @@ func _run_wipe_test() -> void:
 	var hulls: Array[Ship] = fleet.living_ships()
 	if hulls.is_empty():
 		push_error("WIPE FAIL: voyage started with no player ship")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	for ship: Ship in hulls:
 		ship.apply_damage(999_999.0, AmmoType.Bar.HULL, null)
@@ -213,7 +227,7 @@ func _run_wipe_test() -> void:
 	if not failures.is_empty():
 		for line: String in failures:
 			push_error("WIPE FAIL: %s" % line)
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	print("WIPE: fleet sunk, %d hull(s) issued, %d gold still banked" % [
@@ -240,17 +254,17 @@ func _check_voyage_after_wipe() -> void:
 	var afloat: int = fleet.living_ships().size()
 	if afloat < 1:
 		push_error("WIPE FAIL: new voyage after a wipe has no player ship")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	if fleet.selected == null:
 		push_error("WIPE FAIL: new voyage after a wipe has no ship under command")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	print("WIPE OK: sailing again with %d hull(s), %d gold banked" % [
 		afloat, GameState.banked_gold
 	])
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Frames each island's [Port] and writes the frames to `user://shots/`.
@@ -295,7 +309,7 @@ func _capture_harbours() -> void:
 		shot += 1
 
 	print("HARBOUR SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Drives the Hideout button end to end and asserts the port actually opens.
@@ -316,7 +330,7 @@ func _run_hideout_test() -> void:
 	var home: Island = archipelago.home
 	if home == null:
 		push_error("HIDEOUT FAIL: no home port was generated")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Stand the fleet off, or it starts inside the arrival radius and the test
@@ -337,7 +351,7 @@ func _run_hideout_test() -> void:
 	var button: Button = hud.find_child("HideoutButton", true, false) as Button
 	if button == null:
 		push_error("HIDEOUT FAIL: the HUD has no hideout button")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	button.pressed.emit()
 
@@ -408,7 +422,9 @@ func _run_arena_test() -> void:
 	## enemy does lands, the difficulty is a formality.
 	const MIN_DAMAGE_TAKEN: float = 1.0
 
-	var tally: Dictionary = {"shots": 0, "impacts": 0, "sunk": 0, "rakes": 0, "taken": 0.0}
+	var tally: Dictionary = {
+		"shots": 0, "impacts": 0, "sunk": 0, "rakes": 0, "taken": 0.0, "music_peak": 0.0,
+	}
 	EventBus.shot_fired.connect(func(from: Node2D, _b: StringName, _c: Vector2, _d: Vector2) -> void:
 		var ship := from as Ship
 		if ship != null and ship.team == Teams.PLAYER:
@@ -442,7 +458,7 @@ func _run_arena_test() -> void:
 	var arena: Island = _heaviest_island()
 	if arena == null:
 		push_error("ARENA FAIL: voyage has no hostile island")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Just outside the alert radius, so the run includes the approach — which is
@@ -499,6 +515,12 @@ func _run_arena_test() -> void:
 				EventBus.intent_target.emit(enemy)
 			elif not arena.is_captured:
 				lead.set_course(arena.global_position)
+		# The score is a gameplay system, so it is measured like one. A fight the
+		# music never notices is a bug in the same way a fight with no shots in it
+		# is, and it is just as invisible from a log.
+		if music != null and is_instance_valid(music):
+			tally["music_peak"] = maxf(float(tally["music_peak"]), music.measure_intensity())
+
 		await get_tree().create_timer(0.5).timeout
 		elapsed += 0.5
 
@@ -507,6 +529,134 @@ func _run_arena_test() -> void:
 
 	if not bool(outcome["done"]):
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## Every cue has a file behind it, and the music actually reacts to the game.
+##
+##   godot --headless src/scenes/voyage.tscn -- --audio
+##
+## Audio is the one subsystem whose entire failure mode is silence, and this
+## project is already built to fail that way politely: [AudioManager] skips a
+## missing file with one warning at boot and then plays nothing, forever, with no
+## error at any call site. A cue whose path is wrong is indistinguishable from a
+## cue nobody has triggered yet.
+##
+## The music needs its own check for a different reason. `Audio.play_music()` had
+## a working crossfade and was never called from anywhere in the project — the
+## only thing in the codebase that referenced music at all was the save file,
+## faithfully persisting the volume of a bus with nothing on it. Layered music is
+## a *gameplay* system, so "does the score respond to a fight" is a functional
+## question, and it is answered here by moving the intensity and reading the
+## faders rather than by anyone putting headphones on.
+func _run_audio_test() -> void:
+	var failures: PackedStringArray = []
+
+	# --- Every declared cue resolves ---------------------------------------
+	var silent: PackedStringArray = []
+	for id: StringName in Audio.LIBRARY:
+		var path: String = Audio.LIBRARY[id]["path"]
+		if not ResourceLoader.exists(path):
+			silent.append("%s (%s)" % [id, path])
+	if not silent.is_empty():
+		failures.append(
+			"%d cue(s) have no file and would be silent: %s"
+			% [silent.size(), ", ".join(silent)]
+		)
+
+	# --- The stems exist and are the same length ---------------------------
+	var lengths: Array[float] = []
+	for id: StringName in Audio.MUSIC_LAYERS:
+		var path: String = Audio.MUSIC_LAYER_PATHS[id]
+		if not ResourceLoader.exists(path):
+			failures.append("music stem '%s' is missing (%s)" % [id, path])
+			continue
+		var stream: AudioStream = load(path)
+		lengths.append(stream.get_length())
+		var wav := stream as AudioStreamWAV
+		# A stem that does not loop leaves the score playing once and then
+		# stopping dead, which reads as the game having crashed its audio.
+		if wav != null and wav.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+			failures.append("music stem '%s' is not set to loop" % id)
+	if lengths.size() > 1:
+		for length: float in lengths:
+			# Stems are only stems if they stay in lockstep. Drift would not error;
+			# it would slowly turn a chord into a cluster over a voyage.
+			if absf(length - lengths[0]) > 0.001:
+				failures.append("music stems differ in length: %s" % str(lengths))
+				break
+
+	if not ResourceLoader.exists(Audio.AMBIENCE_PATH):
+		failures.append("the sea ambience is missing (%s)" % Audio.AMBIENCE_PATH)
+
+	# --- It is actually running --------------------------------------------
+	if music == null or not is_instance_valid(music):
+		failures.append("the voyage built no MusicDirector")
+	elif not Audio.is_music_playing():
+		failures.append("the music stems are not playing")
+	elif not Audio.is_ambience_playing():
+		failures.append("the sea is not playing")
+	else:
+		# --- And it reacts -------------------------------------------------
+		# The director is silenced for this half. It samples the world at 4 Hz and
+		# writes the result over whatever is set, so driving the faders by hand
+		# while it runs means measuring the fleet sitting quietly at Port Royal —
+		# which is what the first version of this did, and it reported that the
+		# combat stem never comes up. Its own reading is checked separately below.
+		music.set_process(false)
+		var readings: Dictionary = {}
+		for intensity: float in [0.0, 1.0]:
+			Audio.set_music_intensity(intensity)
+			# Waited in seconds, not frames. A headless frame is a few milliseconds,
+			# so forty of them is a fraction of a second — the first version of
+			# this read the calm bed at 0.38 while it was still travelling and
+			# reported that the stems were not additive.
+			#
+			# Four seconds covers the slow fall as well: the rise and fall rates
+			# are deliberately asymmetric, and settling back down takes the longer
+			# of the two.
+			await get_tree().create_timer(4.0).timeout
+			var row: Dictionary = {}
+			for id: StringName in Audio.MUSIC_LAYERS:
+				row[id] = Audio.music_layer_gain(id)
+			readings[intensity] = row
+
+		var quiet: Dictionary = readings[0.0]
+		var loud: Dictionary = readings[1.0]
+		if float(loud[&"combat"]) <= float(quiet[&"combat"]):
+			failures.append(
+				"the combat stem does not come up with intensity (%.2f quiet, %.2f loud)"
+				% [float(quiet[&"combat"]), float(loud[&"combat"])]
+			)
+		if float(quiet[&"combat"]) > 0.05:
+			failures.append(
+				"the combat stem is audible on an empty sea (%.2f)" % float(quiet[&"combat"])
+			)
+		if float(loud[&"calm"]) < 0.9:
+			# Additive, not exclusive: the bed stays under everything, or the
+			# escalation is a track change with extra steps.
+			failures.append(
+				"the calm bed drops out under combat (%.2f) — the stems are not additive"
+				% float(loud[&"calm"])
+			)
+		else:
+			print("AUDIO: quiet %s / loud %s" % [str(quiet), str(loud)])
+
+		# --- Derived from the world, not from a timer ----------------------
+		music.set_process(true)
+		var measured: float = music.measure_intensity()
+		if measured > 0.35:
+			failures.append(
+				"intensity reads %.2f with the fleet alone at its home port" % measured
+			)
+
+	print("AUDIO: %d cues, %d stems" % [Audio.LIBRARY.size(), Audio.MUSIC_LAYERS.size()])
+	if failures.is_empty():
+		print("AUDIO PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("AUDIO FAIL: %s" % line)
+		await _quit_cleanly(1)
 
 
 ## A beaten ship that gets clear must stop counting as a defender.
@@ -883,7 +1033,7 @@ func _capture_combat() -> void:
 	var arena: Island = _heaviest_island(3)
 	if arena == null:
 		push_error("--shot-combat: no hostile island to fight")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	var bearing: Vector2 = (arena.anchor_point - arena.global_position).normalized()
@@ -898,7 +1048,7 @@ func _capture_combat() -> void:
 	fleet.fleet_emptied.connect(func() -> void:
 		print("COMBAT SHOTS: fleet lost — stopping early. %s"
 			% ProjectSettings.globalize_path(dir))
-		get_tree().quit(0)
+		await _quit_cleanly(0)
 	)
 
 	for shot: int in 10:
@@ -921,7 +1071,7 @@ func _capture_combat() -> void:
 		)
 
 	print("COMBAT SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Drives a boarding end to end, in both the outcomes it has.
@@ -1098,7 +1248,7 @@ func _run_doctrine_test() -> void:
 	var mark: Ship = fleet.selected
 	if mark == null:
 		push_error("DOCTRINE FAIL: no player hull to test against")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	# Outside the archipelago entirely, not merely in a gap in it. The centre of
 	# the world bounds is open water on a map but it sits inside somebody's alert
@@ -1204,12 +1354,12 @@ func _finish_arena(
 	var shots_per_min: float = float(tally["shots"]) / maxf(0.01, elapsed / 60.0)
 	print(
 		("ARENA: island=%s tier=%d fought=%.0fs shots=%d (%.1f/min) hits=%d rakes=%d"
-		+ " sunk=%d damage_taken=%.0f captured=%s survived=%s")
+		+ " sunk=%d damage_taken=%.0f music_peak=%.2f captured=%s survived=%s")
 		% [
 			arena.def.display_name, arena.def.tier, elapsed,
 			int(tally["shots"]), shots_per_min, int(tally["impacts"]), int(tally["rakes"]),
-			int(tally["sunk"]), float(tally["taken"]), arena.is_captured,
-			not bool(outcome["wiped"]),
+			int(tally["sunk"]), float(tally["taken"]), float(tally["music_peak"]),
+			arena.is_captured, not bool(outcome["wiped"]),
 		]
 	)
 
@@ -1225,6 +1375,14 @@ func _finish_arena(
 		failures.append("a mid-game hull sank nothing in %.0fs" % elapsed)
 	if float(tally["taken"]) < min_damage_taken:
 		failures.append("the garrison never landed a single hit — there is no fight here")
+	if float(tally["music_peak"]) < 0.4:
+		# 0.4 is where the combat stem starts coming in. A whole island fight that
+		# never crosses it means the score sat on the calm bed through a battle,
+		# which is the failure the layering exists to prevent.
+		failures.append(
+			"the music never escalated past %.2f during an entire island fight"
+			% float(tally["music_peak"])
+		)
 
 	if failures.is_empty():
 		print("ARENA PASS")
@@ -1283,7 +1441,7 @@ func _capture_fleet() -> void:
 	var hulls: Array[Ship] = fleet.living_ships()
 	if hulls.is_empty():
 		push_error("--shot-fleet: no player ship to photograph")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	hulls[0].apply_damage(46.0, AmmoType.Bar.HULL, null)
 	hulls[0].apply_damage(22.0, AmmoType.Bar.SAILS, null)
@@ -1301,14 +1459,14 @@ func _capture_fleet() -> void:
 	var badge: Button = hud.find_child("FleetButton", true, false) as Button
 	if badge == null:
 		push_error("--shot-fleet: the HUD has no fleet badge to press")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	badge.pressed.emit()
 	await get_tree().create_timer(0.6).timeout
 	var panel: Node = hud.get_node_or_null(^"Fleet")
 	if panel == null:
 		push_error("--shot-fleet: pressing the fleet badge opened nothing")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/fleet_00.png" % dir)
@@ -1328,7 +1486,7 @@ func _capture_fleet() -> void:
 	get_viewport().get_texture().get_image().save_png("%s/fleet_02_hud.png" % dir)
 
 	print("FLEET SHOT: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Screenshots the port screen on the home island. The port is a modal over a
@@ -1347,7 +1505,7 @@ func _capture_port() -> void:
 			break
 	if port == null:
 		push_error("--shot-port: no captured island to open a port on")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	# Clear any briefing first — show_port refuses to stack modals, correctly.
@@ -1367,7 +1525,7 @@ func _capture_port() -> void:
 	get_viewport().get_texture().get_image().save_png("%s/port_00.png" % dir)
 
 	print("PORT SHOT: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Sails to the nearest hostile island and writes frames to `user://shots/`.
@@ -1394,7 +1552,7 @@ func _capture_screenshots() -> void:
 	# nearest with no regard for its own hull.
 	fleet.fleet_emptied.connect(func() -> void:
 		print("SHOTS: fleet lost — stopping early. %s" % ProjectSettings.globalize_path(dir))
-		get_tree().quit(0)
+		await _quit_cleanly(0)
 	)
 
 	var shot: int = 0
@@ -1432,7 +1590,7 @@ func _capture_screenshots() -> void:
 			hud.call(&"dismiss_port")
 
 	print("SHOTS: %s" % ProjectSettings.globalize_path(dir))
-	get_tree().quit(0)
+	await _quit_cleanly(0)
 
 
 ## Headless smoke test: sail at the nearest hostile island, let the fight happen,
@@ -1474,7 +1632,7 @@ func _run_smoke_test() -> void:
 	# output explaining why.
 	fleet.fleet_emptied.connect(func() -> void:
 		push_error("SMOKE FAIL: player fleet was wiped out")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 	)
 
 	var start: Vector2 = fleet.centroid()
@@ -1489,7 +1647,7 @@ func _run_smoke_test() -> void:
 			goal = island
 	if goal == null:
 		push_error("SMOKE FAIL: archipelago has no hostile island")
-		get_tree().quit(1)
+		await _quit_cleanly(1)
 		return
 
 	Log.info(
@@ -1558,7 +1716,7 @@ func _run_smoke_test() -> void:
 				"SMOKE FAIL: wall-clock limit hit after %.0fs (only %.0fs of game time)"
 				% [wall, elapsed]
 			)
-			get_tree().quit(1)
+			await _quit_cleanly(1)
 			return
 	Engine.time_scale = 1.0
 
@@ -1680,6 +1838,19 @@ func _check_wind() -> PackedStringArray:
 ## stream behind it alive at exit — reported as leaked instances. Stopping
 ## everything and yielding a couple of frames lets the server drain, which keeps
 ## the leak check in CI meaningful instead of permanently noisy.
+## The only way a harness may leave the game.
+##
+## Every automated exit goes through here, and since the score started playing
+## that is a hard rule rather than a tidiness one: the music stems and the sea
+## ambience never stop, so at the moment any run ends there are always four
+## streams live in the audio server. A bare `get_tree().quit()` tears the process
+## down before the server gets a beat to release them, and Godot reports four
+## leaked resources and eight leaked objects — which CI fails the build on.
+##
+## That is exactly how it presented: `--wipe` was the one gate that had never
+## been routed through here, because when it was written nothing happened to be
+## playing at the moment it quit. Nothing about the wipe path changed; what
+## changed is that silence is no longer the default state of the game.
 func _quit_cleanly(code: int) -> void:
 	Engine.time_scale = 1.0
 	Audio.shutdown()
