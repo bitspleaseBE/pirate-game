@@ -67,6 +67,15 @@ nothing ever asked what was on it. (Run with a display and it also frames the ke
 godot --headless src/scenes/voyage.tscn -- --castle
 ```
 
+Assert ships actually carry canvas and that it answers the wind — yards braced sharp when
+pointing, squared before the wind, and the cloth bellying downwind of its own yard on every
+point of sail. That last one is the assertion no screenshot could replace: a sail bellied
+into the wind renders perfectly happily and still looks like a sail:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --rig
+```
+
 Assert every sound cue has a file behind it and the music actually reacts to the game.
 Audio is the one subsystem whose entire failure mode is silence — a missing file is
 skipped at boot with one warning and then plays nothing, forever, with no error at any
@@ -179,6 +188,15 @@ cluster over the course of a voyage:
 
 ```bash
 python3 tools/audio/make_placeholder_music.py
+```
+
+Recut the sailcloth swatch the drawn rig wears. The sail is a shape drawn in code, but a
+flat polygon on a hull that is a rendered, weathered 3D asset reads as a placeholder on
+finished art — so it wears a patch of real canvas lifted out of the sail master, which is
+useless as a sprite here but whose cloth is as good from above as from abeam:
+
+```bash
+python3 tools/assets/make_sail_linen.py
 ```
 
 Rebuild the Wave 0 art from its masters:

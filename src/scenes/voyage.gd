@@ -119,6 +119,7 @@ func _ready() -> void:
 		or "--ram" in harness_args
 		or "--rout" in harness_args
 		or "--audio" in harness_args
+		or "--rig" in harness_args
 	)
 
 	_update_wind_availability()
@@ -183,6 +184,8 @@ func _ready() -> void:
 		_run_rout_test()
 	elif "--audio" in args:
 		_run_audio_test()
+	elif "--rig" in args:
+		_run_rig_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -531,6 +534,147 @@ func _run_arena_test() -> void:
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
 
 
+## The sail is bent, and it answers the wind.
+##
+##   godot --headless src/scenes/voyage.tscn -- --rig
+##
+## Ships sailed under bare poles for the entire life of the project. Wave 0
+## delivered a sail master, `ShipStats.sail_texture` was declared to hold it, and
+## no line of code ever read either — and no test noticed, because no test has
+## ever asked what a ship looks like.
+##
+## The sail is a read-out of the wind model rather than decoration, which makes
+## "does it respond" a functional question with a functional answer. Yards braced
+## sharp when a ship is trying to point, squared as the wind draws aft, and the
+## cloth bellying to the side the wind is actually going. Those last two are the
+## parts that would break silently and invisibly if a sign were ever flipped,
+## because a sail braced or bellied the wrong way still looks like a sail — which
+## is exactly how the first version of this shipped past a screenshot.
+func _run_rig_test() -> void:
+	director.set_process(false)
+
+	var failures: PackedStringArray = []
+
+	# An oared hull must not carry canvas. It is the one stat on the resource the
+	# player can see at a glance, and a Dinghy under sail would be a lie about the
+	# thing that separates the opening boat from the first real ship. Asked of a
+	# built hull rather than of the resource, because whether a rig gets stepped
+	# is a decision the ship makes and the stats only inform.
+	GameState.fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	if fleet.selected != null and fleet.selected.has_sail():
+		failures.append("the oared Dinghy was given a sail")
+
+	GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	_update_wind_availability()
+
+	var ship: Ship = fleet.selected
+	if ship == null:
+		push_error("RIG FAIL: no player hull")
+		await _quit_cleanly(1)
+		return
+
+	if not ship.has_sail():
+		failures.append("a Sloop has no sail on it")
+	if WindSystem.instance == null or not WindSystem.instance.active:
+		failures.append("the wind never woke up behind a sailed hull")
+
+	if failures.is_empty():
+		var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+		camera.set_world_bounds(
+			Rect2(open - Vector2(8000.0, 8000.0), Vector2(16000.0, 16000.0))
+		)
+		ship.global_position = open
+		camera.snap_to(open)
+		Cull.force_tick()
+
+		# Measured against the live wind rather than a wind forced to a constant:
+		# the vector drifts under a degree a second, which is nothing across the
+		# couple of seconds each reading takes, and reaching into the system to
+		# pin it would be testing a rig that the game never actually sails.
+		var readings: Dictionary = {}
+		for row: Array in [
+			["running", 0.0], ["into_wind", PI],
+			["wind_to_port", PI * 0.5], ["wind_to_starboard", -PI * 0.5],
+		]:
+			var label: String = row[0]
+			var turn: float = row[1]
+			# `turn` is the heading relative to running dead before the wind.
+			var heading: Vector2 = WindSystem.instance.direction.rotated(turn)
+			var settle: float = 0.0
+			while settle < 2.2:
+				ship.stop()
+				ship.set_target(null)
+				ship.rotation = heading.angle() + PI * 0.5
+				await get_tree().physics_frame
+				settle += 1.0 / 60.0
+			readings[label] = ship.sail_brace()
+			# How far downwind the belly is pointing, -1 to 1. Read here rather
+			# than after the loop because it depends on the heading being held.
+			readings[label + "_lee"] = (
+				ship.sail_belly_world().dot(WindSystem.instance.direction)
+			)
+
+		var running: float = absf(float(readings["running"]))
+		var pointing: float = absf(float(readings["into_wind"]))
+		var to_port: float = float(readings["wind_to_port"])
+		var to_starboard: float = float(readings["wind_to_starboard"])
+
+		if pointing <= running:
+			failures.append(
+				"the yards are not braced sharper into the wind than before it (%.2f vs %.2f)"
+				% [pointing, running]
+			)
+		if running > 0.25:
+			failures.append(
+				"the yards are not square running before the wind (%.2f rad off)" % running
+			)
+		if signf(to_port) == signf(to_starboard):
+			# The sign is the whole tell. A rig braced the same way on both tacks
+			# is a rig that is not reading the wind at all, and it looks fine.
+			failures.append(
+				"the yards brace the same way on both tacks (%.2f, %.2f)"
+				% [to_port, to_starboard]
+			)
+		else:
+			print("RIG: running %.2f, close-hauled %.2f, tacks %.2f / %.2f rad" % [
+				running, pointing, to_port, to_starboard
+			])
+
+		# And the cloth has to be downwind of its own yard, on every point of
+		# sail. Wind blows a sail away from itself; a belly on the windward side
+		# is the rig being blown through its own spar, and it renders perfectly
+		# happily. This is the one assertion in the file that a screenshot could
+		# never replace.
+		for label: String in ["running", "into_wind", "wind_to_port", "wind_to_starboard"]:
+			var downwind: float = float(readings[label + "_lee"])
+			if downwind <= 0.05:
+				failures.append(
+					"the canvas bellies into the wind %s (%.2f downwind)"
+					% [label.replace("_", " "), downwind]
+				)
+
+		# Shot the rigging away and the canvas has to go with it, or a crippled
+		# ship still looks like it is under sail.
+		ship.sails = 0.0
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		var canvas: Node = ship.find_child("Sail", true, false)
+		if canvas != null and (canvas as CanvasItem).visible:
+			failures.append("a ship with its rigging shot away is still showing canvas")
+
+	if failures.is_empty():
+		print("RIG PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("RIG FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
 ## Every cue has a file behind it, and the music actually reacts to the game.
 ##
 ##   godot --headless src/scenes/voyage.tscn -- --audio
@@ -848,6 +992,15 @@ func _run_ram_test() -> void:
 	await get_tree().process_frame
 	Cull.force_tick()
 
+	# Spike both batteries. This is a test of hulls hitting hulls, and leaving the
+	# guns loaded made it a coin flip: a Galleon closing on a Skiff has nine
+	# hundred units to cross, the Skiff drifts into a broadside arc somewhere in
+	# the middle of it, and one salvo is enough — the Skiff sank before contact in
+	# roughly one run out of three, and the harness reported it as "never
+	# registered a collision", which is true and completely misleading.
+	heavy.cannons_hp = 0.0
+	light.cannons_hp = 0.0
+
 	var heavy_before: float = heavy.hull
 	var light_before: float = light.hull
 
@@ -856,20 +1009,31 @@ func _run_ram_test() -> void:
 	# test that produced one would be testing the wrong thing.
 	Engine.time_scale = TIME_SCALE
 	var waited: float = 0.0
+	var died_early: String = ""
 	while waited < PATIENCE and int(hits["count"]) == 0:
-		if is_instance_valid(heavy) and heavy.alive and is_instance_valid(light) and light.alive:
-			heavy.set_target(null)
-			heavy.nav_target = light.global_position
-			heavy.has_nav_target = true
-			light.suppress_engage_steering = true
-			light.nav_target = heavy.global_position
-			light.has_nav_target = true
+		if not is_instance_valid(heavy) or not heavy.alive:
+			died_early = "the galleon"
+			break
+		if not is_instance_valid(light) or not light.alive:
+			died_early = "the skiff"
+			break
+		heavy.set_target(null)
+		heavy.nav_target = light.global_position
+		heavy.has_nav_target = true
+		light.suppress_engage_steering = true
+		light.nav_target = heavy.global_position
+		light.has_nav_target = true
 		await get_tree().create_timer(0.2).timeout
 		waited += 0.2
 	Engine.time_scale = 1.0
 
 	var failures: PackedStringArray = []
-	if int(hits["count"]) == 0:
+	if died_early != "":
+		# Distinct from the collision failure below, because the two have nothing
+		# to do with each other and one masquerading as the other is what cost an
+		# afternoon.
+		failures.append("%s sank before the two hulls ever met" % died_early)
+	elif int(hits["count"]) == 0:
 		failures.append("two hulls driven straight at each other never registered a collision")
 	else:
 		var heavy_took: float = heavy_before - heavy.hull
@@ -1859,7 +2023,14 @@ func _quit_cleanly(code: int) -> void:
 	# wait is, and a second shutdown catches anything that slipped through.
 	await get_tree().create_timer(0.25, true, false, true).timeout
 	Audio.shutdown()
-	await get_tree().process_frame
+	# And a beat *after* the last stop, which the first version of this missed.
+	# `stop()` only marks a playback for removal; the audio server drops it on its
+	# next mix, so quitting on the very next process frame tears the process down
+	# with the playbacks — and the streams they pin — still alive. It showed up on
+	# `--castle` alone, because that is the shortest harness there is: everything
+	# it starts is a fraction of a second old when it ends, and every other run
+	# happened to give the server enough idle mixes to catch up.
+	await get_tree().create_timer(0.2, true, false, true).timeout
 	get_tree().quit(code)
 
 

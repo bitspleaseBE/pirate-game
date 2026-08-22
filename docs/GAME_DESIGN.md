@@ -98,6 +98,30 @@ anywhere; a bad angle costs time, not control. An unforgiving wind on a one-thum
 game reads as a broken game rather than a deep one, and the tactical payoff survives the
 softening intact.
 
+**And it is visible on the ships themselves.** *Built.* Every sailed hull carries canvas
+over the hull, and the rig is a read-out of this model rather than decoration: yards brace
+sharp when a ship is trying to point and square as the wind draws aft, the cloth bellies
+to leeward and swings its belly across when she tacks, it deepens and brightens on a good
+point of sail and goes slack and pale on a bad one, and it shrinks and tears as chain shot
+takes the rigging. Oared hulls carry none, so the first Sloop is a visible promotion.
+Before this the only thing on screen that knew the wind existed was a compass ring in the
+corner of the HUD — now the enemy's canvas tells you where *they* can go, which is what the
+weather gage is for.
+
+The canvas is a drawn *shape* wearing a real *material* (`SailCanvas`). There is no usable
+sail sprite: the Wave 0 vector master is a correct plan view, but the raster that replaced
+it is a side elevation — mast, yard and two hanging panels seen from abeam — and this game
+looks at its ships from directly overhead, so laying that on a deck puts a mast flat along
+the planks and bracing the yard swings the mast round with it. So the geometry comes from
+the vector master and is redrawn every frame, which is also the only way to get a sail that
+bellies, tacks and tears at all.
+
+Drawing it flat was not enough on its own. The hulls are rendered assets — weave, grain,
+weathering, soft shadow — and a cream polygon with a stroke around it is a different medium
+sitting on finished art. The fix was material, not shape: a patch of the elevation master's
+canvas is lifted out into a swatch and stretched over the drawn shape, lit per-vertex, and
+given a shadow on the deck in the same direction the hull throws its own.
+
 **It arrives as a progression beat.** Your first hull is oared, so the opening islands
 teach tap-to-move, broadsides and the capture loop on a still sea. The wind wakes up the
 moment you first command a sailed hull, with a one-time explanation — it is something the

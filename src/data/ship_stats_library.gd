@@ -308,3 +308,21 @@ static func _apply_art(s: ShipStats) -> void:
 	# right size — a Fireship is visibly a launch, not a Sloop painted orange.
 	var nominal: float = SKIFF_NOMINAL_WIDTH if small else SLOOP_NOMINAL_WIDTH
 	s.sprite_scale = 0.5 * (s.hull_radius * 2.0) / nominal
+
+	# [member ShipStats.sail_texture] is deliberately left unset, and it is worth
+	# saying why here rather than leaving the next person to rediscover it.
+	#
+	# Wave 0 shipped `assets/wave0/ships/sail_med.png` and nothing ever loaded it,
+	# so every hull in the game sailed under bare poles. The obvious fix is to
+	# hang that texture on the mast, and it does not work: the raster is a **side
+	# elevation** — mast, yard, two hanging panels, standing rigging, seen from
+	# abeam — while every hull here is orthographic from directly overhead. Laid
+	# on a deck it puts a mast flat along the planks, and rotating it to brace the
+	# yard swings the mast round with it.
+	#
+	# The Wave 0 *vector* master, `assets_src/ships/sloop/sail_med.svg`, is the
+	# correct plan view; the v2 raster that replaced it changed the projection.
+	# [SailCanvas] draws that plan view instead, to the SVG's own geometry and
+	# palette, which additionally gets a sail that bellies, flips on a tack and
+	# tears — none of which a single sprite can do. Whether a hull carries canvas
+	# is therefore [method ShipStats.is_oared], not the presence of a texture.
