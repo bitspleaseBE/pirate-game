@@ -98,6 +98,15 @@ anywhere; a bad angle costs time, not control. An unforgiving wind on a one-thum
 game reads as a broken game rather than a deep one, and the tactical payoff survives the
 softening intact.
 
+**And it is visible on the ships themselves.** *Built.* Every sailed hull carries canvas
+composed at runtime over the hull (docs/ASSETS.md §Ships), and the rig is a read-out of
+this model rather than decoration: yards brace sharp when a ship is trying to point and
+square as the wind draws aft, the canvas fills and brightens on a good point of sail and
+slats on a bad one, and it thins away as chain shot takes the rigging. Oared hulls carry
+none, so the first Sloop is a visible promotion. Before this the only thing on screen that
+knew the wind existed was a compass ring in the corner of the HUD — now the enemy's canvas
+tells you where *they* can go, which is what the weather gage is for.
+
 **It arrives as a progression beat.** Your first hull is oared, so the opening islands
 teach tap-to-move, broadsides and the capture loop on a still sea. The wind wakes up the
 moment you first command a sailed hull, with a one-time explanation — it is something the

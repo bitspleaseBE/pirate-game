@@ -119,6 +119,7 @@ func _ready() -> void:
 		or "--ram" in harness_args
 		or "--rout" in harness_args
 		or "--audio" in harness_args
+		or "--rig" in harness_args
 	)
 
 	_update_wind_availability()
@@ -183,6 +184,8 @@ func _ready() -> void:
 		_run_rout_test()
 	elif "--audio" in args:
 		_run_audio_test()
+	elif "--rig" in args:
+		_run_rig_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -529,6 +532,125 @@ func _run_arena_test() -> void:
 
 	if not bool(outcome["done"]):
 		_finish_arena(arena, tally, outcome, TIME_SCALE, MIN_SHOTS_PER_MIN, MIN_DAMAGE_TAKEN)
+
+
+## The sail is bent, and it answers the wind.
+##
+##   godot --headless src/scenes/voyage.tscn -- --rig
+##
+## `sail_med.png` and the two flag frames shipped in Wave 0 and were loaded by
+## nothing for the entire life of the project — `ShipStats.sail_texture` was
+## declared and referenced by no line of code, so every hull sailed under bare
+## poles and no test noticed, because no test has ever asked what a ship looks
+## like.
+##
+## The sail is a read-out of the wind model rather than decoration, which makes
+## "does it respond" a functional question with a functional answer. Yards braced
+## sharp when a ship is trying to point, squared as the wind draws aft, and round
+## to the side the wind is actually on — that last one is the part that would
+## break silently and invisibly if the sign were ever flipped, because a sail
+## braced the wrong way still looks like a sail.
+func _run_rig_test() -> void:
+	director.set_process(false)
+
+	GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	_update_wind_availability()
+
+	var failures: PackedStringArray = []
+	var ship: Ship = fleet.selected
+	if ship == null:
+		push_error("RIG FAIL: no player hull")
+		await _quit_cleanly(1)
+		return
+
+	if not ship.has_sail():
+		failures.append("a Sloop has no sail on it")
+	if WindSystem.instance == null or not WindSystem.instance.active:
+		failures.append("the wind never woke up behind a sailed hull")
+
+	# An oared hull must not carry canvas. It is the one stat on the resource the
+	# player can see at a glance, and a Dinghy under sail would be a lie about the
+	# thing that separates the opening boat from the first real ship.
+	if ShipStatsLibrary.get_stats(&"dinghy").sail_texture != null:
+		failures.append("the oared Dinghy was given a sail")
+	if ShipStatsLibrary.get_stats(&"sloop").sail_texture == null:
+		failures.append("the Sloop was not given a sail")
+
+	if failures.is_empty():
+		var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+		camera.set_world_bounds(
+			Rect2(open - Vector2(8000.0, 8000.0), Vector2(16000.0, 16000.0))
+		)
+		ship.global_position = open
+		camera.snap_to(open)
+		Cull.force_tick()
+
+		# Measured against the live wind rather than a wind forced to a constant:
+		# the vector drifts under a degree a second, which is nothing across the
+		# couple of seconds each reading takes, and reaching into the system to
+		# pin it would be testing a rig that the game never actually sails.
+		var readings: Dictionary = {}
+		for row: Array in [
+			["running", 0.0], ["into_wind", PI],
+			["wind_to_port", PI * 0.5], ["wind_to_starboard", -PI * 0.5],
+		]:
+			var label: String = row[0]
+			var turn: float = row[1]
+			# `turn` is the heading relative to running dead before the wind.
+			var heading: Vector2 = WindSystem.instance.direction.rotated(turn)
+			var settle: float = 0.0
+			while settle < 2.2:
+				ship.stop()
+				ship.set_target(null)
+				ship.rotation = heading.angle() + PI * 0.5
+				await get_tree().physics_frame
+				settle += 1.0 / 60.0
+			readings[label] = ship.sail_brace()
+
+		var running: float = absf(float(readings["running"]))
+		var pointing: float = absf(float(readings["into_wind"]))
+		var to_port: float = float(readings["wind_to_port"])
+		var to_starboard: float = float(readings["wind_to_starboard"])
+
+		if pointing <= running:
+			failures.append(
+				"the yards are not braced sharper into the wind than before it (%.2f vs %.2f)"
+				% [pointing, running]
+			)
+		if running > 0.25:
+			failures.append(
+				"the yards are not square running before the wind (%.2f rad off)" % running
+			)
+		if signf(to_port) == signf(to_starboard):
+			# The sign is the whole tell. A rig braced the same way on both tacks
+			# is a rig that is not reading the wind at all, and it looks fine.
+			failures.append(
+				"the yards brace the same way on both tacks (%.2f, %.2f)"
+				% [to_port, to_starboard]
+			)
+		else:
+			print("RIG: running %.2f, close-hauled %.2f, tacks %.2f / %.2f rad" % [
+				running, pointing, to_port, to_starboard
+			])
+
+		# Shot the rigging away and the canvas has to go with it, or a crippled
+		# ship still looks like it is under sail.
+		ship.sails = 0.0
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		var canvas: Node = ship.find_child("Sail", true, false)
+		if canvas != null and (canvas as CanvasItem).visible:
+			failures.append("a ship with its rigging shot away is still showing canvas")
+
+	if failures.is_empty():
+		print("RIG PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("RIG FAIL: %s" % line)
+		await _quit_cleanly(1)
 
 
 ## Every cue has a file behind it, and the music actually reacts to the game.

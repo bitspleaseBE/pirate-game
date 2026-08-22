@@ -67,6 +67,15 @@ nothing ever asked what was on it. (Run with a display and it also frames the ke
 godot --headless src/scenes/voyage.tscn -- --castle
 ```
 
+Assert ships actually carry canvas and that it answers the wind — yards braced sharp when
+pointing, squared before the wind, and round to the side the wind is really on. That last
+sign is the one that would break invisibly, because a sail braced the wrong way still
+looks like a sail:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --rig
+```
+
 Assert every sound cue has a file behind it and the music actually reacts to the game.
 Audio is the one subsystem whose entire failure mode is silence — a missing file is
 skipped at boot with one warning and then plays nothing, forever, with no error at any

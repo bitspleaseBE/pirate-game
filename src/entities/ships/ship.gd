@@ -147,7 +147,57 @@ const SWELL_SHADOW_LIFT: float = 0.30
 ## Where the shadow sits with the hull at rest, before any lift.
 const SHADOW_OFFSET: Vector2 = Vector2(8.0, 12.0)
 
+# --- Canvas -----------------------------------------------------------------
+#
+# Ships have been sailing under bare poles. `sail_med.png` and the two flag
+# frames shipped in Wave 0 and nothing ever loaded them; docs/ASSETS.md asks for
+# "hull + sail overlay + flag, composed at runtime" and only the hull was ever
+# composed.
+#
+# The sail is not decoration. This game has a full wind model — a polar curve, a
+# weather gage, rigs that favour different points of sail — and until now the
+# only thing on screen that knew about any of it was a compass ring in the corner
+# of the HUD. A sail braces round as the wind draws aft, fills when the ship is
+# sailing well and slats when it is not, so every hull in the fight becomes a
+# read-out of the one system the player is supposed to be thinking about. The
+# enemy's canvas tells you where *they* can go, which is the whole point of the
+# weather gage.
+
+## Where the mast steps, as a fraction of hull radius forward of amidships.
+const MAST_FORWARD_RATIO: float = 0.18
+## Sail size relative to the hull's own sprite scale.
+##
+## Tuned down hard from a first pass at 1.15, which was defensible as seamanship
+## and wrong as a game: the canvas came out as wide as the selection ring and
+## buried the hull completely. Which way a ship is pointing is not decoration
+## here — it is how the player reads a broadside arc — so the rig has to sit on
+## the hull rather than replace it.
+const SAIL_SPREAD: float = 0.58
+## Canvas is never fully opaque, so the deck and the bow read through it even
+## when the yards are square and the sail is directly over the hull.
+const SAIL_ALPHA: float = 0.88
+## Yard angles, in radians, from hard-braced close to the wind out to square.
+##
+## A square rig braces its yards sharp when it is trying to point and squares
+## them as the wind draws aft; running dead before it the yards are athwartships,
+## which is how the master is drawn. So the sprite's own rotation *is* the brace
+## angle, and 0 is the running case.
+const BRACE_SHARP: float = 1.02
+const BRACE_SQUARE: float = 0.0
+## How fast the yards come round. Bracing is a crew hauling on lines, not a
+## servo: instant tracking looks like the sail is glued to the wind vector.
+const BRACE_SHARPNESS: float = 2.6
+## Canvas billow at a perfect point of sail versus dead into the wind. Small —
+## this is a sail filling, not a balloon.
+const SAIL_BILLOW: float = 0.14
+## How dark the canvas goes when it is slatting rather than drawing.
+const SAIL_LUFF_DIM: float = 0.55
+
 const SHIP_SHADOW: Texture2D = preload("res://assets/wave1/ships/ship_shadow.png")
+const PENNANT_FRAMES: Array[Texture2D] = [
+	preload("res://assets/wave0/ships/flag_wave_0.png"),
+	preload("res://assets/wave0/ships/flag_wave_1.png"),
+]
 const WAKE_FOAM_FRAMES: Array[Texture2D] = [
 	preload("res://assets/wave1/ships/wake_foam_0.png"),
 	preload("res://assets/wave1/ships/wake_foam_1.png"),
@@ -215,6 +265,11 @@ var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
 var _ship_shadow: Sprite2D = null
 var _bow_foam: AnimatedSprite2D = null
+var _sail: Sprite2D = null
+var _pennant: AnimatedSprite2D = null
+## Yard angle, eased toward its target so the crew appear to haul rather than the
+## sail snapping to the wind vector.
+var _brace: float = 0.0
 ## Everything the swell moves. Held as one node so heave and roll never fight the
 ## hull's own scale or the ship's heading.
 var _visual: Node2D = null
@@ -310,6 +365,7 @@ func _physics_process(delta: float) -> void:
 	Grid.update(self)
 	_tick_guns(delta)
 	_ride_swell()
+	_trim_sail(delta)
 	_update_ship_art_visibility()
 	if _retaliate_left > 0.0:
 		_retaliate_left -= delta
@@ -588,6 +644,89 @@ func _ride_swell() -> void:
 
 	if _ship_shadow != null:
 		_ship_shadow.position = SHADOW_OFFSET * (1.0 + swell.x * SWELL_SHADOW_LIFT)
+
+
+## Braces the yards, fills the canvas, and streams the pennant.
+##
+## Presentation only — nothing here is read back by the simulation, so a ship's
+## speed and gunnery do not depend on what its sail is doing. The sail depends on
+## *them*, which is the right way round: it is a read-out.
+##
+## Three separate things are being said at once, and they are worth keeping
+## distinct because the player learns them one at a time:
+##
+##   * **the yard angle** says where the wind is — braced sharp means you are
+##     trying to point into it, square means it is behind you;
+##   * **the billow and brightness** say whether that is working — a sail that is
+##     drawing is bright and full, one that is slatting is dim and flat;
+##   * **the transparency** says how much rigging is left, so a ship you have
+##     been putting chain shot into is visibly in ribbons before it is crippled.
+func _trim_sail(delta: float) -> void:
+	if _pennant != null:
+		# A pennant streams dead downwind whatever the hull is doing, so it is set
+		# in world terms and then taken back into the hull's frame. The sprite's
+		# flag flies toward +X from its staff, so pointing +X downwind is enough.
+		var blow: Vector2 = Vector2.RIGHT
+		if WindSystem.instance != null and WindSystem.instance.active:
+			blow = WindSystem.instance.direction
+		else:
+			# Becalmed: no wind to stream on, so it hangs off the stern.
+			blow = -forward()
+		_pennant.rotation = blow.angle() - rotation
+
+	if _sail == null:
+		return
+
+	# Bare poles once the rigging is gone. Anything still drawn at that point
+	# would contradict the crippled state the bars are reporting.
+	var canvas: float = sails_fraction()
+	if canvas <= 0.001:
+		_sail.visible = false
+		return
+	_sail.visible = true
+
+	# How far the wind has drawn aft, and which side it is on. Signed, because
+	# the yards brace round toward the side the wind comes from and an unsigned
+	# angle cannot say which that is.
+	var off: float = PI
+	var side: float = 1.0
+	var drawing: float = 1.0
+	if WindSystem.instance != null and WindSystem.instance.active:
+		var from_wind: Vector2 = WindSystem.instance.origin_direction()
+		var signed: float = forward().angle_to(from_wind)
+		off = absf(signed)
+		side = signf(signed) if not is_zero_approx(signed) else 1.0
+		drawing = WindSystem.instance.speed_multiplier(forward(), stats.rig_tilt())
+
+	# Sharp into the wind, square before it. Eased, because bracing is a crew on
+	# the braces rather than a servo tracking a vector.
+	var target: float = lerpf(BRACE_SHARP, BRACE_SQUARE, clampf(off / PI, 0.0, 1.0)) * side
+	_brace = lerpf(_brace, target, 1.0 - exp(-BRACE_SHARPNESS * delta))
+	_sail.rotation = _brace
+
+	# `speed_multiplier` runs from about 0.55 upwind to 1.0 on a broad reach, so
+	# it is remapped across that band rather than across 0..1 — otherwise the
+	# difference between the best and worst points of sail is a few percent of
+	# brightness and invisible.
+	var fill: float = clampf(inverse_lerp(0.55, 1.0, drawing), 0.0, 1.0)
+	var billow: float = 1.0 + SAIL_BILLOW * fill
+	_sail.scale = Vector2.ONE * stats.sprite_scale * SAIL_SPREAD * billow
+	var lit: float = lerpf(SAIL_LUFF_DIM, 1.0, fill)
+	# Rigging damage takes the canvas away rather than dimming it: a torn sail is
+	# less sail, not a darker one.
+	_sail.self_modulate = Color(lit, lit, lit, SAIL_ALPHA * clampf(canvas, 0.0, 1.0))
+
+
+## Current yard angle, in radians off square. Exists for the rig harness: how a
+## sail is trimmed is otherwise a question only a person looking at the screen
+## can answer, and a sail that stops responding to the wind would look exactly
+## like a sail.
+func sail_brace() -> float:
+	return _brace
+
+
+func has_sail() -> bool:
+	return _sail != null
 
 
 func forward() -> Vector2:
@@ -1136,12 +1275,63 @@ func _build_ship_art() -> void:
 	_bow_foam.play(&"default")
 	visual.add_child(_bow_foam)
 	visual.move_child(_bow_foam, 1)
+
+	_build_rig(visual)
 	_update_ship_art_visibility()
+
+
+## Steps the mast and bends the sail, on hulls that have one.
+##
+## Both are children of `Visual`, so they heave and roll on the swell with the
+## hull rather than sliding about on top of a ship that is pitching underneath
+## them. Above the hull in z, because from overhead the canvas is the thing you
+## would actually see.
+func _build_rig(visual: Node2D) -> void:
+	if stats.sail_texture != null:
+		_sail = Sprite2D.new()
+		_sail.name = "Sail"
+		_sail.texture = stats.sail_texture
+		# Stepped forward of amidships. A mast on the centre of rotation looks
+		# like a beach umbrella; forward of it reads as a ship.
+		_sail.position = Vector2(0.0, -stats.hull_radius * MAST_FORWARD_RATIO)
+		_sail.scale = Vector2.ONE * stats.sprite_scale * SAIL_SPREAD
+		_sail.z_index = 2
+		visual.add_child(_sail)
+
+	# Every hull flies something, oared or not — it is how you tell whose it is,
+	# and a pennant streams dead downwind, so it says which way the wind blows
+	# even on a boat that does not care.
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed(&"default", 6.0)
+	frames.set_animation_loop(&"default", true)
+	for texture: Texture2D in PENNANT_FRAMES:
+		frames.add_frame(&"default", texture)
+
+	_pennant = AnimatedSprite2D.new()
+	_pennant.name = "Pennant"
+	_pennant.sprite_frames = frames
+	# At the stern, where an ensign flies, and scaled to the hull.
+	_pennant.position = Vector2(0.0, stats.hull_radius * 0.62)
+	_pennant.scale = Vector2.ONE * stats.sprite_scale * 0.7
+	_pennant.self_modulate = stats.accent_color
+	_pennant.z_index = 3
+	_pennant.play(&"default")
+	visual.add_child(_pennant)
 
 
 func _update_ship_art_visibility() -> void:
 	if _ship_shadow != null:
 		_ship_shadow.visible = Quality.shadow_mode >= 1
+	if _pennant != null:
+		# An animated sprite per hull is worth having up close and not worth
+		# paying for on a ship the size of a thumbnail. Same rule as the bow foam.
+		var show_pennant: bool = lod == Cull.Lod.FULL
+		if _pennant.visible != show_pennant:
+			_pennant.visible = show_pennant
+			if show_pennant:
+				_pennant.play(&"default")
+			else:
+				_pennant.pause()
 	if _bow_foam != null:
 		var speed_fraction: float = velocity.length() / maxf(1.0, stats.max_speed)
 		var should_show: bool = (

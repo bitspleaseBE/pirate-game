@@ -10,6 +10,11 @@ extends Object
 ## matches its sprite renders at sprite_scale 0.5 — see docs/ASSETS.md §0.
 const ART_SLOOP: String = "res://assets/wave0/ships/hull_sloop.png"
 const ART_SKIFF: String = "res://assets/wave0/ships/hull_skiff.png"
+## The sail overlay. docs/ASSETS.md §Ships: "Modular: hull + sail overlay + flag,
+## composed at runtime." Wave 0 delivered this master and nothing ever loaded it —
+## [member ShipStats.sail_texture] was declared and referenced by no line in the
+## project, so every hull in the game has been sailing under bare poles.
+const ART_SAIL: String = "res://assets/wave0/ships/sail_med.png"
 ## Nominal width of each master, in world units. Every hull that borrows one
 ## scales relative to it until its own master exists.
 const SLOOP_NOMINAL_WIDTH: float = 96.0
@@ -308,3 +313,11 @@ static func _apply_art(s: ShipStats) -> void:
 	# right size — a Fireship is visibly a launch, not a Sloop painted orange.
 	var nominal: float = SKIFF_NOMINAL_WIDTH if small else SLOOP_NOMINAL_WIDTH
 	s.sprite_scale = 0.5 * (s.hull_radius * 2.0) / nominal
+
+	# Only what actually carries canvas. An oared hull with a sail on it would be
+	# a lie about the one stat that matters most on this resource — the Dinghy,
+	# the Skiff and the Fireship are rowed, they ignore the wind entirely, and
+	# their whole identity is that they are not sailing ships. It also makes the
+	# first Sloop a visible promotion rather than a number in a shop.
+	if not s.is_oared() and ResourceLoader.exists(ART_SAIL):
+		s.sail_texture = load(ART_SAIL) as Texture2D
