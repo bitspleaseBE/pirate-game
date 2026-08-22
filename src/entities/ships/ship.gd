@@ -164,7 +164,13 @@ const SHADOW_OFFSET: Vector2 = Vector2(8.0, 12.0)
 # weather gage.
 
 ## Where the mast steps, as a fraction of hull radius forward of amidships.
-const MAST_FORWARD_RATIO: float = 0.18
+##
+## Hull radius is half the *beam*, and a hull is roughly three times longer than
+## it is wide, so this is a smaller move up the deck than the number suggests —
+## about a fifth of the ship's length. Enough: a mast on the centre of rotation
+## looks like a beach umbrella, and forward of it the waist and the stern stay
+## clear and the ship reads as a ship.
+const MAST_FORWARD_RATIO: float = 0.32
 ## Yard half-length and canvas depth, as fractions of hull radius.
 ##
 ## Tuned down hard from a first pass that spread the canvas wider than the
@@ -189,10 +195,6 @@ const BRACE_SQUARE: float = 0.0
 ## servo: instant tracking looks like the sail is glued to the wind vector.
 const BRACE_SHARPNESS: float = 2.6
 const SHIP_SHADOW: Texture2D = preload("res://assets/wave1/ships/ship_shadow.png")
-const PENNANT_FRAMES: Array[Texture2D] = [
-	preload("res://assets/wave0/ships/flag_wave_0.png"),
-	preload("res://assets/wave0/ships/flag_wave_1.png"),
-]
 const WAKE_FOAM_FRAMES: Array[Texture2D] = [
 	preload("res://assets/wave1/ships/wake_foam_0.png"),
 	preload("res://assets/wave1/ships/wake_foam_1.png"),
@@ -261,7 +263,6 @@ var _hull_sprite: Sprite2D = null
 var _ship_shadow: Sprite2D = null
 var _bow_foam: AnimatedSprite2D = null
 var _sail: SailCanvas = null
-var _pennant: AnimatedSprite2D = null
 ## Yard angle, eased toward its target so the crew appear to haul rather than the
 ## sail snapping to the wind vector.
 var _brace: float = 0.0
@@ -641,7 +642,7 @@ func _ride_swell() -> void:
 		_ship_shadow.position = SHADOW_OFFSET * (1.0 + swell.x * SWELL_SHADOW_LIFT)
 
 
-## Braces the yards, fills the canvas, and streams the pennant.
+## Braces the yards and fills the canvas.
 ##
 ## Presentation only — nothing here is read back by the simulation, so a ship's
 ## speed and gunnery do not depend on what its sail is doing. The sail depends on
@@ -652,23 +653,12 @@ func _ride_swell() -> void:
 ##
 ##   * **the yard angle** says where the wind is — braced sharp means you are
 ##     trying to point into it, square means it is behind you;
-##   * **the billow and brightness** say whether that is working — a sail that is
-##     drawing is bright and full, one that is slatting is dim and flat;
-##   * **the transparency** says how much rigging is left, so a ship you have
-##     been putting chain shot into is visibly in ribbons before it is crippled.
+##   * **the belly and brightness** say whether that is working — a sail that is
+##     drawing is deep and bright, one that is slatting is flat and pale;
+##   * **the size and the ragged foot** say how much rigging is left, so a ship
+##     you have been putting chain shot into is visibly in ribbons before she is
+##     crippled.
 func _trim_sail(delta: float) -> void:
-	if _pennant != null:
-		# A pennant streams dead downwind whatever the hull is doing, so it is set
-		# in world terms and then taken back into the hull's frame. The sprite's
-		# flag flies toward +X from its staff, so pointing +X downwind is enough.
-		var blow: Vector2 = Vector2.RIGHT
-		if WindSystem.instance != null and WindSystem.instance.active:
-			blow = WindSystem.instance.direction
-		else:
-			# Becalmed: no wind to stream on, so it hangs off the stern.
-			blow = -forward()
-		_pennant.rotation = blow.angle() - rotation
-
 	if _sail == null:
 		return
 
@@ -1301,10 +1291,15 @@ func _build_ship_art() -> void:
 
 ## Steps the mast and bends the sail, on hulls that have one.
 ##
-## Both are children of `Visual`, so they heave and roll on the swell with the
-## hull rather than sliding about on top of a ship that is pitching underneath
-## them. Above the hull in z, because from overhead the canvas is the thing you
-## would actually see.
+## A child of `Visual`, so it heaves and rolls on the swell with the hull rather
+## than sliding about on top of a ship that is pitching underneath it. Above the
+## hull in z, because from overhead the canvas is the thing you would see.
+##
+## No ensign. The Wave 0 `flag_wave` frames are a side elevation like the sail
+## master — a pennant on a staff, seen from abeam — and blown up to hull scale in
+## plan view it renders as a flat red disc sitting on the deck, which is what it
+## did here for one commit. The wind read-out it was there to provide is what the
+## canvas above it now does properly.
 func _build_rig(visual: Node2D) -> void:
 	# Only what actually carries canvas. An oared hull with a sail on it would be
 	# a lie about the one stat that matters most on it — the Dinghy, the Skiff and
@@ -1316,8 +1311,6 @@ func _build_rig(visual: Node2D) -> void:
 		# Named for the rig harness, which asks a ship whether it is showing
 		# canvas without knowing how that canvas is made.
 		_sail.name = "Sail"
-		# Stepped forward of amidships. A mast on the centre of rotation looks
-		# like a beach umbrella; forward of it reads as a ship.
 		_sail.position = Vector2(0.0, -stats.hull_radius * MAST_FORWARD_RATIO)
 		_sail.set_rig_size(
 			stats.hull_radius * SAIL_HALF_SPAN_RATIO, stats.hull_radius * SAIL_DEPTH_RATIO
@@ -1325,40 +1318,10 @@ func _build_rig(visual: Node2D) -> void:
 		_sail.z_index = 2
 		visual.add_child(_sail)
 
-	# Every hull flies something, oared or not — it is how you tell whose it is,
-	# and a pennant streams dead downwind, so it says which way the wind blows
-	# even on a boat that does not care.
-	var frames := SpriteFrames.new()
-	frames.set_animation_speed(&"default", 6.0)
-	frames.set_animation_loop(&"default", true)
-	for texture: Texture2D in PENNANT_FRAMES:
-		frames.add_frame(&"default", texture)
-
-	_pennant = AnimatedSprite2D.new()
-	_pennant.name = "Pennant"
-	_pennant.sprite_frames = frames
-	# At the stern, where an ensign flies, and scaled to the hull.
-	_pennant.position = Vector2(0.0, stats.hull_radius * 0.62)
-	_pennant.scale = Vector2.ONE * stats.sprite_scale * 0.7
-	_pennant.self_modulate = stats.accent_color
-	_pennant.z_index = 3
-	_pennant.play(&"default")
-	visual.add_child(_pennant)
-
 
 func _update_ship_art_visibility() -> void:
 	if _ship_shadow != null:
 		_ship_shadow.visible = Quality.shadow_mode >= 1
-	if _pennant != null:
-		# An animated sprite per hull is worth having up close and not worth
-		# paying for on a ship the size of a thumbnail. Same rule as the bow foam.
-		var show_pennant: bool = lod == Cull.Lod.FULL
-		if _pennant.visible != show_pennant:
-			_pennant.visible = show_pennant
-			if show_pennant:
-				_pennant.play(&"default")
-			else:
-				_pennant.pause()
 	if _bow_foam != null:
 		var speed_fraction: float = velocity.length() / maxf(1.0, stats.max_speed)
 		var should_show: bool = (
