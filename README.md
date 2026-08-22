@@ -68,9 +68,9 @@ godot --headless src/scenes/voyage.tscn -- --castle
 ```
 
 Assert ships actually carry canvas and that it answers the wind — yards braced sharp when
-pointing, squared before the wind, and round to the side the wind is really on. That last
-sign is the one that would break invisibly, because a sail braced the wrong way still
-looks like a sail:
+pointing, squared before the wind, and the cloth bellying downwind of its own yard on every
+point of sail. That last one is the assertion no screenshot could replace: a sail bellied
+into the wind renders perfectly happily and still looks like a sail:
 
 ```bash
 godot --headless src/scenes/voyage.tscn -- --rig

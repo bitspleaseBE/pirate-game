@@ -10,11 +10,6 @@ extends Object
 ## matches its sprite renders at sprite_scale 0.5 — see docs/ASSETS.md §0.
 const ART_SLOOP: String = "res://assets/wave0/ships/hull_sloop.png"
 const ART_SKIFF: String = "res://assets/wave0/ships/hull_skiff.png"
-## The sail overlay. docs/ASSETS.md §Ships: "Modular: hull + sail overlay + flag,
-## composed at runtime." Wave 0 delivered this master and nothing ever loaded it —
-## [member ShipStats.sail_texture] was declared and referenced by no line in the
-## project, so every hull in the game has been sailing under bare poles.
-const ART_SAIL: String = "res://assets/wave0/ships/sail_med.png"
 ## Nominal width of each master, in world units. Every hull that borrows one
 ## scales relative to it until its own master exists.
 const SLOOP_NOMINAL_WIDTH: float = 96.0
@@ -314,10 +309,20 @@ static func _apply_art(s: ShipStats) -> void:
 	var nominal: float = SKIFF_NOMINAL_WIDTH if small else SLOOP_NOMINAL_WIDTH
 	s.sprite_scale = 0.5 * (s.hull_radius * 2.0) / nominal
 
-	# Only what actually carries canvas. An oared hull with a sail on it would be
-	# a lie about the one stat that matters most on this resource — the Dinghy,
-	# the Skiff and the Fireship are rowed, they ignore the wind entirely, and
-	# their whole identity is that they are not sailing ships. It also makes the
-	# first Sloop a visible promotion rather than a number in a shop.
-	if not s.is_oared() and ResourceLoader.exists(ART_SAIL):
-		s.sail_texture = load(ART_SAIL) as Texture2D
+	# [member ShipStats.sail_texture] is deliberately left unset, and it is worth
+	# saying why here rather than leaving the next person to rediscover it.
+	#
+	# Wave 0 shipped `assets/wave0/ships/sail_med.png` and nothing ever loaded it,
+	# so every hull in the game sailed under bare poles. The obvious fix is to
+	# hang that texture on the mast, and it does not work: the raster is a **side
+	# elevation** — mast, yard, two hanging panels, standing rigging, seen from
+	# abeam — while every hull here is orthographic from directly overhead. Laid
+	# on a deck it puts a mast flat along the planks, and rotating it to brace the
+	# yard swings the mast round with it.
+	#
+	# The Wave 0 *vector* master, `assets_src/ships/sloop/sail_med.svg`, is the
+	# correct plan view; the v2 raster that replaced it changed the projection.
+	# [SailCanvas] draws that plan view instead, to the SVG's own geometry and
+	# palette, which additionally gets a sail that bellies, flips on a tack and
+	# tears — none of which a single sprite can do. Whether a hull carries canvas
+	# is therefore [method ShipStats.is_oared], not the presence of a texture.

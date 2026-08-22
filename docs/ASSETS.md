@@ -47,6 +47,15 @@ receive separate masters.
 Modular: hull + sail overlay + flag, composed at runtime. Damage states are overlays, not
 separate hulls.
 
+> **Sails are drawn in plan view, or not at all.** Every hull here is orthographic from
+> directly overhead, so a sail master is a bowed yard, a canvas bellying away from it and
+> the mast as a small circle where they meet — which is exactly what the Wave 0 vector
+> master `assets_src/ships/sloop/sail_med.svg` is. The v2 raster that replaced it is a
+> side elevation seen from abeam, and it cannot be used: laid on a deck it puts a mast
+> flat along the planks, and rotating it to brace the yard swings the mast round with it.
+> Until a plan-view master exists, `SailCanvas` draws the rig in code — see the `sail_*`
+> rows below, all of which are still outstanding.
+
 | Asset | Count | Nominal size (px) | Notes |
 |---|---|---|---|
 | `hull_dinghy` | 1 | 64 × 96 | Player tier 1 |

@@ -538,27 +538,39 @@ func _run_arena_test() -> void:
 ##
 ##   godot --headless src/scenes/voyage.tscn -- --rig
 ##
-## `sail_med.png` and the two flag frames shipped in Wave 0 and were loaded by
-## nothing for the entire life of the project — `ShipStats.sail_texture` was
-## declared and referenced by no line of code, so every hull sailed under bare
-## poles and no test noticed, because no test has ever asked what a ship looks
-## like.
+## Ships sailed under bare poles for the entire life of the project. Wave 0
+## delivered a sail master, `ShipStats.sail_texture` was declared to hold it, and
+## no line of code ever read either — and no test noticed, because no test has
+## ever asked what a ship looks like.
 ##
 ## The sail is a read-out of the wind model rather than decoration, which makes
 ## "does it respond" a functional question with a functional answer. Yards braced
-## sharp when a ship is trying to point, squared as the wind draws aft, and round
-## to the side the wind is actually on — that last one is the part that would
-## break silently and invisibly if the sign were ever flipped, because a sail
-## braced the wrong way still looks like a sail.
+## sharp when a ship is trying to point, squared as the wind draws aft, and the
+## cloth bellying to the side the wind is actually going. Those last two are the
+## parts that would break silently and invisibly if a sign were ever flipped,
+## because a sail braced or bellied the wrong way still looks like a sail — which
+## is exactly how the first version of this shipped past a screenshot.
 func _run_rig_test() -> void:
 	director.set_process(false)
+
+	var failures: PackedStringArray = []
+
+	# An oared hull must not carry canvas. It is the one stat on the resource the
+	# player can see at a glance, and a Dinghy under sail would be a lie about the
+	# thing that separates the opening boat from the first real ship. Asked of a
+	# built hull rather than of the resource, because whether a rig gets stepped
+	# is a decision the ship makes and the stats only inform.
+	GameState.fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	if fleet.selected != null and fleet.selected.has_sail():
+		failures.append("the oared Dinghy was given a sail")
 
 	GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
 	fleet.refit()
 	await get_tree().process_frame
 	_update_wind_availability()
 
-	var failures: PackedStringArray = []
 	var ship: Ship = fleet.selected
 	if ship == null:
 		push_error("RIG FAIL: no player hull")
@@ -569,14 +581,6 @@ func _run_rig_test() -> void:
 		failures.append("a Sloop has no sail on it")
 	if WindSystem.instance == null or not WindSystem.instance.active:
 		failures.append("the wind never woke up behind a sailed hull")
-
-	# An oared hull must not carry canvas. It is the one stat on the resource the
-	# player can see at a glance, and a Dinghy under sail would be a lie about the
-	# thing that separates the opening boat from the first real ship.
-	if ShipStatsLibrary.get_stats(&"dinghy").sail_texture != null:
-		failures.append("the oared Dinghy was given a sail")
-	if ShipStatsLibrary.get_stats(&"sloop").sail_texture == null:
-		failures.append("the Sloop was not given a sail")
 
 	if failures.is_empty():
 		var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
@@ -608,6 +612,11 @@ func _run_rig_test() -> void:
 				await get_tree().physics_frame
 				settle += 1.0 / 60.0
 			readings[label] = ship.sail_brace()
+			# How far downwind the belly is pointing, -1 to 1. Read here rather
+			# than after the loop because it depends on the heading being held.
+			readings[label + "_lee"] = (
+				ship.sail_belly_world().dot(WindSystem.instance.direction)
+			)
 
 		var running: float = absf(float(readings["running"]))
 		var pointing: float = absf(float(readings["into_wind"]))
@@ -634,6 +643,19 @@ func _run_rig_test() -> void:
 			print("RIG: running %.2f, close-hauled %.2f, tacks %.2f / %.2f rad" % [
 				running, pointing, to_port, to_starboard
 			])
+
+		# And the cloth has to be downwind of its own yard, on every point of
+		# sail. Wind blows a sail away from itself; a belly on the windward side
+		# is the rig being blown through its own spar, and it renders perfectly
+		# happily. This is the one assertion in the file that a screenshot could
+		# never replace.
+		for label: String in ["running", "into_wind", "wind_to_port", "wind_to_starboard"]:
+			var downwind: float = float(readings[label + "_lee"])
+			if downwind <= 0.05:
+				failures.append(
+					"the canvas bellies into the wind %s (%.2f downwind)"
+					% [label.replace("_", " "), downwind]
+				)
 
 		# Shot the rigging away and the canvas has to go with it, or a crippled
 		# ship still looks like it is under sail.
@@ -1981,7 +2003,14 @@ func _quit_cleanly(code: int) -> void:
 	# wait is, and a second shutdown catches anything that slipped through.
 	await get_tree().create_timer(0.25, true, false, true).timeout
 	Audio.shutdown()
-	await get_tree().process_frame
+	# And a beat *after* the last stop, which the first version of this missed.
+	# `stop()` only marks a playback for removal; the audio server drops it on its
+	# next mix, so quitting on the very next process frame tears the process down
+	# with the playbacks — and the streams they pin — still alive. It showed up on
+	# `--castle` alone, because that is the shortest harness there is: everything
+	# it starts is a fraction of a second old when it ends, and every other run
+	# happened to give the server enough idle mixes to catch up.
+	await get_tree().create_timer(0.2, true, false, true).timeout
 	get_tree().quit(code)
 
 

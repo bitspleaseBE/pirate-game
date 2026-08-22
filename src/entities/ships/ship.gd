@@ -165,17 +165,18 @@ const SHADOW_OFFSET: Vector2 = Vector2(8.0, 12.0)
 
 ## Where the mast steps, as a fraction of hull radius forward of amidships.
 const MAST_FORWARD_RATIO: float = 0.18
-## Sail size relative to the hull's own sprite scale.
+## Yard half-length and canvas depth, as fractions of hull radius.
 ##
-## Tuned down hard from a first pass at 1.15, which was defensible as seamanship
-## and wrong as a game: the canvas came out as wide as the selection ring and
-## buried the hull completely. Which way a ship is pointing is not decoration
-## here — it is how the player reads a broadside arc — so the rig has to sit on
-## the hull rather than replace it.
-const SAIL_SPREAD: float = 0.58
-## Canvas is never fully opaque, so the deck and the bow read through it even
-## when the yards are square and the sail is directly over the hull.
-const SAIL_ALPHA: float = 0.88
+## Tuned down hard from a first pass that spread the canvas wider than the
+## selection ring and buried the hull completely. Which way a ship is pointing is
+## not decoration here — it is how the player reads a broadside arc — so the rig
+## has to sit on the hull rather than replace it.
+## Depth is small against span on purpose. Seen from directly overhead, the only
+## part of a square sail you can see at all is the bulge that leans out past its
+## own yard, so a deep sail here does not read as a full one — it reads as a fan
+## bolted to the deck, which is what the first pass at these numbers looked like.
+const SAIL_HALF_SPAN_RATIO: float = 0.76
+const SAIL_DEPTH_RATIO: float = 0.58
 ## Yard angles, in radians, from hard-braced close to the wind out to square.
 ##
 ## A square rig braces its yards sharp when it is trying to point and squares
@@ -187,12 +188,6 @@ const BRACE_SQUARE: float = 0.0
 ## How fast the yards come round. Bracing is a crew hauling on lines, not a
 ## servo: instant tracking looks like the sail is glued to the wind vector.
 const BRACE_SHARPNESS: float = 2.6
-## Canvas billow at a perfect point of sail versus dead into the wind. Small —
-## this is a sail filling, not a balloon.
-const SAIL_BILLOW: float = 0.14
-## How dark the canvas goes when it is slatting rather than drawing.
-const SAIL_LUFF_DIM: float = 0.55
-
 const SHIP_SHADOW: Texture2D = preload("res://assets/wave1/ships/ship_shadow.png")
 const PENNANT_FRAMES: Array[Texture2D] = [
 	preload("res://assets/wave0/ships/flag_wave_0.png"),
@@ -265,7 +260,7 @@ var _wake_trail: WakeTrail = null
 var _hull_sprite: Sprite2D = null
 var _ship_shadow: Sprite2D = null
 var _bow_foam: AnimatedSprite2D = null
-var _sail: Sprite2D = null
+var _sail: SailCanvas = null
 var _pennant: AnimatedSprite2D = null
 ## Yard angle, eased toward its target so the crew appear to haul rather than the
 ## sail snapping to the wind vector.
@@ -702,19 +697,26 @@ func _trim_sail(delta: float) -> void:
 	# the braces rather than a servo tracking a vector.
 	var target: float = lerpf(BRACE_SHARP, BRACE_SQUARE, clampf(off / PI, 0.0, 1.0)) * side
 	_brace = lerpf(_brace, target, 1.0 - exp(-BRACE_SHARPNESS * delta))
-	_sail.rotation = _brace
+
+	# Which side the cloth bellies toward. A sail blows away from the wind, so
+	# this is the yard's own normal resolved against where the wind is going —
+	# not against the hull, which is why it survives the ship tacking underneath
+	# it. Getting it backwards is the one error a still frame cannot show: a sail
+	# bellied to windward still looks like a sail.
+	var lee: float = 1.0
+	if WindSystem.instance != null and WindSystem.instance.active:
+		var yard: Vector2 = Vector2.RIGHT.rotated(_brace + rotation)
+		var blow: Vector2 = WindSystem.instance.direction
+		lee = signf(yard.orthogonal().dot(blow))
+		if is_zero_approx(lee):
+			lee = 1.0
 
 	# `speed_multiplier` runs from about 0.55 upwind to 1.0 on a broad reach, so
 	# it is remapped across that band rather than across 0..1 — otherwise the
-	# difference between the best and worst points of sail is a few percent of
-	# brightness and invisible.
+	# difference between the best and worst points of sail is a few percent and
+	# invisible.
 	var fill: float = clampf(inverse_lerp(0.55, 1.0, drawing), 0.0, 1.0)
-	var billow: float = 1.0 + SAIL_BILLOW * fill
-	_sail.scale = Vector2.ONE * stats.sprite_scale * SAIL_SPREAD * billow
-	var lit: float = lerpf(SAIL_LUFF_DIM, 1.0, fill)
-	# Rigging damage takes the canvas away rather than dimming it: a torn sail is
-	# less sail, not a darker one.
-	_sail.self_modulate = Color(lit, lit, lit, SAIL_ALPHA * clampf(canvas, 0.0, 1.0))
+	_sail.set_trim(_brace, lee, fill, canvas)
 
 
 ## Current yard angle, in radians off square. Exists for the rig harness: how a
@@ -723,6 +725,23 @@ func _trim_sail(delta: float) -> void:
 ## like a sail.
 func sail_brace() -> float:
 	return _brace
+
+
+## The direction the canvas is bellying, in world space, or zero on a bare hull.
+##
+## Also for the rig harness, and for the one part of the trim a screenshot
+## genuinely cannot check: a sail bellied to windward looks exactly like a sail
+## bellied to leeward until you know where the wind is going. The invariant is
+## that this points downwind on every point of sail, which is one dot product to
+## assert and impossible to eyeball.
+##
+## Note it is *not* enough to check that the belly flips from tack to tack. It
+## does not, and should not — the belly is measured off the yard's own normal,
+## and the yard has already braced round to the other side by then.
+func sail_belly_world() -> Vector2:
+	if _sail == null:
+		return Vector2.ZERO
+	return Vector2.RIGHT.rotated(_brace + rotation).orthogonal() * signf(_sail.lee_sign)
 
 
 func has_sail() -> bool:
@@ -1287,14 +1306,22 @@ func _build_ship_art() -> void:
 ## them. Above the hull in z, because from overhead the canvas is the thing you
 ## would actually see.
 func _build_rig(visual: Node2D) -> void:
-	if stats.sail_texture != null:
-		_sail = Sprite2D.new()
+	# Only what actually carries canvas. An oared hull with a sail on it would be
+	# a lie about the one stat that matters most on it — the Dinghy, the Skiff and
+	# the Fireship are rowed, they ignore the wind entirely, and their whole
+	# identity is that they are not sailing ships. It also makes the first Sloop a
+	# visible promotion rather than a number in a shop.
+	if not stats.is_oared():
+		_sail = SailCanvas.new()
+		# Named for the rig harness, which asks a ship whether it is showing
+		# canvas without knowing how that canvas is made.
 		_sail.name = "Sail"
-		_sail.texture = stats.sail_texture
 		# Stepped forward of amidships. A mast on the centre of rotation looks
 		# like a beach umbrella; forward of it reads as a ship.
 		_sail.position = Vector2(0.0, -stats.hull_radius * MAST_FORWARD_RATIO)
-		_sail.scale = Vector2.ONE * stats.sprite_scale * SAIL_SPREAD
+		_sail.set_rig_size(
+			stats.hull_radius * SAIL_HALF_SPAN_RATIO, stats.hull_radius * SAIL_DEPTH_RATIO
+		)
 		_sail.z_index = 2
 		visual.add_child(_sail)
 

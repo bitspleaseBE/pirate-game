@@ -99,13 +99,22 @@ game reads as a broken game rather than a deep one, and the tactical payoff surv
 softening intact.
 
 **And it is visible on the ships themselves.** *Built.* Every sailed hull carries canvas
-composed at runtime over the hull (docs/ASSETS.md §Ships), and the rig is a read-out of
-this model rather than decoration: yards brace sharp when a ship is trying to point and
-square as the wind draws aft, the canvas fills and brightens on a good point of sail and
-slats on a bad one, and it thins away as chain shot takes the rigging. Oared hulls carry
-none, so the first Sloop is a visible promotion. Before this the only thing on screen that
-knew the wind existed was a compass ring in the corner of the HUD — now the enemy's canvas
-tells you where *they* can go, which is what the weather gage is for.
+over the hull, and the rig is a read-out of this model rather than decoration: yards brace
+sharp when a ship is trying to point and square as the wind draws aft, the cloth bellies
+to leeward and swings its belly across when she tacks, it deepens and brightens on a good
+point of sail and goes slack and pale on a bad one, and it shrinks and tears as chain shot
+takes the rigging. Oared hulls carry none, so the first Sloop is a visible promotion.
+Before this the only thing on screen that knew the wind existed was a compass ring in the
+corner of the HUD — now the enemy's canvas tells you where *they* can go, which is what the
+weather gage is for.
+
+The canvas is drawn rather than blitted (`SailCanvas`), for the same reason the forts and
+the shipyard are: there is no usable authored art for it. The Wave 0 *vector* master is a
+correct plan view, but the raster that replaced it is a side elevation — mast, yard and
+two hanging panels seen from abeam — and this game looks at its ships from directly
+overhead, so laying that on a deck puts a mast flat along the planks and bracing the yard
+swings the mast round with it. `SailCanvas` redraws the vector master's geometry in its own
+palette, which is also the only way to get a sail that bellies, tacks and tears at all.
 
 **It arrives as a progression beat.** Your first hull is oared, so the opening islands
 teach tap-to-move, broadsides and the capture loop on a still sea. The wind wakes up the
