@@ -1315,6 +1315,10 @@ func _build_rig(visual: Node2D) -> void:
 		_sail.set_rig_size(
 			stats.hull_radius * SAIL_HALF_SPAN_RATIO, stats.hull_radius * SAIL_DEPTH_RATIO
 		)
+		# The rig throws its shadow the way the hull throws its own, so the two
+		# agree about where the sun is. Nearer than the hull's, because the canvas
+		# is metres above the planks rather than tens of them.
+		_sail.shadow_offset = SHADOW_OFFSET
 		_sail.z_index = 2
 		visual.add_child(_sail)
 

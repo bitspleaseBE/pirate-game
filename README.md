@@ -190,6 +190,15 @@ cluster over the course of a voyage:
 python3 tools/audio/make_placeholder_music.py
 ```
 
+Recut the sailcloth swatch the drawn rig wears. The sail is a shape drawn in code, but a
+flat polygon on a hull that is a rendered, weathered 3D asset reads as a placeholder on
+finished art — so it wears a patch of real canvas lifted out of the sail master, which is
+useless as a sprite here but whose cloth is as good from above as from abeam:
+
+```bash
+python3 tools/assets/make_sail_linen.py
+```
+
 Rebuild the Wave 0 art from its masters:
 
 ```bash

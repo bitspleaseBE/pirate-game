@@ -108,13 +108,19 @@ Before this the only thing on screen that knew the wind existed was a compass ri
 corner of the HUD — now the enemy's canvas tells you where *they* can go, which is what the
 weather gage is for.
 
-The canvas is drawn rather than blitted (`SailCanvas`), for the same reason the forts and
-the shipyard are: there is no usable authored art for it. The Wave 0 *vector* master is a
-correct plan view, but the raster that replaced it is a side elevation — mast, yard and
-two hanging panels seen from abeam — and this game looks at its ships from directly
-overhead, so laying that on a deck puts a mast flat along the planks and bracing the yard
-swings the mast round with it. `SailCanvas` redraws the vector master's geometry in its own
-palette, which is also the only way to get a sail that bellies, tacks and tears at all.
+The canvas is a drawn *shape* wearing a real *material* (`SailCanvas`). There is no usable
+sail sprite: the Wave 0 vector master is a correct plan view, but the raster that replaced
+it is a side elevation — mast, yard and two hanging panels seen from abeam — and this game
+looks at its ships from directly overhead, so laying that on a deck puts a mast flat along
+the planks and bracing the yard swings the mast round with it. So the geometry comes from
+the vector master and is redrawn every frame, which is also the only way to get a sail that
+bellies, tacks and tears at all.
+
+Drawing it flat was not enough on its own. The hulls are rendered assets — weave, grain,
+weathering, soft shadow — and a cream polygon with a stroke around it is a different medium
+sitting on finished art. The fix was material, not shape: a patch of the elevation master's
+canvas is lifted out into a swatch and stretched over the drawn shape, lit per-vertex, and
+given a shadow on the deck in the same direction the hull throws its own.
 
 **It arrives as a progression beat.** Your first hull is oared, so the opening islands
 teach tap-to-move, broadsides and the capture loop on a still sea. The wind wakes up the

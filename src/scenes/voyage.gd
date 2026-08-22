@@ -992,6 +992,15 @@ func _run_ram_test() -> void:
 	await get_tree().process_frame
 	Cull.force_tick()
 
+	# Spike both batteries. This is a test of hulls hitting hulls, and leaving the
+	# guns loaded made it a coin flip: a Galleon closing on a Skiff has nine
+	# hundred units to cross, the Skiff drifts into a broadside arc somewhere in
+	# the middle of it, and one salvo is enough — the Skiff sank before contact in
+	# roughly one run out of three, and the harness reported it as "never
+	# registered a collision", which is true and completely misleading.
+	heavy.cannons_hp = 0.0
+	light.cannons_hp = 0.0
+
 	var heavy_before: float = heavy.hull
 	var light_before: float = light.hull
 
@@ -1000,20 +1009,31 @@ func _run_ram_test() -> void:
 	# test that produced one would be testing the wrong thing.
 	Engine.time_scale = TIME_SCALE
 	var waited: float = 0.0
+	var died_early: String = ""
 	while waited < PATIENCE and int(hits["count"]) == 0:
-		if is_instance_valid(heavy) and heavy.alive and is_instance_valid(light) and light.alive:
-			heavy.set_target(null)
-			heavy.nav_target = light.global_position
-			heavy.has_nav_target = true
-			light.suppress_engage_steering = true
-			light.nav_target = heavy.global_position
-			light.has_nav_target = true
+		if not is_instance_valid(heavy) or not heavy.alive:
+			died_early = "the galleon"
+			break
+		if not is_instance_valid(light) or not light.alive:
+			died_early = "the skiff"
+			break
+		heavy.set_target(null)
+		heavy.nav_target = light.global_position
+		heavy.has_nav_target = true
+		light.suppress_engage_steering = true
+		light.nav_target = heavy.global_position
+		light.has_nav_target = true
 		await get_tree().create_timer(0.2).timeout
 		waited += 0.2
 	Engine.time_scale = 1.0
 
 	var failures: PackedStringArray = []
-	if int(hits["count"]) == 0:
+	if died_early != "":
+		# Distinct from the collision failure below, because the two have nothing
+		# to do with each other and one masquerading as the other is what cost an
+		# afternoon.
+		failures.append("%s sank before the two hulls ever met" % died_early)
+	elif int(hits["count"]) == 0:
 		failures.append("two hulls driven straight at each other never registered a collision")
 	else:
 		var heavy_took: float = heavy_before - heavy.hull

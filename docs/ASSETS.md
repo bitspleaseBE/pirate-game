@@ -51,10 +51,16 @@ separate hulls.
 > directly overhead, so a sail master is a bowed yard, a canvas bellying away from it and
 > the mast as a small circle where they meet — which is exactly what the Wave 0 vector
 > master `assets_src/ships/sloop/sail_med.svg` is. The v2 raster that replaced it is a
-> side elevation seen from abeam, and it cannot be used: laid on a deck it puts a mast
-> flat along the planks, and rotating it to brace the yard swings the mast round with it.
-> Until a plan-view master exists, `SailCanvas` draws the rig in code — see the `sail_*`
-> rows below, all of which are still outstanding.
+> side elevation seen from abeam, and it cannot be used *as a sprite*: laid on a deck it
+> puts a mast flat along the planks, and rotating it to brace the yard swings the mast
+> round with it.
+>
+> Its **cloth**, though, is projection-independent — canvas looks like canvas from any
+> angle — so `tools/assets/make_sail_linen.py` lifts a clean patch out of it, away from
+> the mast and the rigging, into `assets/wave1/ships/sail_linen.png`. `SailCanvas` draws
+> the plan-view *shape* in code and stretches that swatch over it, which is what stops a
+> drawn sail reading as vector art sitting on a rendered hull. A replacement sail master
+> must be a plan view; the `sail_*` rows below are still outstanding.
 
 | Asset | Count | Nominal size (px) | Notes |
 |---|---|---|---|
