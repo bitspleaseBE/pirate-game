@@ -40,11 +40,11 @@ const TIME_ROLLOVER: float = 3600.0
 ## shorter than a hull, and a ship does not rise to chop it spans — it sits
 ## through it. Skipping them also keeps this to three sines per ship per frame.
 const SWELL: Array[Vector4] = [
-	Vector4(0.00, 0.0057, 1.0000, 0.42),
-	Vector4(-0.47, 0.0101, 0.4290, 0.56),
-	Vector4(0.68, 0.0165, 0.2000, 0.72),
+	Vector4(0.00, 0.00570, 1.0000, 0.42),
+	Vector4(-0.41, 0.00982, 0.5224, 0.55),
+	Vector4(0.63, 0.01340, 0.3446, 0.64),
 ]
-const SWELL_TOTAL: float = 1.6290
+const SWELL_TOTAL: float = 1.8670
 
 ## The live Ocean, for [method sample]. There is exactly one sea.
 static var instance: Ocean = null

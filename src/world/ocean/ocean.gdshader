@@ -14,10 +14,11 @@ render_mode unshaded;
 // So each wave contributes an analytic derivative as well as a height, the two
 // are summed into a surface normal, and that normal is lit.
 //
-// The wave set is also **anisotropic**: every component travels within about 50
-// degrees of the wind. A real wind sea has long crests running across the wind,
-// not circular ripples, and that directionality is most of what distinguishes an
-// ocean from a texture.
+// The wave set is also **anisotropic**: the swell runs within about 35 degrees of
+// the wind and the chop spreads out to 87. A real wind sea has long crests
+// running across the wind, not circular ripples, and that directionality is most
+// of what distinguishes an ocean from a texture — while the short waves being far
+// more spread than the long ones is what stops those crests being ruled lines.
 //
 // Everything travels **downwind**, and the surf travels **onto the land**. Both
 // used to run backwards, which is the kind of error that is invisible in a still
@@ -81,43 +82,74 @@ uniform vec4 shoal_bright_color : source_color = vec4(0.361, 0.667, 0.635, 1.0);
 // read as patterned wallpaper. Irrational-ish ratios and scattered headings hide
 // the repeat.
 //
-// Wavelengths run roughly 1100px down to 30px. A Sloop is 160px long, so the
-// longest swell is several ship-lengths — big enough that a reflection sweeping
-// along a crest is a feature the player can watch travel, rather than glitter.
+// Wavelengths run 1100 units down to 41, and **the bottom of that range is the
+// point**.
 //
-// The amplitudes matter more than the frequencies here. This surface is shaded
-// by **slope**, and a component's slope contribution is amplitude x frequency,
-// so an amplitude curve that merely tracks 1/f gives every octave an equal say —
-// which is what the first version did, and why the sea read as uniform fine
-// chop no matter how long the leading wavelength was: the eye sees the octave
-// with the most features per square inch, and that was all of them. Amplitude
-// here falls off faster than 1/f, so slope decays ~0.73 per octave and the long
-// swell is what you actually see. Speeds follow deep-water gravity waves
-// (w ~ sqrt(k)), so the big swell rolls and the chop skitters.
+// A viewer reads how far away a surface is from the size of its features, and
+// the sea and the land here were disagreeing. An island carries palms 64 units
+// wide, rocks of 64, grass finer than that; a Sloop is 160 long. The sea's
+// dominant feature was an 1102-unit swell — seventeen palm-widths — so the water
+// read as something photographed from far higher up than the beach it was
+// touching, and the two looked like different zoom levels pasted together.
+//
+// The amplitudes are what decide that, not the frequencies. This surface is
+// shaded by **slope**, and a component's slope is amplitude x frequency, so the
+// amplitude curve chooses which octave the eye lands on. The previous curve fell
+// off faster than 1/f — slope decaying 0.76 an octave, the leading swell holding
+// six times the slope of the shortest chop — and it was written to fix a real
+// problem: the sea before it read as undifferentiated fine chop with no swell in
+// it at all.
+//
+// That was the right diagnosis and the wrong lever. The swell should be legible
+// through *shading* — the shaped crests, the heave term and the foam gate, none
+// of which existed when that curve was chosen — not by starving every other
+// octave of slope. With those in place the spectrum can go back to something like
+// a real one: slope now decays 0.90 an octave rather than 0.76, and the surface
+// texture lands in the 40-250 unit band where the island's own detail lives.
+//
+// It stops at 41 units rather than going finer, and that bound is the *shading*,
+// not the physics. One world unit is about one screen pixel at default zoom and
+// less than one zoomed out, so a 19-unit wave — which the first attempt at this
+// reached for — has nothing left to be drawn with. A procedural surface has no
+// mip chain, so it does not soften, it aliases: that sea came out as a field of
+// hard diagonal flecks indistinguishable from television static.
+//
+// The ladder is also knocked deliberately off true, and the directional spread
+// widens with frequency. Both stop the sea corduroying. Clean ratios between
+// components beat against each other, and eight of them on an even geometric
+// ladder — ratio 1.5915 throughout, which the second attempt used — interfere
+// into diagonal ridges the eye finds in about a second. Real short waves are far
+// more spread in heading than long ones, so the wide offsets down the table are
+// physical as well as useful: they are what keeps a crest from running dead
+// straight across the whole screen.
+//
+// Speeds follow deep-water gravity waves (w ~ sqrt(k)), so the big swell rolls
+// and the chop skitters.
 const int WAVE_COUNT = 8;
 const vec4 WAVES[8] = {
-	vec4( 0.00, 0.0057, 1.0000, 0.42),
-	vec4(-0.47, 0.0101, 0.4290, 0.56),
-	vec4( 0.68, 0.0165, 0.2000, 0.72),
-	vec4(-0.24, 0.0286, 0.0897, 0.95),
-	vec4( 1.04, 0.0465, 0.0429, 1.24),
-	vec4(-0.83, 0.0766, 0.0201, 1.60),
-	vec4( 0.31, 0.1257, 0.0095, 2.05),
-	vec4(-1.19, 0.2094, 0.0044, 2.65)
+	vec4( 0.00, 0.00570, 1.0000, 0.42),
+	vec4(-0.41, 0.00982, 0.5224, 0.55),
+	vec4( 0.63, 0.01340, 0.3446, 0.64),
+	vec4(-0.22, 0.02438, 0.1704, 0.87),
+	vec4( 1.08, 0.03336, 0.1121, 1.02),
+	vec4(-0.87, 0.06428, 0.0524, 1.41),
+	vec4( 1.36, 0.08794, 0.0344, 1.65),
+	vec4(-1.51, 0.15310, 0.0178, 2.18)
 };
 
-// How strongly slope tilts the normal. Higher = steeper-looking sea. Scaled up
-// with the amplitude curve above: the summed slope of the new spectrum is about
-// a quarter of the old one, and without this the sea would be a flat sheet.
+// How strongly slope tilts the normal. Higher = steeper-looking sea.
 //
-// Deliberately below the value that would match the old sea's average slope. The
-// old slope was a sum of eight equal contributions, so it only peaked where all
-// eight aligned — a speckle. This one is dominated by the leading swell, so it
-// reaches its peak across whole crests, and matching the average would light half
-// the screen at once.
-// Trimmed from 118 when crest shaping went in: a shaped crest peaks about 30%
-// steeper than the sine it replaced, so the old figure lit the whole leading face.
-const float NORMAL_STRENGTH = 100.0;
+// Tracks the spectrum inversely: flattening the amplitude curve raised the summed
+// slope from 0.0216 to 0.0325, so this comes down — but by less than the ratio
+// would suggest. Matching the totals is not matching the look: eight
+// contributions of similar size align far less often than three big ones and
+// five token ones did, so the same summed slope produces a lower peak and a
+// flatter sea. This is set by eye against the previous surface's contrast, which
+// is the only thing that can settle it. It has been 118 and
+// then 100 on the way here, each time following a change in what the wave table
+// sums to — it is a calibration constant, not a taste one, and the right way to
+// move it is to divide by however much the spectrum grew.
+const float NORMAL_STRENGTH = 84.0;
 // Cheap value noise. Stacked sinusoids, however many and however irrationally
 // spaced, always interfere into a periodic lattice — the eye finds the repeat
 // within a second or two and the sea reads as patterned wallpaper. Noise is the
@@ -190,11 +222,22 @@ vec2 direction_for(float offset) {
 // the sea passes by, nothing about it goes up or down. Knowing which way a patch
 // of water is moving vertically is what lets the shading say "this crest is
 // lifting" rather than "this stripe is over here now".
-vec4 wave_field(vec2 p, float t, int octaves) {
+vec4 wave_field(vec2 p, float t, int octaves, out vec3 swell) {
 	float height = 0.0;
 	vec2 slope = vec2(0.0);
 	float vertical = 0.0;
 	float total = 0.0;
+	// The long components on their own, returned alongside the summed field.
+	//
+	// Whitecaps break on swell, not on ripples, and the glitter track rides crests
+	// rather than every square metre of surface — so both are gated on this. Keying
+	// them off the total was harmless while the chop carried almost no slope, and
+	// became the whole problem the moment it carried a realistic share: every
+	// ripple cleared the foam threshold at once, the 26th-power specular fired on
+	// each one, and the sea turned into television static.
+	float swell_height = 0.0;
+	vec2 swell_slope = vec2(0.0);
+	float swell_total = 0.0;
 
 	// The quality tier picks how many components we can afford — but they are
 	// taken as a stride across the whole spectrum rather than as a prefix of it.
@@ -231,10 +274,18 @@ vec4 wave_field(vec2 p, float t, int octaves) {
 
 		height += h * w.z;
 		slope += dir * dh * w.z * w.y;
+		// `sharp` is already the test for "is this a swell component" — it is only
+		// nonzero for the long ones — so the split costs a branch and no new state.
+		if (sharp > 0.5) {
+			swell_height += h * w.z;
+			swell_slope += dir * dh * w.z * w.y;
+			swell_total += w.z;
+		}
 		// dh/dt = dh/dphase * dphase/dt, and dphase/dt is -w.w.
 		vertical -= dh * w.z * w.w;
 		total += w.z;
 	}
+	swell = vec3(swell_height / max(swell_total, 0.001), swell_slope);
 	return vec4(height / total, slope, vertical / total);
 }
 
@@ -245,8 +296,9 @@ void fragment() {
 	vec2 shoal = shoal_at(p);
 	float shelf = shoal.x;
 
-	vec4 field = wave_field(p, t, wave_octaves);
-	float height = field.x;
+	vec3 swell;
+	vec4 field = wave_field(p, t, wave_octaves, swell);
+	float height = swell.x;
 
 	// Slope to normal. The z term sets how much a given slope tilts the surface.
 	vec2 slope = field.yz;
@@ -274,6 +326,7 @@ void fragment() {
 	// happens to be a different colour.
 	slope *= mix(1.0, 0.55, shelf);
 	rise *= mix(1.0, 0.55, shelf);
+	vec2 swell_slope = swell.yz * mix(1.0, 0.55, shelf);
 
 	vec3 n = normalize(vec3(-slope.x * NORMAL_STRENGTH, -slope.y * NORMAL_STRENGTH, 1.0));
 
@@ -320,8 +373,21 @@ void fragment() {
 	// Specular for the glitter track. Broad enough that a highlight is a patch
 	// riding a crest rather than a pinprick — a sharper exponent than this loses
 	// the long reflections entirely once the swell is this wide.
+	// Off the swell's own normal rather than the full surface. A 26th-power
+	// exponent is a near-threshold function, so feeding it the chop turns every
+	// ripple into a hard white pinprick and the sea into glitter-glue. The
+	// reflection the player should be able to watch is a patch sliding along the
+	// back of a crest, which is a swell-scale event.
+	// Boosted, because the swell alone carries about half the slope the whole
+	// surface does, and a 26th-power exponent turns "half" into "almost none".
+	const float SPEC_GAIN = 2.1;
+	vec3 sn = normalize(vec3(
+		-swell_slope.x * NORMAL_STRENGTH * SPEC_GAIN,
+		-swell_slope.y * NORMAL_STRENGTH * SPEC_GAIN,
+		1.0
+	));
 	vec3 halfway = normalize(light + vec3(0.0, 0.0, 1.0));
-	float spec = pow(clamp(dot(n, halfway), 0.0, 1.0), 26.0);
+	float spec = pow(clamp(dot(sn, halfway), 0.0, 1.0), 26.0);
 	col += vec3(1.0, 0.98, 0.92) * spec * 0.34;
 
 	// Foam only where a crest is both high and steep, so it forms broken lines
@@ -334,7 +400,7 @@ void fragment() {
 	// once it has passed its top — so the foam is gated on the water rising. A
 	// crest that grows a white edge, breaks and loses it again is the clearest
 	// statement the sea can make that it is doing something vertical.
-	float steepness = clamp(length(slope) * NORMAL_STRENGTH * 1.6, 0.0, 1.0);
+	float steepness = clamp(length(swell_slope) * NORMAL_STRENGTH * 2.4, 0.0, 1.0);
 	float breaking = smoothstep(-0.02, 0.14, rise);
 	float foam = smoothstep(0.30, 0.58, height) * steepness * breaking;
 	col = mix(col, foam_color.rgb, foam * 0.42);
@@ -373,6 +439,35 @@ void fragment() {
 		// stripes that happen to stop there.
 		float wash = 1.0 - smoothstep(0.0, 90.0, out_dist);
 		col = mix(col, foam_color.rgb, wash * wash * (0.30 + 0.45 * band));
+	}
+
+	// Wind streaks — the one thing that says "seen from directly above".
+	//
+	// Everything else here would look much the same from a low angle. Langmuir
+	// streaks would not: wind blowing over water sets up counter-rotating cells
+	// that sweep foam and bubbles into long thin lines running *downwind*, spaced
+	// a few metres apart, and from overhead they are the most recognisable feature
+	// on the whole surface. On an oblique view they foreshorten into nothing, which
+	// is exactly why a top-down sea needs them and a side-on one does not.
+	//
+	// Noise stretched hard along the wind: cells about 45 units across the wind and
+	// 600 along it, so what comes out is filaments rather than blobs. They drift
+	// slowly, because the streaks are a property of the wind field rather than of
+	// any wave passing through them.
+	//
+	// Very faint on purpose. This is a grain in the water, not a set of painted
+	// lines, and the moment it is legible as stripes it stops reading as sea.
+	if (wave_octaves > 2) {
+		vec2 downwind = direction_for(0.0);
+		vec2 across = vec2(-downwind.y, downwind.x);
+		float streak = value_noise_d(vec2(
+			dot(p, across) * 0.0222,
+			dot(p, downwind) * 0.0017 - t * 0.03
+		)).x;
+		// Squared so only the tops of the noise show, which is what turns a wobbly
+		// field into discrete filaments with clear water between them.
+		float filament = smoothstep(0.58, 0.98, streak);
+		col = mix(col, foam_color.rgb, filament * filament * 0.10 * (1.0 - shelf));
 	}
 
 	if (caustics_enabled) {
