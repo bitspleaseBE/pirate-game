@@ -90,12 +90,22 @@ uniform bool shore_foam_enabled = true;
 // gold to turquoise to blue over about twenty metres — it is not three colours
 // chosen by an artist, it is one absorption curve. Beer-Lambert per channel
 // gives that ramp for nothing.
+// The seabed is the *same tile the beach is drawn with*, and that is the point
+// rather than a convenience. Sand does not change substance at the waterline, so
+// a procedural ripple under the water and an authored texture above it put a
+// material seam exactly where the eye is looking hardest. One tile, sampled in
+// world space on both sides, and the bed runs continuously out of the water and
+// up the beach.
+uniform sampler2D seabed_texture : source_color, repeat_enable, filter_linear_mipmap;
 uniform vec4 sand_color : source_color = vec4(0.847, 0.706, 0.427, 1.0);
 uniform vec4 sand_shadow : source_color = vec4(0.604, 0.478, 0.290, 1.0);
+// World units per tile. Matches the beach's own tiling so the grain is the same
+// size on both sides of the waterline.
+const float SEABED_TILE = 307.0;
 // Per-channel extinction. The ratios are what make the gradient read as water;
 // the overall scale is how deep the shelf "feels".
 const vec3 EXTINCTION = vec3(3.10, 1.15, 0.78);
-const float EXTINCTION_SCALE = 2.9;
+const float EXTINCTION_SCALE = 4.3;
 
 // Direction offset from the wind (radians), spatial frequency, amplitude, speed.
 //
@@ -433,7 +443,11 @@ void fragment() {
 	// The bright band is deliberately narrow. It is the crest of the swell, and a
 	// swell this wide would otherwise hand it a third of the screen.
 	vec3 col = mix(deep_color.rgb, mid_color.rgb, smoothstep(0.26, 0.86, lit));
-	col = mix(col, shallow_color.rgb, smoothstep(0.90, 1.0, lit));
+	// A narrow top band. Widening it is the fastest way to turn a sea into
+	// confetti: with a realistic amount of chop, every ripple crest that clears
+	// the threshold gets painted pale cyan, and a screen of those reads as fish
+	// rather than water.
+	col = mix(col, shallow_color.rgb, smoothstep(0.945, 1.0, lit));
 
 	// --- The bottom, seen through the water --------------------------------
 	//
@@ -449,12 +463,27 @@ void fragment() {
 		// leaves the water at the sand's edge already blue.
 		float depth = pow(clamp(1.0 - shelf, 0.0, 1.0), 0.72);
 
-		// Ripples on the sand, running parallel to the shore the way real bedforms
-		// do — and static, because the bottom does not move. Two scales so the
-		// bed has both bars and texture.
-		float ripple = sin(shoal.y * 0.085) * 0.5 + 0.5;
-		ripple = mix(ripple, value_noise_d(p * 0.014).x, 0.55);
-		vec3 bed = mix(sand_shadow.rgb, sand_color.rgb, 0.35 + 0.65 * ripple);
+		// Sand, twice. The tile is mirror-seamless, which is invisible on a strip
+		// of beach and an obvious repeating diamond once it is spread over a shelf
+		// hundreds of units wide — so a second sample, rotated and at an unrelated
+		// scale, is laid over the first. Two fetches, and the motif stops being
+		// findable.
+		vec2 uv_a = p / SEABED_TILE;
+		vec2 uv_b = (mat2(vec2(0.80, 0.60), vec2(-0.60, 0.80)) * p) / (SEABED_TILE * 0.61);
+		vec3 grain = texture(seabed_texture, uv_a).rgb * 0.62
+			+ texture(seabed_texture, uv_b).rgb * 0.38;
+
+		// Bars parallel to the shore. Real bedforms run along the contour, not
+		// across it, and `shoal.y` is exactly distance-from-shore, so one sine of
+		// it is the whole effect.
+		float bars = sin(shoal.y * 0.085) * 0.5 + 0.5;
+		// Dimmed, and the grain kept near unity. The tile averages about 0.72, so
+		// multiplying by it darkens; the gain restores that without turning the
+		// bed into a light source. It was 1.55 for one pass and the shallows came
+		// out as glowing jade — sand under two metres of water is *shaded* sand,
+		// and the eye knows it.
+		vec3 bed = mix(sand_shadow.rgb, sand_color.rgb, 0.42 + 0.58 * bars)
+			* (grain * 1.18) * 0.88;
 
 		// Caustics. The real thing is the surface acting as a lens, so the bright
 		// web on the bottom is the *wave field itself* focused down — which means
@@ -558,22 +587,27 @@ void fragment() {
 		// up towards the sand, and because the phase gradient steepens there, so
 		// does the time each crest takes to cross the last stretch.
 		float shoaled = pow(out_dist, 0.72) * 0.26;
-		float near_shore = 1.0 - smoothstep(0.0, 340.0, out_dist);
+		// Sets run out over 190 units rather than 340, and break far harder when
+		// they get there. The old numbers put a soft white haze most of the way
+		// across the shelf — a wide grey-white ring that read as fog on the water
+		// rather than as surf, and which was the last thing making the shore look
+		// painted on. Foam is thin: it is the top of a wave that has actually
+		// broken, and everywhere else the water is simply water.
+		float near_shore = 1.0 - smoothstep(0.0, 190.0, out_dist);
 
 		// Plus, so a line of constant phase travels towards the island.
 		float band = sin(shoaled + t * 1.5) * 0.5 + 0.5;
 
 		// The line sharpens as it comes in. Well offshore a set is a broad swell;
 		// the same set at the beach is a thin hard edge that has broken.
-		float breaker = pow(band, mix(5.0, 2.0, near_shore));
-		col = mix(col, foam_color.rgb, near_shore * breaker * 0.60);
+		float breaker = pow(band, mix(9.0, 2.6, near_shore));
+		col = mix(col, foam_color.rgb, near_shore * breaker * 0.70);
 
-		// The wash. Where the surf meets the sand there is always white water —
-		// what the sets do is make it surge and drain, not appear and vanish. This
-		// is the part that reads as waves clashing on the beach rather than as
-		// stripes that happen to stop there.
-		float wash = 1.0 - smoothstep(0.0, 90.0, out_dist);
-		col = mix(col, foam_color.rgb, wash * wash * (0.30 + 0.45 * band));
+		// The wash, in the last thirty units against the sand. Where the surf
+		// meets the beach there is always white water; what the sets do is make it
+		// surge and drain rather than appear and vanish.
+		float wash = 1.0 - smoothstep(0.0, 34.0, out_dist);
+		col = mix(col, foam_color.rgb, pow(wash, 1.4) * (0.42 + 0.45 * band));
 	}
 
 	// Wind streaks — the one thing that says "seen from directly above".

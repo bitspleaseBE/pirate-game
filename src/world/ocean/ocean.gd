@@ -9,6 +9,7 @@ extends Node2D
 ## problem, for an identical image.
 
 const SHADER: Shader = preload("res://src/world/ocean/ocean.gdshader")
+const SEABED_TEXTURE: String = "res://assets/wave0/terrain/fill_sand.png"
 
 ## Slight overdraw so a fast camera never shows a seam at the screen edge.
 const OVERDRAW: float = 1.02
@@ -80,6 +81,10 @@ func _ready() -> void:
 
 	_material = ShaderMaterial.new()
 	_material.shader = SHADER
+	# The same tile [Island] lays on its beach. See the shader's note on why the
+	# seabed and the sand above the waterline must not be two different materials.
+	if ResourceLoader.exists(SEABED_TEXTURE):
+		_material.set_shader_parameter("seabed_texture", load(SEABED_TEXTURE))
 
 	_surface = ColorRect.new()
 	_surface.name = "Surface"

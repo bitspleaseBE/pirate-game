@@ -24,6 +24,7 @@ const INTERIOR_INSET: float = 0.78
 const SURF_WIDTH: float = 14.0
 
 const SAND_TEXTURE: String = "res://assets/wave0/terrain/fill_sand.png"
+const BEACH_SHADER: Shader = preload("res://src/world/terrain/beach.gdshader")
 const GRASS_TEXTURE: String = "res://assets/wave1/terrain/fill_grass.png"
 const PALM_TEXTURES: Array[String] = [
 	"res://assets/wave0/props/palm_0.png",
@@ -118,7 +119,12 @@ func _build_visuals() -> void:
 	surf.points = outline
 	surf.closed = true
 	surf.width = SURF_WIDTH
-	surf.default_color = Color(1, 1, 1, 0.5)
+	# Faint, because it is no longer the surf — the ocean shader draws a proper
+	# breaking line and a wash against the sand now, and this Line2D sat on top of
+	# both as a flat white rim of constant width that followed the coast without
+	# reacting to anything. What is left of it is a hint of standing spray at the
+	# very edge, and it is also what covers the seam between two draw orders.
+	surf.default_color = Color(1, 1, 1, 0.22)
 	surf.joint_mode = Line2D.LINE_JOINT_ROUND
 	surf.antialiased = false
 	surf.z_index = -2
@@ -138,6 +144,7 @@ func _build_visuals() -> void:
 		beach.color = colors["beach"].lightened(0.35)
 	else:
 		beach.color = colors["beach"]
+	_apply_wet_band(beach)
 	add_child(beach)
 
 	var interior := Polygon2D.new()
@@ -209,6 +216,30 @@ func _scatter_props() -> void:
 		sprite.scale = Vector2.ONE * PROP_SCALE * rng.randf_range(0.82, 1.15)
 		sprite.flip_h = rng.randf() < 0.5
 		_props.add_child(sprite)
+
+
+## Darkens the strip of sand the sea has just been over.
+##
+## The band follows the same three harmonics the outline was cut from, so it
+## tracks headlands and bays rather than sitting at a constant radius. See
+## `beach.gdshader` for why a coast needs one at all.
+func _apply_wet_band(beach: Polygon2D) -> void:
+	var harmonics: Dictionary = def.outline_harmonics()
+	var material := ShaderMaterial.new()
+	material.shader = BEACH_SHADER
+	material.set_shader_parameter("island_radius", def.radius)
+	material.set_shader_parameter("raggedness", def.raggedness)
+	material.set_shader_parameter("lobes", harmonics["lobes"])
+	material.set_shader_parameter("phases", harmonics["phases"])
+
+	# A second polygon on the same outline rather than a material on the beach
+	# itself — see the shader for why. It multiplies, so it darkens the sand Godot
+	# has already drawn without having to redraw any of it.
+	var wet := Polygon2D.new()
+	wet.name = "WetSand"
+	wet.polygon = beach.polygon
+	wet.material = material
+	beach.add_child(wet)
 
 
 func _load_textures(paths: Array[String]) -> Array[Texture2D]:
