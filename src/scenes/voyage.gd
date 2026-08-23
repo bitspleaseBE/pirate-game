@@ -42,6 +42,12 @@ var music: MusicDirector = null
 
 ## Set while the fleet is under orders for the hideout, so arriving there opens
 ## the port instead of quietly mooring.
+## Seed `--ladder` pins itself to. Chosen off a sweep as a middling one rather
+## than a kind one: the opening islands come in around half hull and the first
+## tier-3 island around a third, so a change that makes the ramp meaningfully
+## harsher shows up here rather than needing a lucky roll to catch.
+const LADDER_SEED: int = 11
+
 var _returning_home: bool = false
 var _hideout_accum: float = 0.0
 
@@ -52,6 +58,24 @@ func _ready() -> void:
 	# the opening islands to earn a set of sails.
 	if "--sail" in OS.get_cmdline_user_args():
 		GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+
+	# `--seed=N` pins the archipelago, which a balance harness needs and the game
+	# does not. Island layout, tiers and garrison placement all come off this one
+	# number, and the swing between two seeds is wider than most of the changes
+	# worth measuring: the same build had `--ladder` finishing island two on 74%
+	# of its hull and being wiped on it, on consecutive runs. Without a way to
+	# hold the world still, tuning against the harness is tuning against noise.
+	var pinned: bool = false
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--seed="):
+			GameState.voyage_seed = int(arg.trim_prefix("--seed="))
+			pinned = true
+	# And `--ladder` pins itself if nothing else did, because it is the one
+	# harness whose output is a *measurement* rather than a yes or no. A gate that
+	# rolls a fresh world every run cannot tell a balance regression from a bad
+	# roll, and would fail CI on the latter often enough to be ignored.
+	if not pinned and "--ladder" in OS.get_cmdline_user_args():
+		GameState.voyage_seed = LADDER_SEED
 
 	Grid.configure()
 	# Pools must exist before anything can fire a gun, and they need a world-space
@@ -120,6 +144,7 @@ func _ready() -> void:
 		or "--rout" in harness_args
 		or "--audio" in harness_args
 		or "--rig" in harness_args
+		or "--ladder" in harness_args
 	)
 
 	_update_wind_availability()
@@ -186,6 +211,8 @@ func _ready() -> void:
 		_run_audio_test()
 	elif "--rig" in args:
 		_run_rig_test()
+	elif "--ladder" in args:
+		_run_ladder_test()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -803,6 +830,313 @@ func _run_audio_test() -> void:
 		await _quit_cleanly(1)
 
 
+## Plays the opening of the game and reports whether it can actually be survived.
+##
+##   godot --headless src/scenes/voyage.tscn -- --ladder
+##
+## Every other harness here answers "does this work". This one answers "is the
+## start of the game fair", which is a different question and the one that was
+## going unasked. `--smoke` sails at island one, which is deliberately one skiff
+## on a still sea, and stops. `--arena` starts from a mid-game Brig with 400 gold
+## banked. Between the two of them nothing had ever played islands one, two and
+## three *in order*, off the starting Dinghy, spending only what the run actually
+## earned — which is the only part of the game every single player sees.
+##
+## The shape of the early ramp is not obvious from the tables, either. Island one
+## is a skiff; islands two and three are each one Navy Sloop, which out-guns the
+## Dinghy two barrels to one, out-ranges it by 80 m, and has ten more hull. The
+## design's answer is that you shop in between — so the harness shops, with the
+## most obvious policy a new player could have, and reports whether that is
+## enough. If it is not, the difficulty is not a skill check, it is a wall.
+##
+## Deliberately not a pass/fail on *winning*: a harness that steers in a straight
+## line is a much worse captain than a person, so it should be losing hull the
+## whole way. What it fails on is being wiped, which no amount of clumsiness
+## should cause this early, and on finishing the third island with nothing left.
+func _run_ladder_test() -> void:
+	## Five, not three. Islands one to three are the ones a player complains about
+	## first, but a fix that only moves the wall from island two to island four is
+	## not a fix — and island four is the first tier 3, which is where the count
+	## goes up, the shipyard starts sending reinforcements and the fireship
+	## arrives. The run has to reach that to prove anything.
+	const ISLANDS: int = 5
+	const PER_ISLAND_SEC: float = 120.0
+	const TIME_SCALE: float = 6.0
+	const WALL_CLOCK_LIMIT_SEC: float = 520.0
+	## Same lookout range `--smoke` uses: the harness has to see a garrison the
+	## way a player does rather than waiting until the arcs already overlap.
+	const ACQUIRE_RANGE: float = 2600.0
+	## Time allowed to sail to the mooring and get the cargo off the quay.
+	const LANDING_SEC: float = 70.0
+	## Fraction of maximum hull the fleet must still have at the end.
+	## Low on purpose — this is a floor against "the opening is unsurvivable",
+	## not a target.
+	const MIN_HULL_LEFT: float = 0.15
+	## And how close any single island may bring the fleet to sinking.
+	##
+	## Measured lows across seeds run from about a quarter to about three
+	## quarters, so ten per cent is clear of the noise and still catches the thing
+	## that went wrong here: before the opening chest paid for the first hull,
+	## island two ended on nine per cent with the arithmetic against the player
+	## from the start. A survivable-but-terrifying fight and an unwinnable one both
+	## end in a capture when the harness gets lucky, and only this number tells
+	## them apart.
+	const MIN_HULL_LOW: float = 0.10
+
+	var failures: PackedStringArray = []
+	var rows: Array[String] = []
+	# Dictionary because a lambda captures locals by value; see `--smoke`.
+	var run: Dictionary = {"at": "the approach", "taken": 0.0, "low": 1.0}
+	EventBus.ship_damaged.connect(func(ship: Node2D, amount: float, _bar: StringName) -> void:
+		if ship is Ship and (ship as Ship).team == Teams.PLAYER:
+			run["taken"] = float(run["taken"]) + amount
+	)
+
+	fleet.fleet_emptied.connect(func() -> void:
+		# Naming the island matters more than it looks: "the opening is not
+		# survivable" is not actionable, and the answer moved from island two to
+		# island five twice during this work without the message changing a word.
+		for line: String in rows:
+			print(line)
+		push_error(
+			"LADDER FAIL: the fleet was wiped out at %s — seed %d"
+			% [run["at"], GameState.voyage_seed]
+		)
+		await _quit_cleanly(1)
+	)
+
+	# The chain in the order a player meets it. `islands[0]` is home.
+	var chain: Array[Island] = []
+	for island: Island in archipelago.islands:
+		if island.def.id == &"home":
+			continue
+		chain.append(island)
+		if chain.size() >= ISLANDS:
+			break
+	if chain.size() < ISLANDS:
+		push_error("LADDER FAIL: voyage has fewer than %d islands" % ISLANDS)
+		await _quit_cleanly(1)
+		return
+
+	print("LADDER: seed %d" % GameState.voyage_seed)
+	Engine.time_scale = TIME_SCALE
+	var started_msec: int = Time.get_ticks_msec()
+
+	for index: int in chain.size():
+		var goal: Island = chain[index]
+		var before: float = _fleet_hull_fraction()
+		var before_gold: int = GameState.total_gold()
+		var elapsed: float = 0.0
+		run["taken"] = 0.0
+		run["low"] = before
+		run["at"] = "island %d (%s, tier %d)" % [
+			index + 1, goal.def.display_name, goal.def.tier
+		]
+
+		while elapsed < PER_ISLAND_SEC and not goal.is_captured:
+			if float(Time.get_ticks_msec() - started_msec) / 1000.0 > WALL_CLOCK_LIMIT_SEC:
+				break
+			var ship: Ship = fleet.selected
+			if ship != null and is_instance_valid(ship):
+				var enemy: Node2D = Grid.query_nearest(
+					ship.global_position, ACQUIRE_RANGE, SpatialGrid.KIND_ENEMY_SHIP
+				)
+				# Only this island's garrison. Islands sit ~2,200 m apart and this
+				# acquires at 2,600, so without the scope the run charges the next
+				# island's defenders the moment one falls.
+				if enemy != null and not _near_island(enemy, goal):
+					enemy = null
+				var aim: Node2D = _ladder_target(ship, goal, enemy)
+				if aim != null:
+					EventBus.intent_target.emit(aim)
+				else:
+					ship.set_course(goal.global_position)
+			run["low"] = minf(float(run["low"]), _fleet_hull_fraction())
+			await get_tree().create_timer(0.4).timeout
+			elapsed += 0.4
+
+		if not goal.is_captured:
+			rows.append(
+				"LADDER: island %d (%s, tier %d) NOT TAKEN in %ds"
+				% [index + 1, goal.def.display_name, goal.def.tier, roundi(elapsed)]
+			)
+			failures.append(
+				"island %d (%s, tier %d) was not taken in %ds"
+				% [index + 1, goal.def.display_name, goal.def.tier, roundi(PER_ISLAND_SEC)]
+			)
+			break
+
+		# Then go and get the cargo, because that is where the money is and
+		# leaving it is not something a player does. Clearing the garrison pays
+		# only prize money — 14 gold off the opening skiff — and the chest is ten
+		# times that. Sailing on without it made the harness's first run look like
+		# a brutal difficulty curve when what it had actually modelled was a
+		# player who never collects. The boat launches itself once a hull is on
+		# the mooring; see [method SpawnDirector._tick_landing].
+		var landing: float = 0.0
+		while landing < LANDING_SEC and goal.def.is_treasure_remaining():
+			var hull: Ship = fleet.selected
+			if hull != null and is_instance_valid(hull):
+				hull.set_target(null)
+				hull.set_course(hull.clamp_to_navigable(goal.anchor_point))
+			await get_tree().create_timer(0.4).timeout
+			landing += 0.4
+		if goal.def.is_treasure_remaining():
+			failures.append(
+				"the cargo on %s could not be collected in %ds"
+				% [goal.def.display_name, roundi(LANDING_SEC)]
+			)
+			break
+
+		if float(run["low"]) < MIN_HULL_LOW:
+			failures.append(
+				"island %d (%s, tier %d) took the fleet down to %d%% hull"
+				% [
+					index + 1, goal.def.display_name, goal.def.tier,
+					roundi(float(run["low"]) * 100.0),
+				]
+			)
+
+		# Reported after the cargo is aboard, because the takings are the point
+		# and the prize money alone is a tenth of them. Reporting it at the moment
+		# of capture had the opening island paying 14 gold and then somehow
+		# affording a 260-gold hull two lines later.
+		#
+		# The low-water mark rather than the hull at the end: what matters is how
+		# close the fight came, and a ship that drops to a fifth and then takes
+		# the island looks untouched by the time anything samples it.
+		var hull_id: StringName = GameState.fleet[0].get("stats_id", GameState.STARTING_HULL)
+		rows.append(
+			"LADDER: island %d (%s, tier %d) in %ds — %s, hull %d%% -> %d%% (low %d%%), took %d, gold %d -> %d"
+			% [
+				index + 1, goal.def.display_name, goal.def.tier, roundi(elapsed), hull_id,
+				roundi(before * 100.0), roundi(_fleet_hull_fraction() * 100.0),
+				roundi(float(run["low"]) * 100.0), roundi(float(run["taken"])),
+				before_gold, GameState.total_gold(),
+			]
+		)
+
+		# The port. Repair and bank exactly as [method _on_open_port] does, then
+		# spend, then refit — the same order and the same calls the real screen
+		# makes, so the harness cannot pass on a path the player has not got.
+		GameState.bank_carried_gold()
+		fleet.repair_all()
+		var spent: String = _ladder_shop()
+		fleet.refit()
+		await get_tree().process_frame
+		rows.append("LADDER:   port — %s, %d gold left" % [spent, GameState.banked_gold])
+
+	Engine.time_scale = 1.0
+
+	var left: float = _fleet_hull_fraction()
+	if failures.is_empty() and left < MIN_HULL_LEFT:
+		failures.append(
+			"the fleet came off the last island on %d%% hull, with the castle "
+			% roundi(left * 100.0)
+			+ "still ahead of it"
+		)
+
+	for line: String in rows:
+		print(line)
+	if failures.is_empty():
+		print(
+			"LADDER PASS: %d islands taken, %d%% hull left" % [ISLANDS, roundi(left * 100.0)]
+		)
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("LADDER FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## What the harness shoots at next, in the order a player who understands the
+## island would pick.
+##
+## Not simply "the nearest ship". Capturing an island wants its garrison gone
+## *and* its batteries silent, and from tier 3 a shipyard keeps feeding hulls in
+## until it is rubble — so a run that only ever shoots ships fights a queue that
+## never ends. That is exactly how this harness first failed on island five: 120
+## seconds, plenty of kills, island still hostile, and nothing in the output
+## saying the yard was the reason.
+##
+## Anything in a position to hurt you comes first. Buildings are for the gaps.
+##
+## The threshold took two tries in both directions. At 1,100 the run broke off
+## mid-duel to shell a shed and was wiped at island four, having taken it with two
+## thirds of its hull the run before. With no threshold at all — ships first,
+## always — it never reached the yard on a tier-3 island, because the yard is
+## exactly what keeps a ship on the water: the garrison refills faster than the
+## gaps appear, capture wants the garrison empty, and the run fought an unwinnable
+## queue until it sank. 750 is inside a Navy Sloop's standoff, so anything that
+## has actually closed still gets shot first.
+func _ladder_target(ship: Ship, goal: Island, enemy: Node2D) -> Node2D:
+	const CLOSE_THREAT: float = 750.0
+	var pressed: bool = (
+		enemy != null
+		and ship.global_position.distance_to(enemy.global_position) <= CLOSE_THREAT
+	)
+	if pressed:
+		return enemy
+	# Then the yard, because it is the tap that stops the queue.
+	if goal.can_reinforce():
+		return goal.shipyard
+	# Then the batteries, which capture requires silenced and which nothing else
+	# in this run would ever fire at.
+	for entry: Variant in goal.forts:
+		if is_instance_valid(entry) and (entry as Fort).alive:
+			return entry as Node2D
+	return null
+
+
+## Spends the takings the way an unsophisticated player plausibly would: buy the
+## better hull the moment it is affordable, otherwise buy the cheapest thing on
+## the shelf until the money runs out.
+##
+## Not an optimal policy, and it should not be. The question the harness exists to
+## answer is whether the opening survives *ordinary* play, so modelling a player
+## who knows the tables would answer the wrong question.
+func _ladder_shop() -> String:
+	var entry: Dictionary = GameState.fleet[0]
+	var bought: PackedStringArray = []
+
+	var hull_id: StringName = entry.get("stats_id", GameState.STARTING_HULL)
+	var better: StringName = ShipStatsLibrary.next_tier(hull_id)
+	var hull_cost: int = ShipStatsLibrary.upgrade_cost(hull_id)
+	if better != &"" and hull_cost > 0 and GameState.spend_gold(hull_cost):
+		entry["stats_id"] = better
+		bought.append(String(better))
+
+	var upgrades: Dictionary = entry.get("upgrades", {})
+	while true:
+		var cheapest: StringName = &""
+		var best: int = -1
+		for id: StringName in UpgradeLibrary.ORDER:
+			var cost: int = UpgradeLibrary.next_cost(upgrades, id)
+			if cost < 0 or cost > GameState.banked_gold:
+				continue
+			if best < 0 or cost < best:
+				best = cost
+				cheapest = id
+		if cheapest == &"":
+			break
+		if not UpgradeLibrary.purchase(upgrades, cheapest):
+			break
+		bought.append("%s %d" % [cheapest, UpgradeLibrary.level_of(upgrades, cheapest)])
+	entry["upgrades"] = upgrades
+
+	return "bought nothing" if bought.is_empty() else "bought " + ", ".join(bought)
+
+
+## Hull left across the whole fleet, 0 to 1.
+func _fleet_hull_fraction() -> float:
+	var have: float = 0.0
+	var most: float = 0.0
+	for ship: Ship in fleet.living_ships():
+		have += ship.hull
+		most += ship.stats.max_hull
+	return 0.0 if most <= 0.0 else have / most
+
+
 ## A beaten ship that gets clear must stop counting as a defender.
 ##
 ##   godot --headless src/scenes/voyage.tscn -- --rout
@@ -967,7 +1301,7 @@ func _frame_castle(castle: Island) -> void:
 
 func _run_ram_test() -> void:
 	const TIME_SCALE: float = 3.0
-	const PATIENCE: float = 16.0
+	const PATIENCE: float = 22.0
 
 	director.set_process(false)
 	var hits: Dictionary = {"count": 0}
@@ -988,7 +1322,52 @@ func _run_ram_test() -> void:
 	heavy.global_position = open
 	camera.snap_to(open)
 
-	var light: EnemyShip = _spawn_test_enemy(&"skiff", open + Vector2(900.0, 0.0))
+	# Laid out downwind, which is the whole reason this test was ever flaky.
+	#
+	# A Galleon is a sailing hull, so her speed is the wind's to give: the polar
+	# runs from 0.55 of `max_speed` beating upwind to 1.0 on a broad reach. Eighty
+	# knots of hull becomes forty-four upwind — under `RAM_MIN_CLOSING_SPEED`, so
+	# the contact is correctly not a ram — and the harness had been placing the
+	# two ships on a fixed east-west line against a wind that turns. It passed or
+	# failed on where the weather happened to be pointing that run.
+	#
+	# Which is a real rule of the game and worth stating plainly: **you cannot ram
+	# upwind.** Running down on a target is not a flourish, it is the difference
+	# between a ram and a nudge.
+	var run_axis: Vector2 = Vector2.RIGHT
+	if WindSystem.instance != null and WindSystem.instance.active:
+		run_axis = WindSystem.instance.direction
+	var light: EnemyShip = _spawn_test_enemy(&"skiff", open + run_axis * 900.0)
+	# Bow to bow before either of them moves.
+	#
+	# Ramming is deliberately not something a glancing contact counts as — see
+	# `RAM_MIN_CLOSING_SPEED`, which prices the closing speed *along the line
+	# between the hulls* so that two ships rubbing shoulders are not attacking
+	# each other. That rule is correct, and it is also what made this test flaky:
+	# left to turn onto their courses, a Galleon skids (velocity lags heading, by
+	# design) and the contact came in oblique, with the closing component under
+	# the threshold. Diagnosed off the failure message, which had them one unit
+	# apart with 119 of relative speed and no ram: not a broken collision handler,
+	# a harness staging a sideswipe and calling it a head-on.
+	heavy.rotation = (light.global_position - heavy.global_position).angle() + PI * 0.5
+	light.rotation = (heavy.global_position - light.global_position).angle() + PI * 0.5
+
+	# And the skiff holds still while the Galleon runs it down.
+	#
+	# It is a lesser thing than two ships converging, and it is the version that
+	# actually tests what this is for. The skiff is an [EnemyShip] with its own
+	# helm: it re-decides its course every physics frame, the harness could only
+	# countermand that five times a second, and the AI won thirty frames out of
+	# thirty-one. What the run staged was not a head-on at all — the two of them
+	# spiralled towards each other for a minute of game time and the contact,
+	# when it came, was oblique enough that `RAM_MIN_CLOSING_SPEED` correctly
+	# refused to call it a ram. Nothing about the collision code was ever wrong.
+	#
+	# Freezing one hull makes the closing speed the Galleon's own, along the axis,
+	# every time. The pricing being tested — both parties hurt, the lighter one
+	# more — does not care which of them was moving.
+	light.stop()
+	light.set_physics_process(false)
 	await get_tree().process_frame
 	Cull.force_tick()
 
@@ -1004,9 +1383,9 @@ func _run_ram_test() -> void:
 	var heavy_before: float = heavy.hull
 	var light_before: float = light.hull
 
-	# Drive them together. Both are ordered straight at each other so the closing
-	# speed is unambiguous — a glancing contact is deliberately not a ram, and a
-	# test that produced one would be testing the wrong thing.
+	# Drive the Galleon onto her. The closing speed is then unambiguous, which
+	# matters because a glancing contact is deliberately not a ram and a test that
+	# produced one would be testing the wrong thing.
 	Engine.time_scale = TIME_SCALE
 	var waited: float = 0.0
 	var died_early: String = ""
@@ -1017,12 +1396,27 @@ func _run_ram_test() -> void:
 		if not is_instance_valid(light) or not light.alive:
 			died_early = "the skiff"
 			break
+		# Aimed well beyond the skiff, so the Galleon is still under way when she
+		# hits rather than settling onto a waypoint.
+		#
+		# This is the last thing the flakiness turned out to be, and the most
+		# interesting. A course set on or just past the target is a course a ship
+		# *arrives* at, and arriving means slowing down: the diagnostic caught two
+		# runs touching the skiff at 53 and 55 units a second against a
+		# `RAM_MIN_CLOSING_SPEED` of 55. Not a collision failure — a Galleon
+		# genuinely coasting into something too gently to call it a ram, which is
+		# the rule working. Aiming nine hundred units past keeps her at full speed
+		# through the contact.
+		#
+		# Worth knowing as a player, too: to ram something, tap the water *behind*
+		# it. Tapping the ship itself is an order to pull up alongside.
+		const OVERSHOOT: float = 900.0
 		heavy.set_target(null)
-		heavy.nav_target = light.global_position
+		heavy.nav_target = light.global_position + (
+			light.global_position - heavy.global_position
+		).normalized() * OVERSHOOT
 		heavy.has_nav_target = true
 		light.suppress_engage_steering = true
-		light.nav_target = heavy.global_position
-		light.has_nav_target = true
 		await get_tree().create_timer(0.2).timeout
 		waited += 0.2
 	Engine.time_scale = 1.0
@@ -1034,7 +1428,21 @@ func _run_ram_test() -> void:
 		# afternoon.
 		failures.append("%s sank before the two hulls ever met" % died_early)
 	elif int(hits["count"]) == 0:
-		failures.append("two hulls driven straight at each other never registered a collision")
+		# With the gap and the closing speed in it, because "no collision" on its
+		# own does not distinguish a broken collision handler from two ships that
+		# never actually got near each other.
+		var gap: float = -1.0
+		var closing: float = 0.0
+		if is_instance_valid(heavy) and is_instance_valid(light):
+			gap = heavy.global_position.distance_to(light.global_position) - (
+				heavy.stats.hull_radius + light.stats.hull_radius
+			)
+			closing = (heavy.velocity - light.velocity).length()
+		failures.append(
+			"a Galleon run straight onto a stationary skiff never registered a "
+			+ "collision (%.0f units apart after %.0fs, closing at %.0f)"
+			% [gap, waited, closing]
+		)
 	else:
 		var heavy_took: float = heavy_before - heavy.hull
 		var light_took: float = (light_before - light.hull) if is_instance_valid(light) else light_before

@@ -274,7 +274,16 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.turn_rate_deg = 60.0
 			s.cannons_per_side = 2
 			s.cannon_range = 600.0
-			s.reload_time = 3.0
+			# Slowed from 3.0. This is the first warship in the game and the fight
+			# it fronts is close to a mirror match: a player Sloop out-damages it
+			# by about a fifth, which on paper is a win and in practice is a coin
+			# flip in the hands of someone still learning that guns fire sideways.
+			# `--ladder` had the fight ending on nine per cent of hull. Twelve per
+			# cent off its rate of fire turns "you win if nothing goes wrong" into
+			# "you win, and one mistake is survivable", which is what a second
+			# fight should be. It stays dangerous in the numbers it arrives in
+			# from tier 3 on, where it is never alone.
+			s.reload_time = 3.4
 			s.base_damage = 16.0
 			s.hull_radius = 46.0
 			s.tonnage = 100.0

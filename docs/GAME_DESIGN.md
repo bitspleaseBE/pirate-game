@@ -45,7 +45,7 @@ and "see one ship's detail". Ships point bow-up at rotation 0.
 | Tap the fleet badge | Open the roster — a card per hull, tap one to take its helm |
 | Tap Hideout | Set a course for the home port; it opens when you arrive |
 | Tap captured island | Open the port screen |
-| Tap ammo button | Cycle loaded shot type |
+| Tap a shot in the rack | Load it. One button per type, the loaded one lit, stock on each |
 | Drag empty water | Pan camera freely; snaps back to the fleet after 2s |
 | Pinch | Zoom (clamped) |
 | Long-press enemy | Order a ram / boarding approach instead of a gun run |

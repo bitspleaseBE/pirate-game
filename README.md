@@ -29,9 +29,10 @@ enters a broadside arc. Tap water to **steer**; that keeps the target marked, so
 and shooting are the same activity and working the ship onto a good angle is the whole
 skill. Tap the marked enemy again to break off. Pinch to zoom, drag to look around, `F3`
 for the debug overlay, `Esc` for the menu. Bottom right: **Hideout** sets a course home
-and opens the port when you get there, the **fleet badge** opens the roster, the brass
-button cycles your shot, and a **BOARD** prompt appears above it whenever you are
-alongside a hull whose crew can no longer hold her. Running a hull down damages you both,
+and opens the port when you get there, the **fleet badge** opens the roster, the **shot
+rack** is one button per shot type with the loaded one lit and the rest showing what you
+have left, and a **BOARD** prompt appears above it whenever you are alongside a hull whose
+crew can no longer hold her. Running a hull down damages you both,
 scaled by tonnage — worth doing in a Galleon, suicide in a Dinghy.
 
 Two things reward sailing well rather than shooting often: shot loses weight at long
@@ -66,6 +67,26 @@ nothing ever asked what was on it. (Run with a display and it also frames the ke
 ```bash
 godot --headless src/scenes/voyage.tscn -- --castle
 ```
+
+Play the opening of the game the way a new player does — the starting Dinghy, islands one
+to five in order, spending only what the run actually earns — and report whether it can be
+survived. Every other harness asks "does this work"; this one asks "is the start of the
+game fair", which is a different question and the one that was going unasked. `--smoke`
+stops after the gentle first island and `--arena` starts from a mid-game Brig with gold in
+the bank, so nothing had ever played the ramp itself. It had a wall in it: the opening
+chest paid 154 gold against a 260-gold hull, so island two — a Navy Sloop against a Dinghy
+— was a fight the arithmetic said you lose:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --ladder
+godot --headless src/scenes/voyage.tscn -- --ladder --seed=22   # sweep other worlds
+```
+
+It pins its own seed, because the swing between two archipelagos is wider than most
+changes worth measuring — the same build finished island two on 74% of its hull and was
+wiped on it, on consecutive runs. Deliberately **not** a CI gate, for the same reason
+`--arena` is not: the tier-3 islands still sink it on some seeds, and a gate that fails a
+third of the time gets ignored rather than fixed.
 
 Assert ships actually carry canvas and that it answers the wind — yards braced sharp when
 pointing, squared before the wind, and the cloth bellying downwind of its own yard on every

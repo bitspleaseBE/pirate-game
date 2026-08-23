@@ -467,20 +467,40 @@ func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 ##
 ## Until the `.tres` tables land this is the whole treasure economy, so it is
 ## worth stating what it is balanced against: the first hull up from a Dinghy
-## costs 260 gold. At the old 50-per-tier a captured opening island paid 50, which
-## put the shop five more islands away and left a new player holding a currency
-## that visibly did nothing. Together with prize money from the garrison
-## ([method Ship._pay_bounty]) this pays the first hull off by the second island,
-## which is where the loop starts teaching itself.
+## costs 260 gold, and **the opening island has to pay for it**.
+##
+## That is not a nicety. Island one is a skiff; islands two and three are each a
+## Navy Sloop, which against a Dinghy has two barrels to one, eighty metres more
+## reach and ten more hull. In a Sloop the same fight is comfortably winnable —
+## 12.9 damage a second against 10.7, and a hundred hull against ninety-five — so
+## the whole early ramp rests on the player arriving at island two in the better
+## hull. If the opening chest does not cover it, island two is a fight the
+## arithmetic says the player loses, and the ramp is a wall.
+##
+## A flat rate per tier could not do that job, and the version before this one
+## claimed to and did not: at 140 a tier the opening island paid 140 plus 14 in
+## prize money, and the Sloop stayed 106 gold out of reach through the fight it
+## was needed for. The prices it has to clear do not start at zero, so neither can
+## the curve — hence a base as well as a slope. The base is what buys the first
+## hull; the slope is what keeps later chests level with later prices.
+##
+## The base then went up again, past the price of the hull, and that margin is
+## deliberate rather than slack. A Sloop bought with the last coin in the purse
+## meets island two on bare stats, and `--ladder` measured what that costs: down
+## to nine per cent of hull before the Navy Sloop went under. The opening chest
+## has to buy the hull *and* the first point of plating, because arriving at the
+## second fight with no cushion at all is how a run ends on a single mistimed
+## broadside.
 ##
 ## Diamonds only come from the outer islands and the castle, per the design: they
 ## buy fleet slots, so a second ship should be something you sail *out* for rather
 ## than something the opening island hands you.
 func _fallback_loot() -> Dictionary:
-	const CHEST_GOLD_PER_TIER: int = 140
+	const CHEST_GOLD_BASE: int = 190
+	const CHEST_GOLD_PER_TIER: int = 120
 	const CASTLE_DIAMONDS: int = 4
 
-	var loot: Dictionary = {&"gold": CHEST_GOLD_PER_TIER * def.tier}
+	var loot: Dictionary = {&"gold": CHEST_GOLD_BASE + CHEST_GOLD_PER_TIER * def.tier}
 	if def.has_castle:
 		loot[&"diamond"] = CASTLE_DIAMONDS
 	elif def.tier >= 2:
