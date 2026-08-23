@@ -69,16 +69,28 @@ func wind_came_up(compass: String) -> void:
 	)
 
 
+## Three things can be due when an island wakes up, and they are shown in the
+## order they make sense in: *there are enemies*, then *this is who they are*,
+## then *and they are building more*.
+##
+## Awaited in sequence rather than fired together, because [method _show] refuses
+## to stack modals — dispatching all three at once would show the first and
+## silently mark the other two as seen. On the opening island all three are due
+## at the same moment.
 func _on_island_alerted(island: Node2D) -> void:
-	if GameState.has_seen(&"first_enemies"):
-		_maybe_teach_shipyard(island as Island)
-		return
+	if not GameState.has_seen(&"first_enemies"):
+		await _teach_first_enemies(island as Island)
+	_maybe_meet_faction(island as Island)
+	_maybe_teach_shipyard(island as Island)
+
+
+func _teach_first_enemies(island: Island) -> void:
 	# Point the camera at what we are talking about. "There are enemies" is a
 	# sentence; seeing them turn toward you is the actual information.
 	var enemy: Node2D = Grid.query_nearest(
 		island.global_position, island.def.alert_radius * 2.0, SpatialGrid.KIND_ENEMY_SHIP
 	)
-	_show(
+	await _show(
 		&"first_enemies",
 		"ENEMY SHIPS",
 		[
@@ -99,14 +111,52 @@ func _on_island_alerted(island: Node2D) -> void:
 ## reassurance — the island is still yours, you did not have to chase it — which
 ## matters because a garrison count dropping with nothing sunk looks like a bug.
 func _on_enemy_routed(_ship: Node2D, _island: Node2D) -> void:
+	# The second line is only true once the player owns chain shot, and telling
+	# somebody the answer to a problem while the answer is locked is worse than
+	# saying nothing — they go looking for a button that is greyed out. Before
+	# then this is simply the reassurance, which is the half that matters: a
+	# garrison count dropping with nothing sunk looks like a bug.
+	var lines: PackedStringArray = [
+		"A beaten ship makes for open water, and she takes her prize money with her. She has stopped defending the island, so the place is still yours to take.",
+	]
+	if UnlockTable.ammo_unlocked(&"chain"):
+		lines.append(
+			"If you would rather have the gold: chain shot shreds rigging, and a hull with no rig left makes half speed and gets nowhere."
+		)
+		lines.append(
+			"That is the choice at the end of most fights — let them run, or cut them down and collect."
+		)
+	else:
+		lines.append(
+			"Nothing you carry will stop her. There is shot that will, further along the chain — for now, take the island and let her go."
+		)
+	_show(&"first_rout", "SHE RUNS", lines)
+
+
+## The first time a flag the player has not seen before comes over the horizon.
+##
+## This is the closest thing the game has to a plot, and it is deliberately the
+## same machinery as everything else here: a briefing, once per save, at the
+## moment it becomes true. The chain runs tribes, then a navy, then another
+## navy, then the Brethren, then mixed ([constant Archipelago.FACTION_LADDER]),
+## so meeting a new flag is a genuine chapter break — the enemy in front of the
+## player is about to behave differently from every enemy so far, and one line
+## saying how is the difference between a surprise and an ambush.
+##
+## The text lives on the [Faction], not here. There is exactly one description of
+## the Crown Navy in this project and it sits next to their stats.
+func _maybe_meet_faction(island: Island) -> void:
+	if island == null or not is_instance_valid(island):
+		return
+	var faction: Faction = FactionLibrary.get_faction(island.def.faction)
+	if faction.briefing.is_empty():
+		return
 	_show(
-		&"first_rout",
-		"SHE RUNS",
-		[
-			"A beaten ship makes for open water, and she takes her prize money with her. She has stopped defending the island, so the place is still yours to take.",
-			"If you would rather have the gold: chain shot shreds rigging, and a hull with no rig left makes half speed and gets nowhere.",
-			"That is the choice at the end of most fights — let them run, or cut them down and collect.",
-		]
+		StringName("met_%s" % faction.id),
+		faction.display_name.to_upper(),
+		[faction.briefing],
+		"COLOURS SEEN",
+		island.global_position
 	)
 
 
@@ -141,15 +191,21 @@ func _on_ship_sunk(ship: Node2D, killer: Node2D) -> void:
 	if GameState.has_seen(&"first_kill"):
 		return
 	# Taught here, after a kill, rather than up front: a player who has just won a
-	# fight with round shot has the context to care that other shot exists. The
-	# same three lines before their first shot would be noise.
+	# fight with round shot has the context to care about how to win the next one.
+	# The same three lines before their first shot would be noise.
+	#
+	# The third line used to explain chain and grape. It no longer can: the rack
+	# starts with round shot alone and the rest are earned ([UnlockTable]), so
+	# what it does instead is point at the four locked slots and say they are
+	# coming. Each one then explains itself in a toast on the island that opens
+	# it, which is a better moment to hear it than this one.
 	_show(
 		&"first_kill",
 		"ONE DOWN",
 		[
 			"That is the whole game: read the angle, get your side facing them, let the broadside do the rest.",
 			"Two things pay for good sailing. Shot loses its weight at long range, so close. And a ball that goes in over a ship's bow or stern runs the whole length of her — cross their end-on and you hit twice as hard. Watch for RAKE.",
-			"The button bottom-right cycles your shot. Chain shreds sails so nothing escapes; grape kills crew, and a ship whose crew cannot hold her can be boarded and taken instead of sunk.",
+			"Bottom right is your shot rack. You carry round shot; the other four slots are locked, and each opens as you take islands. The number on a locked slot is how many.",
 		]
 	)
 

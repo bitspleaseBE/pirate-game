@@ -212,7 +212,22 @@ func _refresh() -> void:
 		var maximum: int = UpgradeLibrary.max_level(id)
 		var cost: int = UpgradeLibrary.next_cost(upgrades, id)
 		var title: String = "%s  ·  %d/%d" % [UpgradeLibrary.display_name(id), level, maximum]
-		if cost < 0:
+		# A locked line is still shown, unbuyable, saying what would open it. The
+		# opening shop is three upgrades — tougher, hits harder, shoots faster —
+		# because that is as many decisions as a player who has not yet fought
+		# anything can make; but "there are more of these later" is itself a
+		# reason to sail on, and it is free to say so. See [UnlockTable].
+		if not UnlockTable.upgrade_unlocked(id):
+			_add_row(
+				title,
+				"%s to unlock." % UnlockTable.requirement_phrase(
+					UnlockTable.upgrade_requirement(id)
+				),
+				-1,
+				Callable(),
+				_upgrade_icon(id)
+			)
+		elif cost < 0:
 			_add_row(title, "Fully upgraded.", -1, Callable(), _upgrade_icon(id))
 		else:
 			_add_row(
@@ -221,6 +236,8 @@ func _refresh() -> void:
 
 	var short_of_ammo: bool = false
 	for ammo_id: StringName in AmmoLibrary.ORDER:
+		if not UnlockTable.ammo_unlocked(ammo_id):
+			continue
 		if not AmmoLibrary.get_ammo(ammo_id).unlimited and GameState.get_ammo(ammo_id) < 10:
 			short_of_ammo = true
 			break
@@ -547,6 +564,11 @@ func _buy_ammo() -> void:
 		Audio.play_ui(&"ui_cancel")
 		return
 	for ammo_id: StringName in AmmoLibrary.ORDER:
+		# Only what the player has actually unlocked. Stockpiling a shot type they
+		# cannot load yet would spend their gold on nothing, and the row above
+		# would keep offering the deal because their stock stayed at zero.
+		if not UnlockTable.ammo_unlocked(ammo_id):
+			continue
 		if not AmmoLibrary.get_ammo(ammo_id).unlimited:
 			GameState.add_ammo(ammo_id, AMMO_RESTOCK_AMOUNT)
 	Audio.play_ui(&"ui_confirm")

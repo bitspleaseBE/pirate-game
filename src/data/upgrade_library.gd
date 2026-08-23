@@ -77,10 +77,20 @@ static func level_of(upgrades: Dictionary, id: StringName) -> int:
 	return int(upgrades.get(id, 0))
 
 
-## Cost of the next point in `id`, or -1 if it is already maxed.
+## Cost of the next point in `id`, or -1 if it cannot be bought right now —
+## because it is maxed, or because it has not been unlocked yet.
+##
+## Both reasons collapse into -1 deliberately: every caller already means "is
+## there a price on this" by asking, and a locked line that quotes a price is a
+## trap. It cost a harness run to find out — the ladder's shopper picks the
+## cheapest thing on the shelf, Rigging was the cheapest thing on the shelf and
+## was locked, and the purchase silently failed so it bought nothing at all and
+## sailed on to the next island with 478 gold in the bank. A caller that wants to
+## *show* a locked line (the port does, as a signpost) asks
+## [method UnlockTable.upgrade_unlocked] and says so in words.
 static func next_cost(upgrades: Dictionary, id: StringName) -> int:
 	var def: Dictionary = DEFS.get(id, {})
-	if def.is_empty():
+	if def.is_empty() or not UnlockTable.upgrade_unlocked(id):
 		return -1
 	var level: int = level_of(upgrades, id)
 	if level >= int(def["max_level"]):
@@ -88,8 +98,15 @@ static func next_cost(upgrades: Dictionary, id: StringName) -> int:
 	return int(round(float(def["base_cost"]) * pow(float(def["cost_growth"]), float(level))))
 
 
-## Buys one point. Returns false and changes nothing if it is maxed or unaffordable.
+## Buys one point. Returns false and changes nothing if it is locked, maxed or
+## unaffordable.
+##
+## The lock is checked here rather than only in the shop UI for the same reason
+## the ammo lock is checked in [FleetController]: the port screen is not the only
+## caller, and a gate that can be walked round is not a gate. See [UnlockTable].
 static func purchase(upgrades: Dictionary, id: StringName) -> bool:
+	if not UnlockTable.upgrade_unlocked(id):
+		return false
 	var cost: int = next_cost(upgrades, id)
 	if cost < 0 or not GameState.spend_gold(cost):
 		return false

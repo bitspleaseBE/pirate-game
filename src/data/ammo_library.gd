@@ -54,12 +54,15 @@ static func all() -> Array[AmmoType]:
 	return out
 
 
-## Next shot type the player has stock for, wrapping around. Skipping empty types
-## means the cycle button never lands on something that cannot fire.
+## Next shot type the player owns and has stock for, wrapping around. Skipping
+## empty and locked types means the cycle button never lands on something that
+## cannot fire.
 static func next_available(current: StringName) -> StringName:
 	var start: int = maxi(0, ORDER.find(current))
 	for step: int in range(1, ORDER.size() + 1):
 		var candidate: StringName = ORDER[(start + step) % ORDER.size()]
+		if not UnlockTable.ammo_unlocked(candidate):
+			continue
 		var ammo: AmmoType = get_ammo(candidate)
 		if ammo.unlimited or GameState.get_ammo(candidate) > 0:
 			return candidate

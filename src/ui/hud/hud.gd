@@ -102,6 +102,7 @@ func _ready() -> void:
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 
 	EventBus.ammo_changed.connect(_on_ammo_changed)
+	EventBus.unlock_granted.connect(_on_unlock_granted)
 	_build_ammo_rack()
 	_hideout_button.pressed.connect(_on_hideout_pressed)
 	# The card vocabulary, matching the shot rack under it and the fleet badge
@@ -270,6 +271,31 @@ func _on_prize_taken(hull_name: String, kept: bool) -> void:
 	_refresh_ammo()
 
 
+## An island taken has opened something up. See [UnlockTable].
+##
+## A toast rather than a modal: this happens on top of a capture, which already
+## has a toast and a camera move of its own, and stopping the world for it would
+## turn a reward into an interruption. The rack repaints underneath, so the new
+## slot lights up at the same moment the line is read — the sentence and the
+## thing it is about are on screen together.
+##
+## The blurb is the library's own, not a second copy written here. "Grape Shot
+## unlocked" teaches nothing; "kills crew" is the entire mechanic.
+func _on_unlock_granted(kind: StringName, id: StringName) -> void:
+	if kind == &"ammo":
+		var ammo: AmmoType = AmmoLibrary.get_ammo(id)
+		show_toast(
+			"%s in the lockers — %s. %d rounds aboard."
+			% [ammo.display_name, ammo.role, UnlockTable.AMMO_GRANT]
+		)
+		_refresh_ammo()
+	else:
+		show_toast(
+			"The yards will fit %s now — %s"
+			% [UpgradeLibrary.display_name(id), UpgradeLibrary.blurb(id).to_lower()]
+		)
+
+
 ## Shows a briefing modal and returns it, so the caller can await `dismissed`.
 ## Returns null if one is already up — two modals at once is worse than either.
 func show_briefing(
@@ -436,6 +462,7 @@ func _refresh_ammo() -> void:
 		var ammo: AmmoType = AmmoLibrary.get_ammo(id)
 		var button: Button = _ammo_buttons[id]
 		var stock: int = GameState.get_ammo(id)
+		var locked: bool = not UnlockTable.ammo_unlocked(id)
 		var empty: bool = not ammo.unlimited and stock <= 0
 		var live: bool = id == selected
 
@@ -443,16 +470,31 @@ func _refresh_ammo() -> void:
 			Wave1UI.apply_card_selected(button)
 		else:
 			Wave1UI.apply_card(button)
-		button.disabled = empty and not live
+		button.disabled = locked or (empty and not live)
 		if live:
 			button.modulate = Color.WHITE
-		elif empty:
+		elif locked or empty:
 			button.modulate = Color(1, 1, 1, 0.4)
 		else:
 			button.modulate = Color(1, 1, 1, 0.66)
 
 		var label: Label = _ammo_stocks[id]
-		label.text = "∞" if ammo.unlimited else str(stock)
+		# A locked slot stays on the rack, and that is the point of it. The player
+		# can see there are five kinds of shot, that they own one, and exactly how
+		# far they have to sail for the next — which is a reason to keep going.
+		# Hiding them would make the rack grow mysteriously instead.
+		if locked:
+			# Flag first, so the number reads as "islands" rather than as a stock
+			# count — the unlit slots are otherwise a rack that looks like it has
+			# six of something in it.
+			label.text = "⚑ %d" % UnlockTable.ammo_requirement(id)
+			button.tooltip_text = "%s — %s (%s)" % [
+				ammo.display_name, ammo.role,
+				UnlockTable.requirement_phrase(UnlockTable.ammo_requirement(id)),
+			]
+		else:
+			label.text = "∞" if ammo.unlimited else str(stock)
+			button.tooltip_text = "%s — %s" % [ammo.display_name, ammo.role]
 		# The tint is the colour of the ball in flight, so a rack slot and the
 		# thing it fires are visibly the same object.
 		for child: Node in button.get_child(0).get_children():

@@ -54,11 +54,17 @@ func reset_run() -> void:
 	# broadsides and the capture loop on a still sea. The wind arrives with your
 	# first set of sails — see WindSystem.
 	fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
-	# Sized to be *used*, not hoarded. These were set when a broadside took five
-	# seconds; reloads have since roughly halved, so the same numbers were a third
-	# of the fight's worth of shot and the rational play was to save them forever
-	# and fire round shot — which is how five shot types became one.
-	ammo_stock = {&"fire": 10, &"explosive": 6, &"chain": 12, &"grape": 12}
+	# Empty, and it is not an oversight. A new captain owns round shot and nothing
+	# else — every other type is locked behind islands taken ([UnlockTable]) and
+	# arrives with a starting supply the moment it opens up. Handing a player who
+	# has not yet worked out that guns fire sideways five shot types at once is
+	# how five shot types become one: they pick none of them.
+	#
+	# When they do arrive, they are sized to be *used* rather than hoarded. That
+	# lesson predates the locks: the original numbers were set when a broadside
+	# took five seconds, reloads have since roughly halved, and the rational play
+	# with a fixed stock is always to save it forever and fire round shot.
+	ammo_stock = {}
 	selected_ammo = &"round"
 	voyage_seed = 0
 	voyage_active = false
@@ -220,8 +226,24 @@ func mark_island(id: StringName, discovered: bool = true, captured: bool = false
 	entry["discovered"] = entry["discovered"] or discovered
 	if captured and not entry["captured"]:
 		entry["captured"] = true
+		var before: int = stats_islands_captured
 		stats_islands_captured += 1
+		_grant_unlocks(before)
 	island_progress[id] = entry
+
+
+## Opens whatever the island just taken has earned.
+##
+## Here rather than in a system because this is the only place the capture count
+## ever moves, and a progression gate that can be reached by a route which does
+## not open the gate is the kind of bug that presents as "the game forgot my
+## upgrade". It stays dumb: [UnlockTable] decides what is owed, this hands it
+## over and says so.
+func _grant_unlocks(previous_captures: int) -> void:
+	for entry: Dictionary in UnlockTable.newly_unlocked(previous_captures):
+		if entry["kind"] == &"ammo":
+			add_ammo(entry["id"], UnlockTable.AMMO_GRANT)
+		EventBus.unlock_granted.emit(entry["kind"], entry["id"])
 
 
 func is_island_captured(id: StringName) -> bool:

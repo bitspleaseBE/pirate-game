@@ -338,6 +338,10 @@ func _on_intent_cycle_ammo() -> void:
 ## only way in — a shot can run dry while it is the one selected, and the answer
 ## has to be the same whoever asked.
 func _on_intent_select_ammo(id: StringName) -> void:
+	# Same argument for the unlock check: the rack greys a locked slot out, and
+	# the keyboard shortcut and the cycle button do not go through the rack.
+	if not UnlockTable.ammo_unlocked(id):
+		return
 	var ammo: AmmoType = AmmoLibrary.get_ammo(id)
 	if not ammo.unlimited and GameState.get_ammo(id) <= 0:
 		return

@@ -2343,6 +2343,7 @@ func _run_smoke_test() -> void:
 	failures.append_array(_check_spacing())
 	failures.append_array(_check_ramp())
 	failures.append_array(_check_lethality())
+	failures.append_array(_check_unlocks())
 	failures.append_array(_check_economy())
 	failures.append_array(_check_forts())
 
@@ -2898,6 +2899,62 @@ func _check_lethality() -> PackedStringArray:
 			out.append(
 				"one %s ball does %.0f to a %.0f-hull %s — no single ball may sink one"
 				% [ammo.display_name, hull_damage, weakest.max_hull, weakest.display_name]
+			)
+	return out
+
+
+## Progression has to start small and finish reachable.
+##
+## Two failure modes, opposite to each other and both easy to introduce by
+## editing one line of [UnlockTable]:
+##
+##   * **Too much at the start.** The whole reason anything is locked is that a
+##     new player cannot answer eleven questions at once. Four shot types and
+##     five upgrade lines on the opening island is the state this replaced.
+##   * **Locked forever.** A voyage is [constant Archipelago.ISLAND_COUNT_MIN]
+##     islands at its shortest. Anything gated past that is content nobody will
+##     ever see, and nothing in the game would say so — it would simply never
+##     appear, which is indistinguishable from it not being implemented.
+##
+## Read off the table rather than off live state, because by the time the smoke
+## run reaches its checks it has already taken an island.
+func _check_unlocks() -> PackedStringArray:
+	## Round shot, and three upgrade lines: tougher, hits harder, shoots faster.
+	const OPENING_UPGRADE_LINES: int = 3
+	var out: PackedStringArray = []
+
+	var open_ammo: PackedStringArray = []
+	for id: StringName in AmmoLibrary.ORDER:
+		if UnlockTable.ammo_requirement(id) == 0:
+			open_ammo.append(String(id))
+	if open_ammo != PackedStringArray(["round"]):
+		out.append(
+			"a new captain starts with shot types [%s] — it must be round shot alone"
+			% ", ".join(open_ammo)
+		)
+
+	var open_upgrades: int = 0
+	for id: StringName in UpgradeLibrary.ORDER:
+		if UnlockTable.upgrade_requirement(id) == 0:
+			open_upgrades += 1
+	if open_upgrades != OPENING_UPGRADE_LINES:
+		out.append(
+			"the opening shop offers %d upgrade lines — it must offer %d"
+			% [open_upgrades, OPENING_UPGRADE_LINES]
+		)
+
+	var reachable: int = Archipelago.ISLAND_COUNT_MIN
+	for id: StringName in AmmoLibrary.ORDER:
+		if UnlockTable.ammo_requirement(id) > reachable:
+			out.append(
+				"%s needs %d islands, and the shortest voyage has %d"
+				% [id, UnlockTable.ammo_requirement(id), reachable]
+			)
+	for id: StringName in UpgradeLibrary.ORDER:
+		if UnlockTable.upgrade_requirement(id) > reachable:
+			out.append(
+				"%s needs %d islands, and the shortest voyage has %d"
+				% [id, UnlockTable.upgrade_requirement(id), reachable]
 			)
 	return out
 

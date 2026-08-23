@@ -70,6 +70,10 @@ signal fleet_changed()
 ## refreshing itself off its own button press, because stock also falls as the
 ## guns fire and a shot can run dry with nobody having touched the HUD.
 signal ammo_changed(id: StringName)
+## A shot type or an upgrade line the player could not have before has opened up.
+## `kind` is `&"ammo"` or `&"upgrade"`. See [UnlockTable] — the whole point of
+## locking something is the moment it unlocks, so this is never silent.
+signal unlock_granted(kind: StringName, id: StringName)
 signal voyage_started(seed_value: int)
 signal voyage_completed()
 signal fleet_wiped()
