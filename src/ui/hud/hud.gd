@@ -48,6 +48,19 @@ const AMMO_TAGS: Dictionary = {
 	&"grape": "GRAPE",
 }
 
+## Height of the bottom-right column in `hud.tscn`, and the clearance anything
+## floating above it needs. Duplicated from the scene because a Control cannot ask
+## a sibling how tall it is before either has been laid out, and the BOARD prompt
+## has to know — see [method _build_board_button].
+const BOTTOM_COLUMN_HEIGHT: float = 232.0
+const BOTTOM_COLUMN_GAP: float = 10.0
+const BOARD_BUTTON_HEIGHT: float = 72.0
+
+## Breathing room inside the Hideout card, matching the title screen's buttons —
+## a card that draws its own label needs the padding a StyleBoxFlat leaves to the
+## control by default.
+const HIDEOUT_PADDING: float = 10.0
+
 const ICON_ANCHOR: Texture2D = preload("res://assets/wave1/icons/icon_anchor.png")
 const ICON_WHEEL: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
 
@@ -91,7 +104,18 @@ func _ready() -> void:
 	EventBus.ammo_changed.connect(_on_ammo_changed)
 	_build_ammo_rack()
 	_hideout_button.pressed.connect(_on_hideout_pressed)
-	Wave1UI.apply_brass(_hideout_button)
+	# The card vocabulary, matching the shot rack under it and the fleet badge
+	# above it. Featured, because it is the one the HUD wants read first of the
+	# three — but a card, not brass.
+	#
+	# It was the solid brass pill, which stopped making sense the moment the rack
+	# arrived: brass is the loudest shape the vocabulary has and is meant to be at
+	# most one per screen, and a permanent navigation button had quietly claimed
+	# it. The BOARD prompt is the thing in this HUD that genuinely fits the
+	# description — the action that is not a choice between options — and it now
+	# has the treatment to itself, appearing in brass for the few seconds a prize
+	# is alongside and never competing with anything.
+	Wave1UI.apply_card(_hideout_button, true, HIDEOUT_PADDING)
 	Wave1UI.set_icon(_hideout_button, ICON_ANCHOR, 26)
 	_fleet_button.pressed.connect(_on_fleet_pressed)
 
@@ -152,9 +176,22 @@ func _build_wind_indicator() -> void:
 ## game for the few seconds it is not.
 ##
 ## Built here rather than in `hud.tscn` because it is the only control that comes
-## and goes, and a scene file makes something look permanent. It sits above the
-## ammo button, in the same right-thumb column, so the hand that is already
-## cycling shot does not have to travel to take a prize.
+## and goes, and a scene file makes something look permanent. It sits directly
+## above the bottom-right column, in the same right-thumb reach, so the hand that
+## is already on the shot rack does not have to travel to take a prize.
+##
+## Kept in brass, and now the only thing in the HUD that is. Brass is the loudest
+## shape the vocabulary has and is meant to be at most one per screen; the Hideout
+## button had been quietly holding it for a permanent navigation action, which
+## left nothing louder for the one prompt that is genuinely urgent and genuinely
+## brief. This is the action that is not a choice between options.
+##
+## Its offsets are set against the column's own top edge rather than picked by
+## eye: it used to be pinned at -232, which was clear of the column when that
+## column was 194 tall and directly on top of the Hideout card once the shot rack
+## made it 232. A floating control positioned by a constant that silently depends
+## on another control's height is a collision waiting for the next layout change,
+## so the constant is shared now.
 func _build_board_button() -> void:
 	_board_button = Button.new()
 	_board_button.name = "BoardButton"
@@ -162,9 +199,9 @@ func _build_board_button() -> void:
 	_board_button.focus_mode = Control.FOCUS_NONE
 	_board_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_board_button.offset_left = -228.0
-	_board_button.offset_top = -232.0
+	_board_button.offset_bottom = -(BOTTOM_COLUMN_HEIGHT + BOTTOM_COLUMN_GAP)
+	_board_button.offset_top = _board_button.offset_bottom - BOARD_BUTTON_HEIGHT
 	_board_button.offset_right = -24.0
-	_board_button.offset_bottom = -160.0
 	_board_button.pressed.connect(_on_board_pressed)
 	_root.add_child(_board_button)
 	Wave1UI.apply_brass(_board_button)
@@ -429,6 +466,11 @@ func _refresh_ammo() -> void:
 	var current: AmmoType = AmmoLibrary.get_ammo(selected)
 	_ammo_role.text = "%s — %s" % [current.display_name, current.role]
 	_ammo_role.add_theme_color_override("font_color", current.tint)
+	# Outlined, because it is the one thing in this corner with no card behind it.
+	# Pale ink on open water is fine and pale ink over a sunlit beach is not, and
+	# the HUD does not get to choose which the player is sailing past.
+	_ammo_role.add_theme_constant_override("outline_size", 4)
+	_ammo_role.add_theme_color_override("font_outline_color", Color(0.02, 0.05, 0.08, 0.85))
 
 
 ## "hulls afloat / hulls owned".
