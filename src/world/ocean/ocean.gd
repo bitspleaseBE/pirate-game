@@ -60,6 +60,13 @@ var _material: ShaderMaterial
 ## One Vector4 per island: xy = centre, z = mean radius, w = shelf width.
 var _all_shoals: PackedVector4Array = PackedVector4Array()
 var _shoals: PackedVector4Array = PackedVector4Array()
+## The coastline harmonics, index-aligned with `_all_shoals` / `_shoals`. See
+## [method IslandDef.outline_harmonics] — the shader reproduces the same curve so
+## the shallows follow the real coast rather than a circle drawn through it.
+var _all_lobes: PackedVector4Array = PackedVector4Array()
+var _all_phases: PackedVector4Array = PackedVector4Array()
+var _lobes: PackedVector4Array = PackedVector4Array()
+var _phases: PackedVector4Array = PackedVector4Array()
 var _last_shoal_center: Vector2 = Vector2.INF
 
 var _time: float = 0.0
@@ -81,6 +88,8 @@ func _ready() -> void:
 	add_child(_surface)
 
 	_shoals.resize(MAX_SHOALS)
+	_lobes.resize(MAX_SHOALS)
+	_phases.resize(MAX_SHOALS)
 
 	Quality.tier_changed.connect(_on_quality_changed)
 	_apply_quality()
@@ -156,6 +165,8 @@ func swell_at(p: Vector2) -> Vector3:
 func _set_archipelago(value: Archipelago) -> void:
 	archipelago = value
 	_all_shoals.clear()
+	_all_lobes.clear()
+	_all_phases.clear()
 	_last_shoal_center = Vector2.INF
 	if archipelago == null:
 		return
@@ -172,6 +183,11 @@ func _set_archipelago(value: Archipelago) -> void:
 				maxf(SHOAL_WIDTH_MIN, radius * SHOAL_WIDTH_FACTOR)
 			)
 		)
+		var harmonics: Dictionary = island.def.outline_harmonics()
+		var lobes: Vector3 = harmonics["lobes"]
+		var phases: Vector3 = harmonics["phases"]
+		_all_lobes.append(Vector4(lobes.x, lobes.y, lobes.z, island.def.raggedness))
+		_all_phases.append(Vector4(phases.x, phases.y, phases.z, 0.0))
 
 
 ## Hands the shader the islands nearest the camera.
@@ -199,7 +215,11 @@ func _update_shoals(center: Vector2) -> void:
 	var count: int = mini(order.size(), MAX_SHOALS)
 	for slot: int in count:
 		_shoals[slot] = _all_shoals[order[slot]]
+		_lobes[slot] = _all_lobes[order[slot]]
+		_phases[slot] = _all_phases[order[slot]]
 	_material.set_shader_parameter("shoals", _shoals)
+	_material.set_shader_parameter("shoal_lobes", _lobes)
+	_material.set_shader_parameter("shoal_phase", _phases)
 	_material.set_shader_parameter("shoal_count", count)
 
 

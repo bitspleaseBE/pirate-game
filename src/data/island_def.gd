@@ -50,30 +50,53 @@ func is_treasure_remaining() -> bool:
 
 ## Deterministic outline for this island. Both the world node and the minimap
 ## call this, so the map is guaranteed to match the coastline the player sails.
-func build_outline() -> PackedVector2Array:
+## The three angular harmonics this island's coastline is built from: the lobe
+## counts and their phases.
+##
+## Exposed rather than kept inside [method build_outline] because the ocean
+## shader evaluates the *same curve* to decide where the shallows are — the
+## shelf used to be a circle on the mean radius, which visibly cut across
+## headlands and left deep blue sitting inside bays. Two pieces of code drawing
+## one coastline have to be reading one function, so this is that function and
+## [method build_outline] is a caller of it. The draw order matters: phases
+## first, then lobe counts, or the same seed produces a different island.
+func outline_harmonics() -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = shape_seed if shape_seed != 0 else hash(id)
-
-	# Three octaves of angular noise gives bays and headlands rather than the
-	# uniform fuzz a single random offset per point produces.
 	var phase_a: float = rng.randf() * TAU
 	var phase_b: float = rng.randf() * TAU
 	var phase_c: float = rng.randf() * TAU
-	var lobes_a: float = rng.randi_range(2, 3)
-	var lobes_b: float = rng.randi_range(4, 6)
-	var lobes_c: float = rng.randi_range(8, 11)
+	return {
+		"lobes": Vector3(
+			float(rng.randi_range(2, 3)),
+			float(rng.randi_range(4, 6)),
+			float(rng.randi_range(8, 11))
+		),
+		"phases": Vector3(phase_a, phase_b, phase_c),
+	}
 
+
+## The coast's radius at a bearing, in island-local units. The curve itself.
+func coast_radius(angle: float, harmonics: Dictionary) -> float:
+	var lobes: Vector3 = harmonics["lobes"]
+	var phases: Vector3 = harmonics["phases"]
+	var n: float = (
+		sin(angle * lobes.x + phases.x) * 0.55
+		+ sin(angle * lobes.y + phases.y) * 0.30
+		+ sin(angle * lobes.z + phases.z) * 0.15
+	)
+	return radius * (1.0 + n * raggedness * 0.5)
+
+
+func build_outline() -> PackedVector2Array:
+	# Three octaves of angular noise gives bays and headlands rather than the
+	# uniform fuzz a single random offset per point produces.
+	var harmonics: Dictionary = outline_harmonics()
 	var points := PackedVector2Array()
 	points.resize(outline_points)
 	for i: int in outline_points:
 		var t: float = float(i) / float(outline_points) * TAU
-		var n: float = (
-			sin(t * lobes_a + phase_a) * 0.55
-			+ sin(t * lobes_b + phase_b) * 0.30
-			+ sin(t * lobes_c + phase_c) * 0.15
-		)
-		var r: float = radius * (1.0 + n * raggedness * 0.5)
-		points[i] = Vector2(cos(t), sin(t)) * r
+		points[i] = Vector2(cos(t), sin(t)) * coast_radius(t, harmonics)
 	return points
 
 

@@ -47,9 +47,13 @@ uniform float wind_angle = 0.0;
 // phase with, so both sides have to be reading one clock. See `Ocean.swell_at`.
 uniform float wave_time = 0.0;
 
-uniform vec4 deep_color : source_color = vec4(0.055, 0.165, 0.271, 1.0);
-uniform vec4 mid_color : source_color = vec4(0.098, 0.322, 0.451, 1.0);
-uniform vec4 shallow_color : source_color = vec4(0.216, 0.510, 0.596, 1.0);
+// Saturated on purpose. These went up once the shelf's own green palette was
+// retired: with the bottom carrying the warm end of the range, the open sea is
+// free to be properly blue instead of splitting the difference, and the previous
+// values left it reading grey-green — closer to an estuary than a reef.
+uniform vec4 deep_color : source_color = vec4(0.043, 0.153, 0.290, 1.0);
+uniform vec4 mid_color : source_color = vec4(0.078, 0.357, 0.553, 1.0);
+uniform vec4 shallow_color : source_color = vec4(0.235, 0.596, 0.714, 1.0);
 uniform vec4 sky_color : source_color = vec4(0.478, 0.686, 0.784, 1.0);
 uniform vec4 foam_color : source_color = vec4(0.878, 0.945, 0.969, 1.0);
 
@@ -68,11 +72,30 @@ uniform int shoal_count = 0;
 // xy = island centre, z = radius where the shelf begins (the mean coastline),
 // w = how far the shelf reaches seaward from there.
 uniform vec4 shoals[8];
+// xyz = the three lobe counts of the island's outline, w = its raggedness.
+uniform vec4 shoal_lobes[8];
+// xyz = the three phases. See `coast_radius`.
+uniform vec4 shoal_phase[8];
 uniform bool shore_foam_enabled = true;
 
-uniform vec4 shoal_deep_color : source_color = vec4(0.075, 0.271, 0.325, 1.0);
-uniform vec4 shoal_mid_color : source_color = vec4(0.157, 0.451, 0.478, 1.0);
-uniform vec4 shoal_bright_color : source_color = vec4(0.361, 0.667, 0.635, 1.0);
+// --- The bottom ------------------------------------------------------------
+//
+// The single largest thing separating this from a sea you would look twice at:
+// until now the water had no *volume*. It was a lit surface over nothing, so
+// shallow water was deep water in a different colour, and the eye reads that as
+// paint rather than as a few feet of sea over sand.
+//
+// Now the sand is drawn under it and the water absorbs light on the way down.
+// Red goes first, then green, which is the entire reason tropical shallows run
+// gold to turquoise to blue over about twenty metres — it is not three colours
+// chosen by an artist, it is one absorption curve. Beer-Lambert per channel
+// gives that ramp for nothing.
+uniform vec4 sand_color : source_color = vec4(0.847, 0.706, 0.427, 1.0);
+uniform vec4 sand_shadow : source_color = vec4(0.604, 0.478, 0.290, 1.0);
+// Per-channel extinction. The ratios are what make the gradient read as water;
+// the overall scale is how deep the shelf "feels".
+const vec3 EXTINCTION = vec3(3.10, 1.15, 0.78);
+const float EXTINCTION_SCALE = 2.9;
 
 // Direction offset from the wind (radians), spatial frequency, amplitude, speed.
 //
@@ -188,19 +211,69 @@ vec3 value_noise_d(vec2 p) {
 	);
 }
 
-// How shallow the water is at `p`, and how far seaward `p` is of the shelf's
-// inner edge. The nearest shelf wins outright rather than the contributions
-// summing, so two islands whose shelves overlap make one continuous flat rather
-// than a brighter patch in the channel between them.
+// The real coastline, evaluated in the shader.
+//
+// [IslandDef.build_outline] is not noise — it is three sine harmonics of the
+// polar angle, and that is the whole reason this is possible. Handing the shader
+// six numbers per island (three lobe counts, three phases) lets it reproduce the
+// exact radius the polygon was built from, at any angle, for three sines.
+//
+// It matters more than a shoreline detail. The shelf used to be a circle on the
+// island's *mean* radius while the land was a 44-point ragged polygon, so the
+// shallows were a smooth ring that visibly disagreed with the coast it was
+// supposed to belong to: pale water cutting across headlands, and a band of deep
+// blue sitting inside bays. Nothing else about the water reads as wrong so
+// quickly, because the eye has the beach right next to it for comparison.
+float coast_radius(int i, vec2 offset) {
+	vec4 s = shoals[i];
+	vec4 lobes = shoal_lobes[i];
+	vec4 phase = shoal_phase[i];
+	float a = atan(offset.y, offset.x);
+	float n = (
+		sin(a * lobes.x + phase.x) * 0.55
+		+ sin(a * lobes.y + phase.y) * 0.30
+		+ sin(a * lobes.z + phase.z) * 0.15
+	);
+	return s.z * (1.0 + n * lobes.w * 0.5);
+}
+
+// How shallow the water is at `p`, and how far seaward `p` is of the coast. The
+// nearest shelf wins outright rather than the contributions summing, so two
+// islands whose shelves overlap make one continuous flat rather than a brighter
+// patch in the channel between them.
+//
+// Two passes on purpose. The ragged radius costs three sines, and doing it for
+// every island for every fragment is twenty-four transcendentals on a phone. The
+// first pass picks a winner off the mean radius — which is never wrong at shelf
+// scale, the islands being thousands of units apart — and only the winner pays
+// for its real coastline.
 vec2 shoal_at(vec2 p) {
-	float shallowest = 0.0;
-	float distance_out = 1.0e6;
+	int nearest = -1;
+	float best = 1.0e6;
 	for (int i = 0; i < MAX_SHOALS; i++) {
 		if (i >= shoal_count) {
 			break;
 		}
 		vec4 s = shoals[i];
 		float d = length(p - s.xy) - s.z;
+		if (d - s.w < best) {
+			best = d - s.w;
+			nearest = i;
+		}
+	}
+	if (nearest < 0) {
+		return vec2(0.0, 1.0e6);
+	}
+
+	float shallowest = 0.0;
+	float distance_out = 1.0e6;
+	for (int i = 0; i < MAX_SHOALS; i++) {
+		if (i != nearest) {
+			continue;
+		}
+		vec4 s = shoals[i];
+		vec2 offset = p - s.xy;
+		float d = length(offset) - coast_radius(i, offset);
 		float f = 1.0 - smoothstep(0.0, s.w, max(d, 0.0));
 		if (f > shallowest) {
 			shallowest = f;
@@ -347,26 +420,88 @@ void fragment() {
 	// band sliding across the screen into something that swells and subsides.
 	lit += clamp(rise * 0.50, -0.16, 0.16);
 
-	// The shelf recolours the whole ramp rather than tinting the finished pixel,
-	// so shallow water keeps its own light and shade instead of looking like deep
-	// sea behind green glass.
-	vec3 ramp_deep = mix(deep_color.rgb, shoal_deep_color.rgb, shelf);
-	vec3 ramp_mid = mix(mid_color.rgb, shoal_mid_color.rgb, shelf);
-	vec3 ramp_bright = mix(shallow_color.rgb, shoal_bright_color.rgb, shelf);
-
+	// One water colour everywhere, deep or shallow.
+	//
+	// There used to be a second palette for the shelf — three hand-picked greens
+	// the ramp lerped towards as the water got shallower. It has gone, and its
+	// going is the point: shallow water is not a different colour of water, it is
+	// the same water with less of it, and the bottom showing through. Now that the
+	// sand is actually drawn and the extinction below is doing the work, keeping
+	// the green would have been painting the answer on top of the calculation —
+	// and the two disagreed, which is what turned the shallows into glowing jade.
+	//
 	// The bright band is deliberately narrow. It is the crest of the swell, and a
 	// swell this wide would otherwise hand it a third of the screen.
-	vec3 col = mix(ramp_deep, ramp_mid, smoothstep(0.26, 0.86, lit));
-	col = mix(col, ramp_bright, smoothstep(0.90, 1.0, lit));
+	vec3 col = mix(deep_color.rgb, mid_color.rgb, smoothstep(0.26, 0.86, lit));
+	col = mix(col, shallow_color.rgb, smoothstep(0.90, 1.0, lit));
 
-	// Close in, the bottom starts showing through regardless of how the surface
-	// is lit — which is the actual cue that water is shallow.
-	col = mix(col, shoal_bright_color.rgb, smoothstep(0.55, 1.0, shelf) * 0.38);
+	// --- The bottom, seen through the water --------------------------------
+	//
+	// This replaces a `mix` towards a pale green, which is what "shallow" used to
+	// mean here. Tinting the surface says the water is a different colour; drawing
+	// the sand under it and absorbing light on the way down says there is *water
+	// on top of something*, and that is the difference between a painted sea and
+	// one with a volume to it.
+	if (shelf > 0.0) {
+		// Depth from the shore, not from the shelf's outer edge. `pow` below 1
+		// because a beach shelves steeply at first and then flattens — a linear
+		// ramp puts the whole colour transition in a narrow band offshore and
+		// leaves the water at the sand's edge already blue.
+		float depth = pow(clamp(1.0 - shelf, 0.0, 1.0), 0.72);
+
+		// Ripples on the sand, running parallel to the shore the way real bedforms
+		// do — and static, because the bottom does not move. Two scales so the
+		// bed has both bars and texture.
+		float ripple = sin(shoal.y * 0.085) * 0.5 + 0.5;
+		ripple = mix(ripple, value_noise_d(p * 0.014).x, 0.55);
+		vec3 bed = mix(sand_shadow.rgb, sand_color.rgb, 0.35 + 0.65 * ripple);
+
+		// Caustics. The real thing is the surface acting as a lens, so the bright
+		// web on the bottom is the *wave field itself* focused down — which means
+		// it belongs here, projected on the sand and fading with depth, rather
+		// than as the surface sparkle it was standing in for. Two counter-running
+		// fields multiplied give the interlocking cells; the sharp power turns
+		// them from a wobble into lines of light.
+		if (caustics_enabled) {
+			// Cells about thirty units across — caustics are focused by the *short*
+			// waves, so they are far finer than the swell and finer than anything
+			// else in this shader. A first pass at 114 units put slow lamps on the
+			// seabed rather than a moving web of light.
+			//
+			// Domain-warped before the sinusoids, and that is not a refinement.
+			// A product of sinusoids is a *grid*: the first version of this drew
+			// the seabed as rows of evenly spaced dots, which is the one thing
+			// caustics never look like. Pushing the sample point around with a
+			// slow noise field first bends those rows into closed cells of
+			// irregular size, which is exactly what a rippled surface focusing
+			// sunlight actually produces.
+			vec2 warp = vec2(
+				value_noise_d(p * 0.0075 + vec2(t * 0.05, 0.0)).x,
+				value_noise_d(p * 0.0075 + vec2(11.3, 4.7)).x
+			) - 0.5;
+			vec2 cp = p + warp * 150.0;
+			float ca = sin(dot(cp, direction_for(0.9)) * 0.210 - t * 2.4);
+			float cb = sin(dot(cp, direction_for(-0.7)) * 0.183 + t * 1.9);
+			float cc = sin(dot(cp, direction_for(2.4)) * 0.268 - t * 3.0);
+			float web = pow(clamp((ca * cb + cc * 0.35) * 0.5 + 0.5, 0.0, 1.0), 5.0);
+			bed += vec3(1.0, 0.96, 0.84) * web * 0.34 * (1.0 - depth);
+		}
+
+		// Beer-Lambert, per channel. Red is gone within a few metres, green holds
+		// on, blue survives — which is why the ramp from wet sand out to open water
+		// runs gold, then turquoise, then blue, without anyone choosing those
+		// colours. `transmit` is how much of the bottom still reaches the eye.
+		vec3 transmit = exp(-depth * EXTINCTION * EXTINCTION_SCALE);
+		col = mix(col, bed * lit, transmit);
+	}
 
 	// Grazing faces pick up the sky, which is most of why real water is not just
 	// a darker or lighter blue in the distance.
 	float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.2);
-	col = mix(col, sky_color.rgb, fresnel * 0.40);
+	// Trimmed from 0.40. The sky here is a pale grey-blue, so every point of
+	// this is a point of saturation off the water, and it was enough to keep the
+	// open sea looking overcast.
+	col = mix(col, sky_color.rgb, fresnel * 0.28);
 
 	// Tight specular for the glitter track. Small and sharp on purpose — a broad
 	// highlight reads as plastic.
