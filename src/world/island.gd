@@ -25,6 +25,9 @@ const SURF_WIDTH: float = 14.0
 
 const SAND_TEXTURE: String = "res://assets/wave0/terrain/fill_sand.png"
 const BEACH_SHADER: Shader = preload("res://src/world/terrain/beach.gdshader")
+const TERRAIN_LIGHT_SHADER: Shader = preload(
+	"res://src/world/terrain/terrain_light.gdshader"
+)
 const GRASS_TEXTURE: String = "res://assets/wave1/terrain/fill_grass.png"
 const PALM_TEXTURES: Array[String] = [
 	"res://assets/wave0/props/palm_0.png",
@@ -38,6 +41,12 @@ const ROCK_TEXTURES: Array[String] = [
 const PROP_SCALE: float = 0.5
 ## Props per 1000px of island radius.
 const PROP_DENSITY: float = 14.0
+## Where a prop's shadow falls, and how flat it lies. Same bearing as
+## [constant Ship.SHADOW_OFFSET] and the same sun the terrain and the sea are lit
+## by — one light source or the scene comes apart.
+const PROP_SHADOW_BEARING: Vector2 = Vector2(0.55, 0.83)
+const PROP_SHADOW_SQUASH: float = 0.42
+const PROP_SHADOW_TINT: Color = Color(0.05, 0.06, 0.04, 0.32)
 
 signal captured()
 signal alerted()
@@ -147,22 +156,41 @@ func _build_visuals() -> void:
 	_apply_wet_band(beach)
 	add_child(beach)
 
-	var interior := Polygon2D.new()
-	interior.name = "Interior"
-	interior.polygon = _scaled_outline(INTERIOR_INSET)
-	if (
-		def.biome in [IslandDef.Biome.TROPICAL, IslandDef.Biome.JUNGLE]
-		and ResourceLoader.exists(GRASS_TEXTURE)
-	):
-		interior.texture = load(GRASS_TEXTURE)
-		interior.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-		interior.texture_scale = Vector2(0.6, 0.6)
-		# Jungle reuses the same seamless material with the biome tint doing the
-		# grading. Later biomes remain procedural colours until their own fills land.
-		interior.color = colors["interior"].lightened(0.18)
-	else:
-		interior.color = colors["interior"]
-	add_child(interior)
+	# Grass over the sand, on a line of its own — see [method _vegetation_line].
+	# Order matters and briefly did not: with the beach a solid polygon on the
+	# full outline, drawing it second paints sand over the entire island.
+	#
+	# Two layers, with independent wanders. One polygon however ragged still ends
+	# in a razor edge, and a treeline is not an edge — it is scrub thinning out
+	# into sand over several metres. A translucent seaward layer and an opaque
+	# inland one, each following a different curve, cross over each other and give
+	# the boundary a broken band instead of a line, at the cost of one polygon.
+	for layer: int in 2:
+		var seaward: bool = layer == 0
+		var grass := Polygon2D.new()
+		grass.name = "Scrub" if seaward else "Interior"
+		grass.polygon = _vegetation_line(0.55 if seaward else 1.0, 0 if seaward else 91)
+		grass.z_index = -1
+		if (
+			def.biome in [IslandDef.Biome.TROPICAL, IslandDef.Biome.JUNGLE]
+			and ResourceLoader.exists(GRASS_TEXTURE)
+		):
+			grass.texture = load(GRASS_TEXTURE)
+			grass.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+			grass.texture_scale = Vector2(0.6, 0.6)
+			# Jungle reuses the same seamless material with the biome tint doing
+			# the grading. Later biomes stay procedural until their fills land.
+			grass.color = colors["interior"].lightened(0.18)
+		else:
+			grass.color = colors["interior"]
+		if seaward:
+			grass.color.a = 0.5
+		add_child(grass)
+
+	# Sun and shade over the whole island, sand and grass alike, drawn after both
+	# so it lights them as one piece of ground rather than two polygons that
+	# happen to touch.
+	_build_terrain_light()
 
 	_props = Node2D.new()
 	_props.name = "Props"
@@ -208,12 +236,30 @@ func _scatter_props() -> void:
 		if at.distance_to(_shore_local) < Port.CLEARANCE:
 			continue
 
+		var scale: float = PROP_SCALE * rng.randf_range(0.82, 1.15)
+
+		# A shadow first, so the prop stands on the ground instead of on top of
+		# it. Every ship in the game casts one and nothing on land did, which is
+		# most of why palms read as stickers laid on green.
+		#
+		# The prop's own silhouette, squashed and laid over in the sun's
+		# direction — no new art, and it is the right shape by construction. The
+		# offset is the same bearing the hulls use, because there is one sun.
+		var shadow := Sprite2D.new()
+		shadow.texture = texture
+		shadow.offset = Vector2(0, -texture.get_height() * 0.5)
+		shadow.scale = Vector2(scale, scale * PROP_SHADOW_SQUASH)
+		shadow.position = at + PROP_SHADOW_BEARING * texture.get_height() * scale * 0.16
+		shadow.modulate = PROP_SHADOW_TINT
+		shadow.z_index = -1
+		_props.add_child(shadow)
+
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
 		sprite.position = at
 		# Pivot at the base, per the prop convention in docs/ASSETS.md §0.
 		sprite.offset = Vector2(0, -texture.get_height() * 0.5)
-		sprite.scale = Vector2.ONE * PROP_SCALE * rng.randf_range(0.82, 1.15)
+		sprite.scale = Vector2.ONE * scale
 		sprite.flip_h = rng.randf() < 0.5
 		_props.add_child(sprite)
 
@@ -571,6 +617,87 @@ func contains_point(world_pos: Vector2) -> bool:
 
 func add_prop(node: Node2D) -> void:
 	_props.add_child(node)
+
+
+## Lays the sun over the island. See `terrain_light.gdshader`.
+##
+## On its own polygon rather than as a material on the beach or the grass,
+## because it has to cover both — the light does not stop at the treeline — and
+## because multiplying leaves Godot's own drawing of each surface untouched.
+func _build_terrain_light() -> void:
+	var harmonics: Dictionary = def.outline_harmonics()
+	var material := ShaderMaterial.new()
+	material.shader = TERRAIN_LIGHT_SHADER
+	material.set_shader_parameter("island_radius", def.radius)
+	material.set_shader_parameter("raggedness", def.raggedness)
+	material.set_shader_parameter("lobes", harmonics["lobes"])
+	material.set_shader_parameter("phases", harmonics["phases"])
+
+	var light := Polygon2D.new()
+	light.name = "TerrainLight"
+	light.polygon = outline
+	light.material = material
+	light.z_index = -1
+	add_child(light)
+
+
+## Where the vegetation stops, as its own curve rather than a scaled copy of the
+## coast.
+##
+## It used to be `_scaled_outline(0.78)` — the coastline multiplied by a constant
+## — which meant the sand was exactly the same width everywhere and the boundary
+## between it and the grass was a clean vector line parallel to the shore. Two
+## nested copies of one curve is what it was and what it looked like, and it was
+## the flattest thing left on screen once the water beside it had a graded shore.
+##
+## So the treeline gets harmonics of its own: its own phases, and one octave
+## higher than the coast carries, so it wanders relative to the shore instead of
+## echoing it. On top of that the beach is broadest where the coast cuts in — sand
+## collects where the water is slow and is stripped from headlands where it is
+## not — which comes free from the coast's own lowest lobe.
+##
+## Deliberately still a solid polygon. A ring mesh with the sand fading out
+## across it is the better-looking answer and it was tried twice: Godot fans an
+## indexed `polygons` entry from its first vertex, so every quad spanning the
+## ring came out as two triangles whose alpha disagreed across the shared
+## diagonal, and the island grew a row of dark teeth. Four thinner bands did not
+## fix it and neither did smoothing the width. A clean ragged line beats a soft
+## torn one.
+func _vegetation_line(reach: float = 1.0, salt: int = 0) -> PackedVector2Array:
+	var coast: Dictionary = def.outline_harmonics()
+	var lobes: Vector3 = coast["lobes"]
+	var phases: Vector3 = coast["phases"]
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (def.shape_seed if def.shape_seed != 0 else hash(def.id)) ^ (0x5eed + salt)
+	var own_phase_a: float = rng.randf() * TAU
+	var own_phase_b: float = rng.randf() * TAU
+	var own_lobes_a: float = float(rng.randi_range(3, 5))
+	var own_lobes_b: float = float(rng.randi_range(7, 13))
+
+	var count: int = outline.size()
+	var out := PackedVector2Array()
+	out.resize(count)
+	for i: int in count:
+		var t: float = float(i) / float(count) * TAU
+		var edge: Vector2 = outline[i]
+		var r: float = edge.length()
+
+		# Wide in the bays. The coast's own lowest lobe already says where those
+		# are: negative where it bulges seaward, positive where it cuts in.
+		var bay: float = -sin(t * lobes.x + phases.x)
+		# And a wander of its own, so the line is not a rescaled shore.
+		var wander: float = (
+			sin(t * own_lobes_a + own_phase_a) * 0.62
+			+ sin(t * own_lobes_b + own_phase_b) * 0.38
+		)
+		# Swings kept modest. A first pass at ±0.5 and ±0.42 could nearly double
+		# the band, which on a small island left almost nothing but sand.
+		var band: float = def.radius * (1.0 - INTERIOR_INSET) * reach * clampf(
+			1.0 + 0.34 * bay + 0.26 * wander, 0.45, 1.7
+		)
+		out[i] = edge.normalized() * maxf(r - band, r * 0.55)
+	return out
 
 
 func _scaled_outline(factor: float) -> PackedVector2Array:
