@@ -1,10 +1,10 @@
 extends CanvasLayer
 ## Gameplay HUD.
 ##
-## Everything reachable with one thumb: the ammo cycle button sits bottom-right
-## where a right thumb rests, the minimap bottom-left, and the counters top-left
-## out of the way of both. No control sits in the middle third of the screen,
-## because that is where the player taps to sail.
+## Everything reachable with one thumb: the shot rack sits bottom-right where a
+## right thumb rests, the minimap bottom-left, and the counters top-left out of
+## the way of both. No control sits in the middle third of the screen, because
+## that is where the player taps to sail.
 ##
 ## The layout lives in `hud.tscn`; this script only wires it to state.
 ##
@@ -33,13 +33,41 @@ const HIDEOUT_REFRESH: float = 0.5
 ## one — but it is a button, not a crosshair, and four times a second is plenty.
 const BOARD_REFRESH: float = 0.25
 
+## Short tags under each rack icon.
+##
+## Needed because Fire and Explosive share `icon_fire`, which was invisible while
+## the shot lived behind one cycle button carrying its full name and is an
+## outright ambiguity now that the two sit side by side. Kept to one short word
+## so it fits a 60px slot at a glance-able size — the full name and what the shot
+## is *for* live on the line above the rack, for whichever one is loaded.
+const AMMO_TAGS: Dictionary = {
+	&"round": "ROUND",
+	&"fire": "FIRE",
+	&"explosive": "BLAST",
+	&"chain": "CHAIN",
+	&"grape": "GRAPE",
+}
+
+## Height of the bottom-right column in `hud.tscn`, and the clearance anything
+## floating above it needs. Duplicated from the scene because a Control cannot ask
+## a sibling how tall it is before either has been laid out, and the BOARD prompt
+## has to know — see [method _build_board_button].
+const BOTTOM_COLUMN_HEIGHT: float = 232.0
+const BOTTOM_COLUMN_GAP: float = 10.0
+const BOARD_BUTTON_HEIGHT: float = 72.0
+
+## Breathing room inside the Hideout card, matching the title screen's buttons —
+## a card that draws its own label needs the padding a StyleBoxFlat leaves to the
+## control by default.
+const HIDEOUT_PADDING: float = 10.0
+
 const ICON_ANCHOR: Texture2D = preload("res://assets/wave1/icons/icon_anchor.png")
 const ICON_WHEEL: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
 
 @onready var _gold_label: Label = %GoldLabel
 @onready var _diamond_label: Label = %DiamondLabel
-@onready var _ammo_button: Button = %AmmoButton
-@onready var _ammo_count: Label = %AmmoCount
+@onready var _ammo_rack: HBoxContainer = %AmmoRack
+@onready var _ammo_role: Label = %AmmoRole
 @onready var _fleet_label: Label = %FleetLabel
 @onready var _fleet_button: Button = %FleetButton
 @onready var _hideout_button: Button = %HideoutButton
@@ -54,6 +82,9 @@ var _board_button: Button
 var _board_left: float = 0.0
 var _fleet: FleetController = null
 var _archipelago: Archipelago = null
+## One button per shot type, keyed by ammo id, and the stock label inside each.
+var _ammo_buttons: Dictionary = {}
+var _ammo_stocks: Dictionary = {}
 
 
 func _ready() -> void:
@@ -70,10 +101,21 @@ func _ready() -> void:
 	EventBus.treasure_dug.connect(_on_treasure_dug)
 	EventBus.ship_sunk.connect(_on_ship_sunk)
 
-	_ammo_button.pressed.connect(_on_ammo_pressed)
-	Wave1UI.apply_brass(_ammo_button)
+	EventBus.ammo_changed.connect(_on_ammo_changed)
+	_build_ammo_rack()
 	_hideout_button.pressed.connect(_on_hideout_pressed)
-	Wave1UI.apply_brass(_hideout_button)
+	# The card vocabulary, matching the shot rack under it and the fleet badge
+	# above it. Featured, because it is the one the HUD wants read first of the
+	# three — but a card, not brass.
+	#
+	# It was the solid brass pill, which stopped making sense the moment the rack
+	# arrived: brass is the loudest shape the vocabulary has and is meant to be at
+	# most one per screen, and a permanent navigation button had quietly claimed
+	# it. The BOARD prompt is the thing in this HUD that genuinely fits the
+	# description — the action that is not a choice between options — and it now
+	# has the treatment to itself, appearing in brass for the few seconds a prize
+	# is alongside and never competing with anything.
+	Wave1UI.apply_card(_hideout_button, true, HIDEOUT_PADDING)
 	Wave1UI.set_icon(_hideout_button, ICON_ANCHOR, 26)
 	_fleet_button.pressed.connect(_on_fleet_pressed)
 
@@ -134,9 +176,22 @@ func _build_wind_indicator() -> void:
 ## game for the few seconds it is not.
 ##
 ## Built here rather than in `hud.tscn` because it is the only control that comes
-## and goes, and a scene file makes something look permanent. It sits above the
-## ammo button, in the same right-thumb column, so the hand that is already
-## cycling shot does not have to travel to take a prize.
+## and goes, and a scene file makes something look permanent. It sits directly
+## above the bottom-right column, in the same right-thumb reach, so the hand that
+## is already on the shot rack does not have to travel to take a prize.
+##
+## Kept in brass, and now the only thing in the HUD that is. Brass is the loudest
+## shape the vocabulary has and is meant to be at most one per screen; the Hideout
+## button had been quietly holding it for a permanent navigation action, which
+## left nothing louder for the one prompt that is genuinely urgent and genuinely
+## brief. This is the action that is not a choice between options.
+##
+## Its offsets are set against the column's own top edge rather than picked by
+## eye: it used to be pinned at -232, which was clear of the column when that
+## column was 194 tall and directly on top of the Hideout card once the shot rack
+## made it 232. A floating control positioned by a constant that silently depends
+## on another control's height is a collision waiting for the next layout change,
+## so the constant is shared now.
 func _build_board_button() -> void:
 	_board_button = Button.new()
 	_board_button.name = "BoardButton"
@@ -144,9 +199,9 @@ func _build_board_button() -> void:
 	_board_button.focus_mode = Control.FOCUS_NONE
 	_board_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_board_button.offset_left = -228.0
-	_board_button.offset_top = -232.0
+	_board_button.offset_bottom = -(BOTTOM_COLUMN_HEIGHT + BOTTOM_COLUMN_GAP)
+	_board_button.offset_top = _board_button.offset_bottom - BOARD_BUTTON_HEIGHT
 	_board_button.offset_right = -24.0
-	_board_button.offset_bottom = -160.0
 	_board_button.pressed.connect(_on_board_pressed)
 	_root.add_child(_board_button)
 	Wave1UI.apply_brass(_board_button)
@@ -294,24 +349,128 @@ func _refresh_all() -> void:
 	_refresh_fleet()
 
 
-## The ammo button carries the shot's *purpose*, not just its name.
+## Every shot type is a button, and the loaded one is lit.
 ##
-## Five options behind one cycle button is only a decision if the player can tell
-## what each one is for. "Chain Shot" teaches nothing; "shreds sails" teaches the
-## whole mechanic. The colour matches the ball in flight, so the button and the
-## thing it fires are visibly the same object.
+## This used to be a single button that cycled. Cycling hides the thing that
+## makes shot selection a decision: you could not see what you had, what it was
+## for, or how much of it was left without tapping through all five and counting.
+## Worse, choosing under fire cost up to four taps, so in practice the answer was
+## always "whatever is already loaded" — which meant round shot, forever, and the
+## other four might as well not have existed.
+##
+## A rack of five fixes all of it at once. What you own, what is empty, and what
+## is loaded are all readable without touching anything, and any of them is one
+## tap away.
+func _build_ammo_rack() -> void:
+	for id: StringName in AmmoLibrary.ORDER:
+		var ammo: AmmoType = AmmoLibrary.get_ammo(id)
+		var button := Button.new()
+		button.name = "Ammo_%s" % id
+		button.custom_minimum_size = Vector2(62, 78)
+		button.tooltip_text = "%s — %s" % [ammo.display_name, ammo.role]
+		# Vertical: icon over tag over stock. A Button lays its own icon out
+		# beside its text, so the contents are a child box and the button is left
+		# as the frame and the hit area.
+		button.pressed.connect(_on_ammo_pressed.bind(id))
+
+		var box := VBoxContainer.new()
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Inset from the frame, by enough to clear the *brass* bezel rather than
+		# the card's hairline border. A plain full-rect preset put the contents
+		# hard against the frame, which clipped the stock count off the bottom of
+		# whichever slot was lit and pushed its tag into the icon. The cards get
+		# the same inset so the five slots stay identical whichever one is loaded.
+		box.set_anchors_and_offsets_preset(
+			Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 9
+		)
+		box.alignment = BoxContainer.ALIGNMENT_CENTER
+		box.add_theme_constant_override("separation", 1)
+
+		var icon := TextureRect.new()
+		icon.texture = ammo.icon
+		icon.custom_minimum_size = Vector2(24, 24)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(icon)
+
+		# Fire and Explosive share one icon, so on a rack the picture alone is
+		# ambiguous where on a cycle button the name carried it. The tag is what
+		# tells them apart at a glance.
+		var tag := Label.new()
+		tag.text = AMMO_TAGS.get(id, String(id).to_upper())
+		tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tag.add_theme_font_size_override("font_size", 10)
+		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(tag)
+
+		var stock := Label.new()
+		stock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		stock.add_theme_font_size_override("font_size", 12)
+		stock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(stock)
+
+		button.add_child(box)
+		_ammo_rack.add_child(button)
+		_ammo_buttons[id] = button
+		_ammo_stocks[id] = stock
+
+
+## Repaints the rack: which is loaded, which is empty, and how much is left.
+##
+## The loaded slot gets [method Wave1UI.apply_card_selected] — a warm fill against
+## the cold navy of the other four, plus a full-strength gold edge — and the rest
+## are dimmed to two-thirds. Three cues rather than one, because any of them alone
+## is arguable and together they are not: hue, brightness and border each carry on
+## their own, so the answer survives a phone in daylight and survives a player who
+## cannot separate two shades of gold.
+##
+## Not [method Wave1UI.apply_brass], which was the first attempt. Solid brass is
+## the loudest thing the button vocabulary has and is reserved for the action that
+## is *not* a choice between options — and beyond the vocabulary it simply did not
+## fit: the brass is a nine-patch cut as a wide pill, and squeezed into a 62px
+## square it rendered as a narrow capsule with its own contents clipped.
 func _refresh_ammo() -> void:
-	var ammo: AmmoType = AmmoLibrary.get_ammo(GameState.selected_ammo)
-	_ammo_button.text = "%s\n%s" % [ammo.display_name, ammo.role]
-	if ammo.icon != null:
-		Wave1UI.set_icon(_ammo_button, ammo.icon, 38)
-	_ammo_button.add_theme_color_override("font_color", ammo.tint)
-	_ammo_count.add_theme_color_override("font_color", ammo.tint)
-	if ammo.unlimited:
-		_ammo_count.text = "∞"
-	else:
-		var stock: int = GameState.get_ammo(ammo.id)
-		_ammo_count.text = "%d left" % stock
+	var selected: StringName = GameState.selected_ammo
+	for id: StringName in AmmoLibrary.ORDER:
+		var ammo: AmmoType = AmmoLibrary.get_ammo(id)
+		var button: Button = _ammo_buttons[id]
+		var stock: int = GameState.get_ammo(id)
+		var empty: bool = not ammo.unlimited and stock <= 0
+		var live: bool = id == selected
+
+		if live:
+			Wave1UI.apply_card_selected(button)
+		else:
+			Wave1UI.apply_card(button)
+		button.disabled = empty and not live
+		if live:
+			button.modulate = Color.WHITE
+		elif empty:
+			button.modulate = Color(1, 1, 1, 0.4)
+		else:
+			button.modulate = Color(1, 1, 1, 0.66)
+
+		var label: Label = _ammo_stocks[id]
+		label.text = "∞" if ammo.unlimited else str(stock)
+		# The tint is the colour of the ball in flight, so a rack slot and the
+		# thing it fires are visibly the same object.
+		for child: Node in button.get_child(0).get_children():
+			if child is Label:
+				(child as Label).add_theme_color_override("font_color", ammo.tint)
+			elif child is TextureRect:
+				(child as TextureRect).modulate = ammo.tint
+
+	# The one line of prose. "Chain Shot" teaches nothing; "shreds sails" teaches
+	# the whole mechanic, and there is only room to say it about the loaded one.
+	var current: AmmoType = AmmoLibrary.get_ammo(selected)
+	_ammo_role.text = "%s — %s" % [current.display_name, current.role]
+	_ammo_role.add_theme_color_override("font_color", current.tint)
+	# Outlined, because it is the one thing in this corner with no card behind it.
+	# Pale ink on open water is fine and pale ink over a sunlit beach is not, and
+	# the HUD does not get to choose which the player is sailing past.
+	_ammo_role.add_theme_constant_override("outline_size", 4)
+	_ammo_role.add_theme_color_override("font_outline_color", Color(0.02, 0.05, 0.08, 0.85))
 
 
 ## "hulls afloat / hulls owned".
@@ -352,8 +511,15 @@ func _on_diamonds_changed(total: int, _delta: int) -> void:
 	_diamond_label.text = str(total)
 
 
-func _on_ammo_pressed() -> void:
-	EventBus.intent_cycle_ammo.emit()
+func _on_ammo_pressed(id: StringName) -> void:
+	EventBus.intent_select_ammo.emit(id)
+	# Not refreshed here. The fleet controller decides whether the order is
+	# actually carried out — an empty rack slot is refused — and it announces the
+	# result on `ammo_changed`, so refreshing off the press would show a shot
+	# loaded that is not.
+
+
+func _on_ammo_changed(_id: StringName) -> void:
 	_refresh_ammo()
 
 

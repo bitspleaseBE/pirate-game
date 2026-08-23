@@ -18,6 +18,10 @@ signal intent_dig(island: Node2D)
 ## hideout when the fleet gets there.
 signal intent_sail_home()
 signal intent_cycle_ammo()
+## "Load this shot." One rack button, named. Distinct from the cycle above rather
+## than replacing it: cycling is still the right verb for a keyboard or gamepad
+## binding, where there is nothing to point at.
+signal intent_select_ammo(id: StringName)
 ## "Put a party over the side onto that." Only ever emitted while
 ## [method FleetController.boarding_candidate] has something to offer.
 signal intent_board(entity: Node2D)
@@ -62,6 +66,10 @@ signal loot_collected(loot: Dictionary)
 signal gold_changed(new_total: int, delta: int)
 signal diamonds_changed(new_total: int, delta: int)
 signal fleet_changed()
+## The loaded shot changed, by whichever route. The rack listens rather than
+## refreshing itself off its own button press, because stock also falls as the
+## guns fire and a shot can run dry with nobody having touched the HUD.
+signal ammo_changed(id: StringName)
 signal voyage_started(seed_value: int)
 signal voyage_completed()
 signal fleet_wiped()

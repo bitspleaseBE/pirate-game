@@ -82,7 +82,20 @@ const ISLAND_RADIUS_RANGE: Vector2 = Vector2(320.0, 560.0)
 ## could make it tier 2 *or* 3, and tier 2 meant a Navy Sloop and a skiff at once
 ## against a one-gun Dinghy. It is now always tier 2, and tier 2 is one warship —
 ## see [method SpawnDirector._hull_for_tier].
-const TIER_LADDER: Array[int] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5]
+##
+## There are now three tier-2 islands rather than two, and the reason is the step
+## *after* them. Tier 3 does not add one thing, it adds four at once: a second
+## defender, the fireship — the first enemy that is not a gun duel at all — the
+## first shore battery, and a shipyard feeding reinforcements in for as long as it
+## stands. That is the same mistake the paragraph above describes at island two,
+## made again three islands later, and `--ladder` was being wiped there about half
+## the time in a Sloop.
+##
+## One more duel is the cheapest possible fix and the one that fits what is
+## already here: it is another chest, so the player meets that island in a Brig or
+## a Sloop with most of a tree bought, and it costs a tier-4 island rather than
+## lengthening the voyage.
+const TIER_LADDER: Array[int] = [1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5]
 const MAX_PLACEMENT_ATTEMPTS: int = 60
 
 var defs: Array[IslandDef] = []

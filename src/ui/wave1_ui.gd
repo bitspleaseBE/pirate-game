@@ -35,6 +35,11 @@ const CARD_EDGE: Color = Color(0.353, 0.310, 0.220)
 const CARD_EDGE_OFF: Color = Color(0.196, 0.239, 0.278)
 const CARD_EDGE_FEATURED: Color = Color(0.851, 0.631, 0.173, 0.55)
 const CARD_EDGE_FEATURED_OFF: Color = Color(0.851, 0.631, 0.173, 0.28)
+## The *on* state — see [method apply_card_selected]. A warm fill against the
+## cold navy of every other card, and a gold edge at full strength rather than
+## the featured edge's half.
+const CARD_BG_SELECTED: Color = Color(0.207, 0.149, 0.063)
+const CARD_EDGE_SELECTED: Color = Color(0.941, 0.769, 0.325)
 const CARD_EDGE_HOVER: Color = Color(0.941, 0.753, 0.290, 0.9)
 const CARD_EDGE_FOCUS: Color = Color(0.941, 0.753, 0.290, 0.75)
 ## What an icon fades to on a dead control, matching the port's dead icon tiles.
@@ -113,6 +118,26 @@ static func apply_card(
 	button.add_theme_color_override("icon_disabled_color", ICON_OFF)
 	button.add_theme_constant_override("outline_size", 0)
 	button.add_theme_constant_override("h_separation", 10)
+
+
+## The one that is currently *on*, in a set where exactly one always is.
+##
+## Distinct from [method apply_card]'s `featured`, which marks the option a screen
+## wants read first — that is a recommendation. This is a state. The HUD's shot
+## rack always has exactly one slot loaded, and the player has to be able to find
+## it in a glance mid-fight rather than by comparing five borders to each other,
+## so the difference is a warm fill against cold navy as well as a brighter edge.
+##
+## Deliberately not [method apply_primary]. Solid brass is the loudest shape the
+## vocabulary has and is reserved for the action that is not a choice between
+## options; a rack of five is nothing but a choice between options.
+static func apply_card_selected(button: Button) -> void:
+	for state: String in ["normal", "hover", "focus", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(
+			state, _card_style(CARD_BG_SELECTED, CARD_EDGE_SELECTED, 2, 0.0)
+		)
+	button.add_theme_color_override("font_color", INK_FEATURED)
+	button.add_theme_constant_override("outline_size", 0)
 
 
 ## The one solid brass shape on a screen: the action that is not a choice between

@@ -9,6 +9,7 @@ extends Node2D
 ## problem, for an identical image.
 
 const SHADER: Shader = preload("res://src/world/ocean/ocean.gdshader")
+const SEABED_TEXTURE: String = "res://assets/wave0/terrain/fill_sand.png"
 
 ## Slight overdraw so a fast camera never shows a seam at the screen edge.
 const OVERDRAW: float = 1.02
@@ -40,11 +41,11 @@ const TIME_ROLLOVER: float = 3600.0
 ## shorter than a hull, and a ship does not rise to chop it spans — it sits
 ## through it. Skipping them also keeps this to three sines per ship per frame.
 const SWELL: Array[Vector4] = [
-	Vector4(0.00, 0.0057, 1.0000, 0.42),
-	Vector4(-0.47, 0.0101, 0.4290, 0.56),
-	Vector4(0.68, 0.0165, 0.2000, 0.72),
+	Vector4(0.00, 0.00570, 1.0000, 0.42),
+	Vector4(-0.41, 0.00982, 0.5224, 0.55),
+	Vector4(0.63, 0.01340, 0.3446, 0.64),
 ]
-const SWELL_TOTAL: float = 1.6290
+const SWELL_TOTAL: float = 1.8670
 
 ## The live Ocean, for [method sample]. There is exactly one sea.
 static var instance: Ocean = null
@@ -60,6 +61,13 @@ var _material: ShaderMaterial
 ## One Vector4 per island: xy = centre, z = mean radius, w = shelf width.
 var _all_shoals: PackedVector4Array = PackedVector4Array()
 var _shoals: PackedVector4Array = PackedVector4Array()
+## The coastline harmonics, index-aligned with `_all_shoals` / `_shoals`. See
+## [method IslandDef.outline_harmonics] — the shader reproduces the same curve so
+## the shallows follow the real coast rather than a circle drawn through it.
+var _all_lobes: PackedVector4Array = PackedVector4Array()
+var _all_phases: PackedVector4Array = PackedVector4Array()
+var _lobes: PackedVector4Array = PackedVector4Array()
+var _phases: PackedVector4Array = PackedVector4Array()
 var _last_shoal_center: Vector2 = Vector2.INF
 
 var _time: float = 0.0
@@ -73,6 +81,10 @@ func _ready() -> void:
 
 	_material = ShaderMaterial.new()
 	_material.shader = SHADER
+	# The same tile [Island] lays on its beach. See the shader's note on why the
+	# seabed and the sand above the waterline must not be two different materials.
+	if ResourceLoader.exists(SEABED_TEXTURE):
+		_material.set_shader_parameter("seabed_texture", load(SEABED_TEXTURE))
 
 	_surface = ColorRect.new()
 	_surface.name = "Surface"
@@ -81,6 +93,8 @@ func _ready() -> void:
 	add_child(_surface)
 
 	_shoals.resize(MAX_SHOALS)
+	_lobes.resize(MAX_SHOALS)
+	_phases.resize(MAX_SHOALS)
 
 	Quality.tier_changed.connect(_on_quality_changed)
 	_apply_quality()
@@ -156,6 +170,8 @@ func swell_at(p: Vector2) -> Vector3:
 func _set_archipelago(value: Archipelago) -> void:
 	archipelago = value
 	_all_shoals.clear()
+	_all_lobes.clear()
+	_all_phases.clear()
 	_last_shoal_center = Vector2.INF
 	if archipelago == null:
 		return
@@ -172,6 +188,11 @@ func _set_archipelago(value: Archipelago) -> void:
 				maxf(SHOAL_WIDTH_MIN, radius * SHOAL_WIDTH_FACTOR)
 			)
 		)
+		var harmonics: Dictionary = island.def.outline_harmonics()
+		var lobes: Vector3 = harmonics["lobes"]
+		var phases: Vector3 = harmonics["phases"]
+		_all_lobes.append(Vector4(lobes.x, lobes.y, lobes.z, island.def.raggedness))
+		_all_phases.append(Vector4(phases.x, phases.y, phases.z, 0.0))
 
 
 ## Hands the shader the islands nearest the camera.
@@ -199,7 +220,11 @@ func _update_shoals(center: Vector2) -> void:
 	var count: int = mini(order.size(), MAX_SHOALS)
 	for slot: int in count:
 		_shoals[slot] = _all_shoals[order[slot]]
+		_lobes[slot] = _all_lobes[order[slot]]
+		_phases[slot] = _all_phases[order[slot]]
 	_material.set_shader_parameter("shoals", _shoals)
+	_material.set_shader_parameter("shoal_lobes", _lobes)
+	_material.set_shader_parameter("shoal_phase", _phases)
 	_material.set_shader_parameter("shoal_count", count)
 
 

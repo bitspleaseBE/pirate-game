@@ -58,6 +58,7 @@ func _ready() -> void:
 	EventBus.intent_target.connect(_on_intent_target)
 	EventBus.intent_select_ship.connect(_on_intent_select)
 	EventBus.intent_cycle_ammo.connect(_on_intent_cycle_ammo)
+	EventBus.intent_select_ammo.connect(_on_intent_select_ammo)
 	EventBus.intent_board.connect(_on_intent_board)
 
 
@@ -324,11 +325,28 @@ func _on_intent_select(ship: Node2D) -> void:
 
 
 func _on_intent_cycle_ammo() -> void:
-	GameState.selected_ammo = AmmoLibrary.next_available(GameState.selected_ammo)
-	var ammo: AmmoType = AmmoLibrary.get_ammo(GameState.selected_ammo)
+	_load_ammo(AmmoLibrary.next_available(GameState.selected_ammo))
+
+
+## Loads a named shot, if there is any of it.
+##
+## The stock check is here rather than in the HUD because the rack is not the
+## only way in — a shot can run dry while it is the one selected, and the answer
+## has to be the same whoever asked.
+func _on_intent_select_ammo(id: StringName) -> void:
+	var ammo: AmmoType = AmmoLibrary.get_ammo(id)
+	if not ammo.unlimited and GameState.get_ammo(id) <= 0:
+		return
+	_load_ammo(id)
+
+
+func _load_ammo(id: StringName) -> void:
+	GameState.selected_ammo = id
+	var ammo: AmmoType = AmmoLibrary.get_ammo(id)
 	for entry: Variant in ships:
 		if is_instance_valid(entry):
 			(entry as Ship).loaded_ammo = ammo
+	EventBus.ammo_changed.emit(id)
 	Audio.play_ui(&"ui_tap")
 
 
