@@ -204,6 +204,16 @@ const WAKE_FOAM_FRAMES: Array[Texture2D] = [
 
 @export var stats: ShipStats
 @export var team: int = Teams.PLAYER
+## Whose colours this hull flies. Set before the ship enters the tree —
+## [SpawnDirector] does it for defenders, [FleetController] for the player's own.
+##
+## [member team] is still what decides who may shoot whom; this is identity, not
+## allegiance. Two hulls under different flags are both simply "the enemy" to the
+## physics and the targeting, and the difference between them — how they fight,
+## what they are worth — has already been folded into [member stats] by
+## [method Faction.build]. What is left is the part the player has to be able to
+## read from a thousand units away, which is the flag.
+var faction: Faction = null
 
 var hull: float = 1.0
 var sails: float = 1.0
@@ -263,6 +273,7 @@ var _hull_sprite: Sprite2D = null
 var _ship_shadow: Sprite2D = null
 var _bow_foam: AnimatedSprite2D = null
 var _sail: SailCanvas = null
+var _ensign: Ensign = null
 ## Yard angle, eased toward its target so the crew appear to haul rather than the
 ## sail snapping to the wind vector.
 var _brace: float = 0.0
@@ -1286,7 +1297,36 @@ func _build_ship_art() -> void:
 	visual.move_child(_bow_foam, 1)
 
 	_build_rig(visual)
+	_build_ensign(visual)
 	_update_ship_art_visibility()
+
+
+## Bends the faction's colours on at the stern.
+##
+## Every hull gets one, including the player's and including oared boats: a war
+## canoe flies a scrap of cloth off a paddle, and the point of the thing is that
+## the player can tell what they are looking at before it is in range. A ship with
+## no faction set falls back to no colours, which is grey and reads correctly as
+## "nobody's", rather than to an arbitrary flag.
+##
+## Above the hull and below the sail in z. From overhead the canvas is the thing
+## you would see, and a pennant drawn over the top of it would be a small bright
+## shape sitting on a large pale one — legible, and wrong.
+func _build_ensign(visual: Node2D) -> void:
+	var colours: Faction = faction
+	if colours == null:
+		colours = FactionLibrary.get_faction(
+			&"player" if team == Teams.PLAYER else &"neutral"
+		)
+
+	_ensign = Ensign.new()
+	_ensign.name = "Ensign"
+	_ensign.set_hull_size(stats.hull_radius)
+	_ensign.set_colours(colours.flag_field, colours.flag_charge)
+	# The same sun the hull, the sail and the land are lit by.
+	_ensign.shadow_offset = SHADOW_OFFSET
+	_ensign.z_index = 1
+	visual.add_child(_ensign)
 
 
 ## Steps the mast and bends the sail, on hulls that have one.
@@ -1326,6 +1366,11 @@ func _build_rig(visual: Node2D) -> void:
 func _update_ship_art_visibility() -> void:
 	if _ship_shadow != null:
 		_ship_shadow.visible = Quality.shadow_mode >= 1
+	if _ensign != null:
+		# A flag is twenty pixels of decoration. At reduced detail it is not worth
+		# a redraw, let alone a wind lookup, and at that range it is not legible
+		# anyway — which is the only thing it exists to be.
+		_ensign.set_showing(lod == Cull.Lod.FULL)
 	if _bow_foam != null:
 		var speed_fraction: float = velocity.length() / maxf(1.0, stats.max_speed)
 		var should_show: bool = (

@@ -15,9 +15,20 @@ const ART_SKIFF: String = "res://assets/wave0/ships/hull_skiff.png"
 const SLOOP_NOMINAL_WIDTH: float = 96.0
 const SKIFF_NOMINAL_WIDTH: float = 56.0
 ## Small hulls that borrow the skiff master rather than the sloop's.
-const SKIFF_ART_HULLS: Array[StringName] = [&"skiff", &"fireship"]
+const SKIFF_ART_HULLS: Array[StringName] = [
+	&"skiff", &"fireship", &"war_canoe", &"war_raft",
+]
 
 const PLAYER_ORDER: Array[StringName] = [&"dinghy", &"sloop", &"brig", &"galleon"]
+
+## Every hull an island can put on the water. Only used to find the flimsiest one
+## — see [method weakest_enemy] — but that is a real job: the no-one-shot-kills
+## invariant was written against the Skiff by name, so the first hull added below
+## it went unchecked, which is exactly what happened when the canoes landed.
+const ENEMY_HULLS: Array[StringName] = [
+	&"war_canoe", &"war_raft", &"skiff", &"fireship", &"navy_cutter", &"enemy_sloop",
+	&"enemy_brig", &"bomb_ketch",
+]
 
 const PATHS: Dictionary = {
 	&"dinghy": "res://assets/data/ships/dinghy.tres",
@@ -25,6 +36,9 @@ const PATHS: Dictionary = {
 	&"brig": "res://assets/data/ships/brig.tres",
 	&"galleon": "res://assets/data/ships/galleon.tres",
 	&"skiff": "res://assets/data/ships/skiff.tres",
+	&"war_canoe": "res://assets/data/ships/war_canoe.tres",
+	&"war_raft": "res://assets/data/ships/war_raft.tres",
+	&"navy_cutter": "res://assets/data/ships/navy_cutter.tres",
 	&"enemy_sloop": "res://assets/data/ships/enemy_sloop.tres",
 	&"enemy_brig": "res://assets/data/ships/enemy_brig.tres",
 	&"fireship": "res://assets/data/ships/fireship.tres",
@@ -82,6 +96,19 @@ static func next_tier(id: StringName) -> StringName:
 	if idx < 0 or idx >= PLAYER_ORDER.size() - 1:
 		return &""
 	return PLAYER_ORDER[idx + 1]
+
+
+## The flimsiest thing the player will ever be asked to shoot at.
+##
+## The one-ball-may-not-kill rule is checked against this, so it has to be found
+## rather than named. See [constant ENEMY_HULLS].
+static func weakest_enemy() -> ShipStats:
+	var weakest: ShipStats = get_stats(&"skiff")
+	for id: StringName in ENEMY_HULLS:
+		var s: ShipStats = get_stats(id)
+		if s.max_hull < weakest.max_hull:
+			weakest = s
+	return weakest
 
 
 static func clear_cache() -> void:
@@ -177,6 +204,80 @@ static func _fallback(id: StringName) -> ShipStats:
 			# it is frightening in a pack and pathetic alone.
 			s.engage_range_mul = 0.34
 			s.accent_color = Color(0.82, 0.62, 0.55)
+		&"war_canoe":
+			# The first thing the player ever fights, and deliberately not a ship.
+			#
+			# No sails, no guns, no reach: a hollowed log with an outrigger and two
+			# people with bows in it. Everything about it says "there will be more
+			# of these" — it is fast, it turns on the spot, it presses to knife
+			# range, and one of them alone is an embarrassment rather than a
+			# threat. Which is the lesson: the tribes are a formation problem, not
+			# a gunnery one.
+			#
+			# There is no art for it yet, so it borrows the skiff master at canoe
+			# scale and takes a jungle tint. That is a stand-in and it is meant to
+			# be replaced — see docs/ASSETS.md.
+			s.display_name = "War Canoe"
+			s.propulsion = ShipStats.Propulsion.OAR
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.doctrine = ShipStats.Doctrine.SWARM
+			s.hull_grip = 5.0
+			s.tier = 1
+			# Two round shot from a Dinghy, same as a Skiff. Held above what one
+			# fire ball can do on its own — see Voyage._check_lethality, which now
+			# finds this hull by itself rather than being told about it.
+			s.max_hull = 26.0
+			s.max_sails = 12.0
+			s.max_cannons_health = 12.0
+			s.max_speed = 128.0
+			s.acceleration = 72.0
+			s.turn_rate_deg = 104.0
+			# Archers, not a gun deck. They shoot from wherever they are sitting,
+			# which is why the arc is nearly twice a warship's — a canoe never has
+			# to manoeuvre for a firing solution and the player cannot get behind
+			# it. What the player *can* do is stay outside 300 units, and against a
+			# hull this fast that means keeping moving.
+			s.cannons_per_side = 1
+			s.cannon_range = 300.0
+			s.broadside_arc_deg = 95.0
+			s.reload_time = 2.6
+			s.base_damage = 5.0
+			s.engage_range_mul = 0.55
+			s.hull_radius = 22.0
+			s.tonnage = 18.0
+			s.bounty_gold = 9
+			s.accent_color = Color(0.62, 0.72, 0.48)
+		&"war_raft":
+			# The double raft: two hulls lashed together with a platform between
+			# them and half a village standing on it. Slower and far tougher than a
+			# canoe, and it carries enough archers to actually hurt.
+			#
+			# It exists so the tribes escalate in *kind* as well as in number over
+			# their three islands, rather than the second island simply being the
+			# first one twice. Also a stand-in on the skiff master.
+			s.display_name = "War Raft"
+			s.propulsion = ShipStats.Propulsion.OAR
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.doctrine = ShipStats.Doctrine.LINE
+			s.hull_grip = 3.6
+			s.tier = 2
+			s.max_hull = 62.0
+			s.max_sails = 16.0
+			s.max_cannons_health = 20.0
+			# Paddled by a crowd, and it shows: it cannot run anything down and it
+			# cannot get away either. A raft is a thing you choose to engage.
+			s.max_speed = 82.0
+			s.acceleration = 40.0
+			s.turn_rate_deg = 52.0
+			s.cannons_per_side = 2
+			s.cannon_range = 340.0
+			s.broadside_arc_deg = 85.0
+			s.reload_time = 2.9
+			s.base_damage = 6.0
+			s.hull_radius = 30.0
+			s.tonnage = 55.0
+			s.bounty_gold = 22
+			s.accent_color = Color(0.58, 0.66, 0.44)
 		&"fireship":
 			# Not a warship: a hull packed with powder and steered by men who plan
 			# to swim home. It has no guns at all, so nothing about it is a duel —
@@ -240,6 +341,37 @@ static func _fallback(id: StringName) -> ShipStats:
 			s.tonnage = 110.0
 			s.bounty_gold = 70
 			s.accent_color = Color(0.7, 0.68, 0.58)
+		&"navy_cutter":
+			# The light end of a navy, and the hull that makes faction rosters
+			# possible at all.
+			#
+			# A roster is walked in order and an island's garrison takes the first
+			# N of it, so a roster made entirely of warships means every step up in
+			# garrison size is a step up by a whole warship. The old per-tier mix
+			# solved that by padding with skiffs and fireships; a navy cannot field
+			# either, so it fields this — a single-gun tender that escorts, carries
+			# despatches, and dies quickly. Same job the Skiff does for the pirates,
+			# with discipline instead of desperation: it holds the line rather than
+			# knifing in, so it is a LINE hull and it stays at proper range.
+			s.display_name = "Cutter"
+			s.propulsion = ShipStats.Propulsion.SAIL
+			s.rig = ShipStats.Rig.FORE_AFT
+			s.hull_grip = 3.6
+			s.tier = 1
+			s.max_hull = 52.0
+			s.max_sails = 38.0
+			s.max_cannons_health = 26.0
+			s.max_speed = 118.0
+			s.acceleration = 52.0
+			s.turn_rate_deg = 72.0
+			s.cannons_per_side = 1
+			s.cannon_range = 540.0
+			s.reload_time = 2.8
+			s.base_damage = 11.0
+			s.hull_radius = 36.0
+			s.tonnage = 60.0
+			s.bounty_gold = 26
+			s.accent_color = Color(0.8, 0.82, 0.86)
 		&"enemy_brig":
 			s.display_name = "Navy Brig"
 			s.propulsion = ShipStats.Propulsion.SAIL

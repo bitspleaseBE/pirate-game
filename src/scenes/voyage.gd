@@ -2627,6 +2627,17 @@ func _on_fleet_emptied() -> void:
 ## part of a thousand metres apart, which was enough — once the islands were
 ## packed closer together — for the nearest island *to the player* to be a
 ## different island from the nearest one to home.
+## Ceilings on the first two islands, as a share of one Crown Navy Sloop — see
+## [method _reference_threat].
+##
+## The opening island is a Dinghy with one gun a side against whatever is there,
+## so it gets a fraction of a warship: enough to be a fight, not enough to be a
+## wipe. The second is the player's first proper duel and is allowed to be worth
+## about one warship, however many hulls that is spread across.
+const OPENING_THREAT_SHARE: float = 0.60
+const SECOND_THREAT_SHARE: float = 1.10
+
+
 func _check_opening_island() -> PackedStringArray:
 	var out: PackedStringArray = []
 	if archipelago.home == null:
@@ -2660,9 +2671,61 @@ func _check_opening_island() -> PackedStringArray:
 			"nearest island to home is tier %d (%s) — the opening island was not placed"
 			% [nearest.def.tier, nearest.def.display_name]
 		)
-	if nearest.def.garrison_ships > 1:
-		out.append("opening island fields %d defenders" % nearest.def.garrison_ships)
+	var threat: float = _garrison_threat(nearest.def)
+	var reference: float = _reference_threat()
+	if threat > reference * OPENING_THREAT_SHARE:
+		out.append(
+			"opening island fields %d defenders worth %.0f threat — no more than %.0f"
+			% [
+				nearest.def.garrison_ships,
+				threat,
+				reference * OPENING_THREAT_SHARE,
+			]
+		)
 	return out
+
+
+## What a garrison is actually worth, in one number.
+##
+## Hull count used to be the measure, and factions retired it: two war canoes and
+## one Crown Navy Sloop are both "one more hull than the island before", and one
+## of them is a quarter of the fight the other is. The unit that survived the
+## change is how much of the player the garrison can take away — timber to chew
+## through, plus damage aimed back over the length of a fight.
+##
+## Rough on purpose. It cannot model doctrine, positioning or the wind, and it is
+## not trying to: it is a tripwire on the shape of the ramp, and the numbers it
+## produces mean nothing except relative to each other.
+func _garrison_threat(def: IslandDef) -> float:
+	## Seconds of exposure a fight is priced over. A fight is not this long; what
+	## matters is the ratio between hull and rate of fire, and this is the number
+	## that puts the two on comparable footing at the scale the game is balanced
+	## at.
+	const EXPOSURE: float = 12.0
+	var faction: Faction = FactionLibrary.get_faction(def.faction)
+	var total: float = 0.0
+	for i: int in def.garrison_ships:
+		var s: ShipStats = faction.build(SpawnDirector.hull_for(def, i))
+		total += s.max_hull
+		total += float(s.cannons_per_side) * s.base_damage / maxf(s.reload_time, 0.1) * EXPOSURE
+		# A fireship has no guns and is still the most dangerous thing on a tier-3
+		# island. Its whole cost is paid in one moment, so it is counted whole.
+		total += s.detonation_damage
+	return total
+
+
+## One Crown Navy Sloop: the yardstick every other garrison is measured against.
+##
+## Named rather than numeric, so the invariants below track the balance instead
+## of freezing a number from the day they were written. It is the right yardstick
+## because it is the game's definition of "one proper warship" — the fight the
+## second island has always been.
+func _reference_threat() -> float:
+	var def := IslandDef.new()
+	def.faction = &"navy_crown"
+	def.tier = 2
+	def.garrison_ships = 1
+	return _garrison_threat(def)
 
 
 ## No island may be marooned at the far end of a long, empty sail.
@@ -2736,10 +2799,13 @@ func _check_ramp() -> PackedStringArray:
 	# playing: their first fight against something that shoots back properly, still
 	# in whatever hull the opening island paid for.
 	var second: Island = ranked[1]
-	if second.def.garrison_ships != 1:
+	var second_threat: float = _garrison_threat(second.def)
+	var reference: float = _reference_threat()
+	if second_threat > reference * SECOND_THREAT_SHARE:
 		out.append(
-			"the second island (%s, tier %d) fields %d defenders — it must be one ship alone"
-			% [second.def.display_name, second.def.tier, second.def.garrison_ships]
+			"the second island (%s, tier %d) is worth %.0f threat — no more than %.0f,"
+			% [second.def.display_name, second.def.tier, second_threat, reference * SECOND_THREAT_SHARE]
+			+ " which is one warship"
 		)
 	if second.def.fort_cannons > 0:
 		out.append("the second island fields %d batteries" % second.def.fort_cannons)
@@ -2812,7 +2878,11 @@ func _check_upgrades() -> PackedStringArray:
 func _check_lethality() -> PackedStringArray:
 	var out: PackedStringArray = []
 	var player: ShipStats = ShipStatsLibrary.get_stats(GameState.STARTING_HULL)
-	var weakest: ShipStats = ShipStatsLibrary.get_stats(&"skiff")
+	# Found rather than named. This used to read `get_stats(&"skiff")`, which
+	# checked the invariant against whichever hull happened to be flimsiest on the
+	# day it was written — so the tribes' War Canoe arrived underneath it and was
+	# never checked at all.
+	var weakest: ShipStats = ShipStatsLibrary.weakest_enemy()
 
 	for ammo: AmmoType in AmmoLibrary.all():
 		# Everything one ball can take off a hull: the impact if it is aimed at the

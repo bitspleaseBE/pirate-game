@@ -81,6 +81,10 @@ func _spawn_ship(stats_id: StringName, upgrades: Dictionary, at: Vector2) -> Shi
 	var ship: Ship = SHIP_SCENE.instantiate() as Ship
 	ship.stats = ShipStatsLibrary.build(stats_id, upgrades)
 	ship.team = Teams.PLAYER
+	# Your own colours, so the flag at the stern means the same thing on your hull
+	# as it does on theirs. It bends no stats — see the `player` entry in
+	# [FactionLibrary]; the player's numbers come from the hull and the shop.
+	ship.faction = FactionLibrary.get_faction(&"player")
 	ship.global_position = at
 	add_child(ship)
 	ship.loaded_ammo = AmmoLibrary.get_ammo(GameState.selected_ammo)

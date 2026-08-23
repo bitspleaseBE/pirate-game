@@ -65,7 +65,12 @@ var _mortar_aim: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	team = Teams.ENEMY
 	super()
-	loaded_ammo = AmmoLibrary.get_ammo(&"round")
+	# What comes out of the guns is the faction's, not the hull's: the tribes have
+	# no guns at all and shoot arrows from the same broadside arcs everything else
+	# uses, which is what lets a canoe be a genuinely different enemy without a
+	# second weapon system to maintain. Everyone else fires round shot.
+	var ammo_id: StringName = faction.gun_ammo if faction != null else &"round"
+	loaded_ammo = AmmoLibrary.get_ammo(ammo_id)
 	home_position = global_position
 	# Stagger the first think so a whole wave does not decide in lockstep.
 	_think_accum = randf() / THINK_HZ

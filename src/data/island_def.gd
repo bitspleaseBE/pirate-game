@@ -27,6 +27,10 @@ enum Biome { TROPICAL, JUNGLE, ROCKY, VOLCANIC, FROZEN }
 @export var shape_seed: int = 0
 
 @export_group("Defence")
+## Whose island this is. See [FactionLibrary] — it decides which hulls defend it,
+## how they fight, how many of them there are, and what flag they fly. `neutral`
+## is nobody's, which is what the home port is.
+@export var faction: StringName = &"neutral"
 @export var fort_cannons: int = 2
 @export var garrison_ships: int = 3
 @export var has_shipyard: bool = true

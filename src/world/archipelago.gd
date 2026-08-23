@@ -96,6 +96,44 @@ const ISLAND_RADIUS_RANGE: Vector2 = Vector2(320.0, 560.0)
 ## a Sloop with most of a tree bought, and it costs a tier-4 island rather than
 ## lengthening the voyage.
 const TIER_LADDER: Array[int] = [1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5]
+## Whose flag flies on each island along the chain. Index-aligned with
+## [constant TIER_LADDER], and the closest thing this game has to a plot.
+##
+## Tier says how hard an island is; this says what *kind* of hard, and the two
+## together are what stop the back half of a voyage being the front half with
+## bigger numbers. See [FactionLibrary] for the arc and the reasoning behind each
+## faction's character — this is only where it is laid along the chain:
+##
+##   0–2  Jungle tribes. No sails, no guns, arrows and numbers. The opening is
+##        about not getting surrounded, which a Dinghy with one gun can learn.
+##   3–4  The Crown Navy. The first warships, met on a tier-2 island so the step
+##        is in *kind* before it is in weight.
+##   5–6  The Armada, then the Marine Royale. Two navies pulled in opposite
+##        directions, so "a navy" stops being one thing.
+##   7–8  The Brethren of the Coast. Pirates, and the most dangerous flag in the
+##        game — met at tier 4, when the player can afford to meet them.
+##   9–11 Mixed. No two islands in a row under the same flag, so the horizon has
+##        to be read rather than assumed. Fort Diablo is the Brethren's.
+##
+## Written out rather than derived for the same reason the tier ladder is: this
+## is the voyage, and a voyage should be something you can read down a column and
+## disagree with.
+const FACTION_LADDER: Array[StringName] = [
+	&"tribes", &"tribes", &"tribes",
+	&"navy_crown", &"navy_crown",
+	&"navy_armada", &"navy_marine",
+	&"brethren", &"brethren",
+	&"navy_armada", &"navy_marine", &"brethren",
+]
+## The earliest island in the chain that may have a slipway.
+##
+## Reinforcements are the one mechanic that reads as the game cheating rather
+## than as a problem with a solution, so the player meets two islands that stay
+## the size they started before they meet one that does not. That used to fall
+## out of the tier ladder — nothing was tier 3 before the fifth island — but the
+## tribes launch canoes from tier 2, so the rule the tier threshold was standing
+## in for now has to be said out loud.
+const FIRST_SHIPYARD_INDEX: int = 2
 const MAX_PLACEMENT_ATTEMPTS: int = 60
 
 var defs: Array[IslandDef] = []
@@ -220,6 +258,9 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 	# Where the chain has reached: the last island placed, and how far out it is.
 	var link: Vector2 = Vector2.ZERO
 	var link_distance: float = 0.0
+	# The current run of islands under one flag, for [member Faction.garrison_ramp].
+	var last_faction: StringName = &""
+	var faction_run: int = 0
 
 	for i: int in count:
 		var is_final: bool = i == count - 1
@@ -262,8 +303,20 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		link_distance = pos.length()
 
 		var tier: int = TIER_LADDER[mini(i, TIER_LADDER.size() - 1)]
+		# The castle is the Brethren's stronghold whatever the ladder says, because
+		# the ladder runs out before the chain does on a long voyage and the last
+		# island is the one the whole run is aimed at.
+		var faction_id: StringName = (
+			&"brethren" if is_final else FACTION_LADDER[mini(i, FACTION_LADDER.size() - 1)]
+		)
+		var faction: Faction = FactionLibrary.get_faction(faction_id)
+		# How many islands the player has already taken off this flag in a row. The
+		# tribes' garrison grows on it — see [member Faction.garrison_ramp].
+		faction_run = faction_run + 1 if faction_id == last_faction else 0
+		last_faction = faction_id
 
 		var def := IslandDef.new()
+		def.faction = faction_id
 		def.id = StringName("isle_%d" % i)
 		def.display_name = _island_name(i, is_final)
 		def.tier = 5 if is_final else tier
@@ -277,7 +330,16 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		# Shipyards — and so reinforcement waves — start at tier 3. A second island
 		# that is "one warship" only stays that way if nothing arrives twenty
 		# seconds later to make it three.
-		def.has_shipyard = tier >= 3 and not is_final
+		#
+		# The threshold is the faction's, not a constant, because the tribes are
+		# the exception the rule was never written for: their islands are all tier
+		# 1–2, and "there keep being more of them" is the entirety of what makes
+		# them worth fighting. See [member Faction.shipyard_from_tier].
+		def.has_shipyard = (
+			i >= FIRST_SHIPYARD_INDEX
+			and tier >= faction.shipyard_from_tier
+			and not is_final
+		)
 		# Batteries start at tier 3 for the same reason. The tier-2 island is the
 		# player's first real duel, and it should be a duel rather than a duel
 		# fought inside somebody else's field of fire.
@@ -294,7 +356,14 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		# step up from the opening island is in weight, not in numbers. Being
 		# outnumbered while still working out that guns fire sideways is a losing
 		# first impression, not a difficulty curve.
-		def.garrison_ships = clampi(tier - 1, 1, 4)
+		# …plus whatever the flag adds: a flat bonus, and one more for each island
+		# already taken off the same flag. Only the tribes use either, and between
+		# them they are what "their advantage is in numbers" means.
+		def.garrison_ships = (
+			clampi(tier - 1, 1, 4)
+			+ faction.extra_garrison
+			+ faction.garrison_ramp * faction_run
+		)
 		def.alert_radius = 900.0 + float(tier) * 80.0
 		def.treasure_count = 2 if is_final else 1
 		out.append(def)
@@ -305,6 +374,7 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 		var last: IslandDef = out[out.size() - 1]
 		last.has_castle = true
 		last.tier = 5
+		last.faction = &"brethren"
 		last.display_name = "Fort Diablo"
 
 	return out

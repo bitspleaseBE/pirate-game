@@ -145,6 +145,26 @@ static func _fallback(id: StringName) -> AmmoType:
 			a.arc_height = 150.0
 			a.impact_pool = &"explosion"
 			a.unlimited = true
+		&"arrows":
+			# The tribes' entire armament, and enemy-only for the same reason
+			# `mortar` is: it is not something the player ever loads, so it has no
+			# business in ORDER, in the shot rack, or in the
+			# no-single-ball-may-sink-a-Skiff check.
+			#
+			# Tuned to be survivable one at a time and frightening in a crowd. A
+			# canoe's base damage is already tiny; this leaves the impact alone and
+			# spends its character on being *visibly* not a cannonball — small,
+			# fast, flat, and dark against the water rather than a white ball with
+			# a splash.
+			a.display_name = "Arrows"
+			a.icon = ICON_ROUND
+			a.role = "volley fire"
+			a.tint = Color(0.42, 0.31, 0.19)
+			a.visual_scale = 0.55
+			a.damage_mul = 1.0
+			a.muzzle_speed = 540.0
+			a.arc_height = 26.0
+			a.unlimited = true
 		&"grape":
 			a.display_name = "Grape Shot"
 			a.icon = ICON_CANNON

@@ -116,7 +116,7 @@ func _tick_island(island: Island, focus: Vector2, delta: float) -> void:
 	if island.can_reinforce() and int(_waves_sent.get(island, 0)) < MAX_REINFORCEMENT_WAVES:
 		var left: float = float(_reinforce_left.get(island, REINFORCE_INTERVAL)) - delta
 		if left <= 0.0:
-			_spawn_wave(island, _wave_size(island.def.tier))
+			_spawn_wave(island, _wave_size(island))
 			_waves_sent[island] = int(_waves_sent.get(island, 0)) + 1
 			left = REINFORCE_INTERVAL
 		_reinforce_left[island] = left
@@ -156,8 +156,13 @@ func _alert(island: Island) -> void:
 	_waves_sent[island] = 0
 	_spawn_wave(island, island.def.garrison_ships)
 	Log.info(
-		"%s alerted: %d defenders, %d batteries"
-		% [island.def.display_name, island.def.garrison_ships, island.forts_remaining()],
+		"%s alerted (%s): %d defenders, %d batteries"
+		% [
+			island.def.display_name,
+			FactionLibrary.get_faction(island.def.faction).display_name,
+			island.def.garrison_ships,
+			island.forts_remaining(),
+		],
 		"Spawn"
 	)
 
@@ -175,6 +180,10 @@ func _spawn_wave(island: Island, count: int) -> void:
 
 	var toward_player: float = (fleet.centroid() - island.global_position).angle()
 	var already: int = int(_spawned_total.get(island, 0))
+	# Who this island belongs to decides what comes out of it and how it fights.
+	# An island under no flag — the home port, or a def written before factions
+	# existed — falls through to the tier mix below, unchanged.
+	var faction: Faction = FactionLibrary.get_faction(island.def.faction)
 
 	for i: int in count:
 		# Spread across the near quarter so a wave is not a single-file column.
@@ -182,8 +191,14 @@ func _spawn_wave(island: Island, count: int) -> void:
 		var radius: float = island.def.radius + SPAWN_STANDOFF + _rng.randf_range(0.0, 240.0)
 		var at: Vector2 = island.global_position + Vector2(cos(angle), sin(angle)) * radius
 
+		var hull: StringName = hull_for(island.def, already + i)
+
 		var enemy: EnemyShip = ENEMY_SCENE.instantiate() as EnemyShip
-		enemy.stats = ShipStatsLibrary.get_stats(_hull_for_tier(island.def.tier, already + i))
+		# Both before `add_child`: `_ready` reads the stats to size the hull and the
+		# faction to cut the flag, and a ship that learns its colours a frame later
+		# spends that frame flying nobody's.
+		enemy.faction = faction
+		enemy.stats = faction.build(hull)
 		enemy.global_position = at
 		ships_parent.add_child(enemy)
 		enemy.assign_station(
@@ -199,7 +214,15 @@ func _spawn_wave(island: Island, count: int) -> void:
 	)
 
 
-## What each tier puts on the water, in the order it puts it there.
+## What each tier puts on the water, in the order it puts it there — for an
+## island flying no flag.
+##
+## Since factions landed this is the fallback rather than the rule: a
+## [Faction] with a roster of its own answers first, and every island the
+## generator produces has one. It stays because "tier N is worth about this
+## much" is still the scale every faction roster is written against, and because
+## an island def that predates factions — a save, a test rig, a hand-written
+## `.tres` — has to keep working.
 ##
 ## Written out as a list per tier rather than a chain of ifs, because it *is* the
 ## enemy ramp and the ramp is something to read down a column and argue with.
@@ -228,16 +251,35 @@ const HULL_MIX: Dictionary = {
 }
 
 
-func _hull_for_tier(tier: int, index: int) -> StringName:
+static func _hull_for_tier(tier: int, index: int) -> StringName:
 	var mix: Array = HULL_MIX.get(clampi(tier, 1, 5), HULL_MIX[1])
 	return mix[index % mix.size()]
 
 
-## Reinforcements per wave. A shipyard only exists from tier 3, and at tier 3 it
-## sends one hull at a time — two is what turns a fight you are winning into a
-## fight that never ends.
-func _wave_size(tier: int) -> int:
-	return 1 if tier <= 3 else 2
+## The hull this island launches as its `index`-th defender: the faction's, or
+## the tier's if the faction has no roster of its own.
+##
+## Static and public because the smoke harness has to be able to ask what an
+## island *would* field without alerting it. It asserts things about the shape of
+## the opening — see [method Voyage._check_ramp] — and measuring those against a
+## reimplementation of this rule would only ever assert that two copies of the
+## rule agree with each other.
+static func hull_for(def: IslandDef, index: int) -> StringName:
+	var hull: StringName = FactionLibrary.get_faction(def.faction).hull_for(index)
+	return hull if hull != &"" else _hull_for_tier(def.tier, index)
+
+
+## Reinforcements per wave. A shipyard only exists from tier 3 — or tier 2 under
+## the tribes' flag — and at tier 3 it sends one hull at a time, because two is
+## what turns a fight you are winning into a fight that never ends.
+##
+## The faction can widen that, and the rounding is deliberately up: a wave
+## multiplier that rounds to the same integer as no multiplier at all is a
+## balance knob that silently does nothing.
+func _wave_size(island: Island) -> int:
+	var base: int = 1 if island.def.tier <= 3 else 2
+	var faction: Faction = FactionLibrary.get_faction(island.def.faction)
+	return maxi(1, ceili(float(base) * faction.wave_mul))
 
 
 ## Drops the dead — and the routed — from an island's garrison.
