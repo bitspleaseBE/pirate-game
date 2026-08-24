@@ -204,13 +204,24 @@ static func _fallback(id: StringName) -> Faction:
 			# the player's ships are built from [GameState.fleet] and upgraded in a
 			# port. All this exists for is the flag.
 			#
-			# Deliberately not the Brethren's black: those are the *other* pirates,
-			# and at the point they turn up the player has to be able to tell their
-			# own hulls from theirs at a glance in a fight where both are fast and
-			# both are coming from every angle.
+			# Gold on tar, and chosen against the other five rather than for
+			# itself. Two constraints, both learned from the `--shot-flags` muster
+			# rather than from reading the table:
+			#
+			#   * not the Brethren's black. Those are the *other* pirates, and when
+			#     they turn up the player has to tell their own hulls from theirs
+			#     in a fight where both are fast and both come from every angle.
+			#   * not crimson either, which is what this was. Side by side with the
+			#     Armada it was the same pennant — at thirty pixels a field colour
+			#     is the whole message, and "8f1f2e" and "8c1c1c" are one message.
+			#
+			# Gold is the colour this game already uses for the player everywhere
+			# else: the selection ring, the fleet badge, every button they own. It
+			# is also the only bright warm hue no faction has, which is what makes
+			# it legible rather than merely correct.
 			f.display_name = "Your Colours"
-			f.flag_field = Color("8f1f2e")
-			f.flag_charge = Color("efe6cf")
+			f.flag_field = Color("d99a1e")
+			f.flag_charge = Color("2a1f16")
 		_:
 			# Neutral: the home port, and the safety net for an id that has been
 			# renamed out from under a save. Changes nothing about a hull, so

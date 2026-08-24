@@ -124,8 +124,29 @@ func build(hull_id: StringName) -> ShipStats:
 	# a fifth larger for the one faction whose hulls are already the fastest at
 	# reaching you.
 	s.bounty_gold = roundi(float(s.bounty_gold) * bounty_mul)
-	s.accent_color = flag_field
+	s.accent_color = hull_tint()
 	return s
+
+
+## What this faction's paint does to a hull sprite.
+##
+## A *hint* of the flag colour, not the flag colour. `accent_color` multiplies
+## the painted master, so setting it to [member flag_field] outright does not
+## give the Armada a red ship — it gives them a red silhouette, with the grain,
+## the weathering and the deck detail all multiplied away. The `--shot-flags`
+## muster is what made that obvious: five saturated plastic hulls in a row, and
+## the Armada's red ensign completely invisible against its own red hull, which
+## is the exact failure a flag exists to prevent.
+##
+## Mixed from white so it can only ever shift the wood's hue and leave its value
+## alone, which is what a coat of paint on a real hull does and what keeps the
+## flag the loudest faction signal on the water.
+func hull_tint() -> Color:
+	## How far toward the flag colour a hull is painted. High enough to tell a
+	## Crown hull from an Armada one across a screen, low enough that both still
+	## read as ships made of wood.
+	const PAINT: float = 0.35
+	return Color.WHITE.lerp(flag_field, PAINT)
 
 
 ## True when this faction changes nothing about a hull, so [method build] can

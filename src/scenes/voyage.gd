@@ -134,6 +134,7 @@ func _ready() -> void:
 		or "--wipe" in harness_args
 		or "--shot-harbour" in harness_args
 		or "--shot-fleet" in harness_args
+		or "--shot-flags" in harness_args
 		or "--hideout" in harness_args
 		or "--arena" in harness_args
 		or "--doctrine" in harness_args
@@ -191,6 +192,8 @@ func _ready() -> void:
 		_capture_harbours()
 	elif "--shot-fleet" in args:
 		_capture_fleet()
+	elif "--shot-flags" in args:
+		_capture_flags()
 	elif "--hideout" in args:
 		_run_hideout_test()
 	elif "--arena" in args:
@@ -2102,6 +2105,107 @@ func _capture_fleet() -> void:
 	get_viewport().get_texture().get_image().save_png("%s/fleet_02_hud.png" % dir)
 
 	print("FLEET SHOT: %s" % ProjectSettings.globalize_path(dir))
+	await _quit_cleanly(0)
+
+
+## Musters one hull under every flag in the game, in one frame.
+##
+##   godot src/scenes/voyage.tscn -- --shot-flags
+##
+## A flag has exactly one job: to answer "whose ship is that" from further away
+## than the player can count gunports. That job is not verifiable from the code —
+## five [Color] pairs on a page tell you nothing about whether they are five
+## *different things* on open water at gameplay zoom, through a wave field, at
+## thirty pixels, in whatever direction the wind happens to be blowing.
+##
+## The Brethren are the reason this exists. Their field is very nearly black,
+## which is right for a pirate and is also the one value that could plausibly
+## vanish into deep water — and there is no way to find that out except to look.
+##
+## Lined up rather than photographed in play, because in play the five factions
+## are thousands of metres apart and eight islands of progression apart. Side by
+## side is the comparison that matters: the failure mode is not "this flag is
+## invisible", it is "these two are the same flag".
+func _capture_flags() -> void:
+	## Far enough apart that the hulls do not collide and shove each other out of
+	## the frame while the shot is being set up, close enough that all of them fit.
+	const SPACING: float = 112.0
+	## One hull for everybody, so the only difference in the frame is the colours.
+	## A Sloop because it is the hull the player spends most of the game looking
+	## at, and because it carries canvas — a flag has to stay legible next to a
+	## large pale sail, which is the hardest background it gets.
+	const MUSTER_HULL: StringName = &"enemy_sloop"
+
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(0.6).timeout
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+
+	# The player's own hull is refitted to the muster hull and left in the middle
+	# of the line rather than being spawned alongside it, because the camera
+	# follows the fleet and will not be talked out of it — `snap_to` puts the view
+	# where you ask and the next frame walks it back to the flagship. Standing the
+	# flagship where the shot wants to be is the version of that argument nobody
+	# has to win.
+	GameState.fleet[0] = {"stats_id": MUSTER_HULL, "upgrades": {}}
+	fleet.refit()
+	await get_tree().process_frame
+
+	var lead: Ship = fleet.selected
+	if lead == null or not is_instance_valid(lead):
+		push_error("--shot-flags: no player hull to muster on")
+		await _quit_cleanly(1)
+		return
+
+	# Out in open water, well clear of any coast: sand and surf behind a flag
+	# would be a different legibility question from the one being asked, and the
+	# answer that matters is the one over deep water.
+	var centre: Vector2 = lead.global_position
+	var flags: Array[StringName] = []
+	flags.append_array(FactionLibrary.ORDER)
+
+	# The player sits in the middle with the factions either side of them, which
+	# is also the comparison most worth having: their crimson has to be nobody
+	# else's, and the Brethren's black is the one it could be mistaken for.
+	var slots: int = flags.size() + 1
+	var span: float = SPACING * float(slots - 1)
+	var player_slot: int = slots / 2
+	lead.global_position = centre + Vector2(float(player_slot) * SPACING - span * 0.5, 0.0)
+	lead.rotation = 0.0
+	lead.stop()
+
+	var slot: int = 0
+	for id: StringName in flags:
+		if slot == player_slot:
+			slot += 1
+		var faction: Faction = FactionLibrary.get_faction(id)
+		var hull: EnemyShip = SpawnDirector.ENEMY_SCENE.instantiate() as EnemyShip
+		hull.faction = faction
+		hull.stats = faction.build(MUSTER_HULL)
+		hull.global_position = centre + Vector2(float(slot) * SPACING - span * 0.5, 0.0)
+		# Beam-on and dead in the water. A ship under way would drift out of the
+		# frame before the shutter, and every hull pointing the same way is what
+		# makes this a comparison rather than five photographs.
+		hull.rotation = 0.0
+		ships_parent.add_child(hull)
+		hull.stop()
+		hull.set_physics_process(false)
+		slot += 1
+
+	camera.snap_to(centre)
+	# Long enough for the ensigns to settle onto the wind and for the ripple to be
+	# somewhere other than its starting phase — a flag caught at rest is the one
+	# frame that flatters it.
+	await get_tree().create_timer(2.5).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/flags_00.png" % dir)
+
+	var names: PackedStringArray = []
+	for id: StringName in flags:
+		names.append(FactionLibrary.get_faction(id).display_name)
+	names.insert(player_slot, "Your Colours")
+	print("FLAGS: %s — %s" % [", ".join(names), ProjectSettings.globalize_path(dir)])
 	await _quit_cleanly(0)
 
 
