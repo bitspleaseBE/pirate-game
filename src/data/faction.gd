@@ -116,7 +116,13 @@ func build(hull_id: StringName) -> ShipStats:
 	s.reload_time *= reload_mul
 	s.max_speed *= speed_mul
 	s.cannon_range *= range_mul
-	s.detonation_damage *= damage_mul
+	# Note what is *not* multiplied: `detonation_damage`. A faction's damage
+	# multiplier is a statement about its gun crews, and a fireship has no gun
+	# crew — it is a hull full of powder, and a keg of powder is the same keg
+	# under any flag. Applying it there gave the Brethren an 85-point detonation
+	# against a base of 70, quietly making the single largest burst in the game
+	# a fifth larger for the one faction whose hulls are already the fastest at
+	# reaching you.
 	s.bounty_gold = roundi(float(s.bounty_gold) * bounty_mul)
 	s.accent_color = flag_field
 	return s

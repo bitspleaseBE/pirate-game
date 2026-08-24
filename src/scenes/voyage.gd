@@ -534,7 +534,19 @@ func _run_arena_test() -> void:
 
 	Engine.time_scale = TIME_SCALE
 	var elapsed: float = 0.0
-	while elapsed < SECONDS and not bool(outcome["wiped"]):
+	# Stops at the capture, not at the clock. Every rate below is *per minute of
+	# fighting*, and the island being taken is the moment the fighting stops — a
+	# shipyard keeps launching hulls for as long as it stands, so an island that is
+	# still contested is still a fight and this keeps running.
+	#
+	# It used to run the full ninety seconds regardless, which quietly turned the
+	# shots-per-minute floor into a measure of how long the fight lasted. Taking
+	# the shore battery off tier-3 islands is what exposed it: the arena's island
+	# lost the one target that does not sink, the garrison went down in half the
+	# clock, and the harness spent the rest of it sailing in circles with nothing
+	# to shoot at and reported the combat model had gone quiet. It had not — the
+	# same run sank both defenders, took 42 damage and captured the island.
+	while elapsed < SECONDS and not bool(outcome["wiped"]) and not arena.is_captured:
 		var lead: Ship = fleet.selected
 		if lead != null and is_instance_valid(lead) and lead.alive:
 			var enemy: Node2D = Grid.query_nearest(
@@ -859,10 +871,26 @@ func _run_ladder_test() -> void:
 	## not a fix — and island four is the first tier 3, which is where the count
 	## goes up, the shipyard starts sending reinforcements and the fireship
 	## arrives. The run has to reach that to prove anything.
-	const ISLANDS: int = 5
+	##
+	## `--islands=N` runs further, and there is now a reason to: the chain has
+	## five factions along it ([constant Archipelago.FACTION_LADDER]) and the
+	## default five only ever meets two of them. Balance written for the Armada,
+	## the Marine Royale and the Brethren and never played is balance nobody has
+	## checked. Twelve is the whole voyage, and it is a slow run — the default
+	## stays five so the everyday check stays quick.
+	const DEFAULT_ISLANDS: int = 5
 	const PER_ISLAND_SEC: float = 120.0
 	const TIME_SCALE: float = 6.0
-	const WALL_CLOCK_LIMIT_SEC: float = 520.0
+	## Per island rather than a flat budget, so a longer run gets longer rather
+	## than getting cut off at the same place a short one finishes.
+	const WALL_CLOCK_PER_ISLAND_SEC: float = 104.0
+
+	var islands_wanted: int = DEFAULT_ISLANDS
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--islands="):
+			islands_wanted = maxi(1, int(arg.trim_prefix("--islands=")))
+	var wall_clock_limit: float = WALL_CLOCK_PER_ISLAND_SEC * float(islands_wanted)
+
 	## Same lookout range `--smoke` uses: the harness has to see a garrison the
 	## way a player does rather than waiting until the arcs already overlap.
 	const ACQUIRE_RANGE: float = 2600.0
@@ -906,15 +934,26 @@ func _run_ladder_test() -> void:
 	)
 
 	# The chain in the order a player meets it. `islands[0]` is home.
+	#
+	# Not the castle. It is a different fight with different rules — the keep
+	# shrugs off everything until every battery around it is silenced — and it has
+	# a harness of its own that knows that (`--castle`). This one steers at the
+	# nearest threat and would charge the keep, die, and report a balance failure
+	# on the one island whose balance it has not measured. A gate that fails for a
+	# reason unrelated to what it tests is a gate people learn to ignore.
 	var chain: Array[Island] = []
 	for island: Island in archipelago.islands:
-		if island.def.id == &"home":
+		if island.def.id == &"home" or island.def.has_castle:
 			continue
 		chain.append(island)
-		if chain.size() >= ISLANDS:
+		if chain.size() >= islands_wanted:
 			break
-	if chain.size() < ISLANDS:
-		push_error("LADDER FAIL: voyage has fewer than %d islands" % ISLANDS)
+	# A voyage is 8–12 islands, so "run the whole chain" means a different number
+	# on every seed. Asking for more than there are is answered with all of them
+	# rather than with a failure — the run is still the thing that was wanted.
+	# Fewer than the default is a real problem with the generator.
+	if chain.size() < mini(islands_wanted, DEFAULT_ISLANDS):
+		push_error("LADDER FAIL: voyage has only %d islands" % chain.size())
 		await _quit_cleanly(1)
 		return
 
@@ -929,12 +968,16 @@ func _run_ladder_test() -> void:
 		var elapsed: float = 0.0
 		run["taken"] = 0.0
 		run["low"] = before
-		run["at"] = "island %d (%s, tier %d)" % [
-			index + 1, goal.def.display_name, goal.def.tier
+		# The flag is in the label because with factions the tier no longer says
+		# what kind of fight this is. "Island 8, tier 4" and "island 8, tier 4,
+		# Brethren" are the same sentence with and without the answer in it.
+		var flag: String = FactionLibrary.get_faction(goal.def.faction).display_name
+		run["at"] = "island %d (%s, tier %d, %s)" % [
+			index + 1, goal.def.display_name, goal.def.tier, flag
 		]
 
 		while elapsed < PER_ISLAND_SEC and not goal.is_captured:
-			if float(Time.get_ticks_msec() - started_msec) / 1000.0 > WALL_CLOCK_LIMIT_SEC:
+			if float(Time.get_ticks_msec() - started_msec) / 1000.0 > wall_clock_limit:
 				break
 			var ship: Ship = fleet.selected
 			if ship != null and is_instance_valid(ship):
@@ -1007,9 +1050,9 @@ func _run_ladder_test() -> void:
 		# the island looks untouched by the time anything samples it.
 		var hull_id: StringName = GameState.fleet[0].get("stats_id", GameState.STARTING_HULL)
 		rows.append(
-			"LADDER: island %d (%s, tier %d) in %ds — %s, hull %d%% -> %d%% (low %d%%), took %d, gold %d -> %d"
+			"LADDER: island %d (%s, t%d, %s) in %ds — %s, hull %d%% -> %d%% (low %d%%), took %d, gold %d -> %d"
 			% [
-				index + 1, goal.def.display_name, goal.def.tier, roundi(elapsed), hull_id,
+				index + 1, goal.def.display_name, goal.def.tier, flag, roundi(elapsed), hull_id,
 				roundi(before * 100.0), roundi(_fleet_hull_fraction() * 100.0),
 				roundi(float(run["low"]) * 100.0), roundi(float(run["taken"])),
 				before_gold, GameState.total_gold(),
@@ -1040,7 +1083,8 @@ func _run_ladder_test() -> void:
 		print(line)
 	if failures.is_empty():
 		print(
-			"LADDER PASS: %d islands taken, %d%% hull left" % [ISLANDS, roundi(left * 100.0)]
+			"LADDER PASS: %d islands taken, %d%% hull left"
+			% [chain.size(), roundi(left * 100.0)]
 		)
 		await _quit_cleanly(0)
 	else:

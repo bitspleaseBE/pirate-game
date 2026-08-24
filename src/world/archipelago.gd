@@ -84,17 +84,25 @@ const ISLAND_RADIUS_RANGE: Vector2 = Vector2(320.0, 560.0)
 ## see [method SpawnDirector._hull_for_tier].
 ##
 ## There are now three tier-2 islands rather than two, and the reason is the step
-## *after* them. Tier 3 does not add one thing, it adds four at once: a second
-## defender, the fireship — the first enemy that is not a gun duel at all — the
-## first shore battery, and a shipyard feeding reinforcements in for as long as it
-## stands. That is the same mistake the paragraph above describes at island two,
-## made again three islands later, and `--ladder` was being wiped there about half
-## the time in a Sloop.
+## *after* them. Tier 3 used to add four things at once: a second defender, the
+## fireship — the first enemy that is not a gun duel at all — the first shore
+## battery, and a shipyard feeding reinforcements in for as long as it stands.
+## That is the same mistake the paragraph above describes at island two, made
+## again three islands later, and `--ladder` was being wiped there about half the
+## time in a Sloop.
 ##
-## One more duel is the cheapest possible fix and the one that fits what is
-## already here: it is another chest, so the player meets that island in a Brig or
-## a Sloop with most of a tree bought, and it costs a tier-4 island rather than
-## lengthening the voyage.
+## One more duel is the cheapest fix and the one that fits what is already here:
+## it is another chest, so the player meets that island in a Brig or a Sloop with
+## most of a tree bought, and it costs a tier-4 island rather than lengthening the
+## voyage.
+##
+## Three of those four have since been taken off tier 3 by other work, which is
+## worth recording because the reason it was still the worst island in the run
+## was not the thing this paragraph was written about. Faction rosters replaced
+## the per-tier hull mix, so the fireship is now the Brethren's and arrives at
+## tier 4. The tribes teach reinforcements on island three off a canoe beach.
+## And the first shore battery has moved to tier 4 — see
+## [constant FORTS_BY_TIER], which has the measurements.
 const TIER_LADDER: Array[int] = [1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5]
 ## Whose flag flies on each island along the chain. Index-aligned with
 ## [constant TIER_LADDER], and the closest thing this game has to a plot.
@@ -110,20 +118,29 @@ const TIER_LADDER: Array[int] = [1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5]
 ##        is in *kind* before it is in weight.
 ##   5–6  The Armada, then the Marine Royale. Two navies pulled in opposite
 ##        directions, so "a navy" stops being one thing.
-##   7–8  The Brethren of the Coast. Pirates, and the most dangerous flag in the
+##   7    The Brethren of the Coast. Pirates, and the most dangerous flag in the
 ##        game — met at tier 4, when the player can afford to meet them.
-##   9–11 Mixed. No two islands in a row under the same flag, so the horizon has
-##        to be read rather than assumed. Fort Diablo is the Brethren's.
+##   8–11 Mixed, alternating. Never two Brethren islands in a row, and the
+##        horizon has to be read rather than assumed. Fort Diablo is theirs.
 ##
 ## Written out rather than derived for the same reason the tier ladder is: this
 ## is the voyage, and a voyage should be something you can read down a column and
 ## disagree with.
+##
+## The Brethren used to hold 7 and 8 together and it was the end of every
+## full-chain ladder run. Their island is survivable on its own — 40% hull off
+## the first one — and the fight leaves nothing in reserve, because a hull only
+## repairs in a port and a port is the island you have just taken. Two of them
+## back to back is therefore not twice as hard, it is one fight with the second
+## half started at 40%. The navy island between them is not a breather in weight
+## (it is the same tier) but it is a breather in *kind*, which is the resource
+## the Brethren actually spend.
 const FACTION_LADDER: Array[StringName] = [
 	&"tribes", &"tribes", &"tribes",
 	&"navy_crown", &"navy_crown",
 	&"navy_armada", &"navy_marine",
-	&"brethren", &"brethren",
-	&"navy_armada", &"navy_marine", &"brethren",
+	&"brethren",
+	&"navy_armada", &"brethren", &"navy_marine", &"brethren",
 ]
 ## The earliest island in the chain that may have a slipway.
 ##
@@ -134,6 +151,42 @@ const FACTION_LADDER: Array[StringName] = [
 ## tribes launch canoes from tier 2, so the rule the tier threshold was standing
 ## in for now has to be said out loud.
 const FIRST_SHIPYARD_INDEX: int = 2
+## Shore batteries by island tier, tier 1 first. The castle is separate — see
+## [constant CASTLE_FORT_CANNONS].
+##
+## Written out rather than computed off the tier, because it is a ramp and the
+## whole argument about it is which step each thing lands on. It used to be
+## `tier - 2`, which put the player's first battery on the same island as their
+## second defender and their first non-tribal slipway.
+##
+## That island is where the game was being lost. `--ladder` on the pinned chain
+## put the fleet at 7–35% hull coming off it across eight runs and wiped it
+## outright on one, while the island before it cost nothing and the two after it
+## sat at 33–55%. It is the same failure the tier ladder above already describes
+## at island two and then made again four islands later: a step that adds a
+## second warship, a shore battery and a shipyard at once is three lessons in one
+## fight, and the fight is the first one the player cannot simply out-sail.
+##
+## So the whole battery ramp slides one tier later. By tier 4 the player has met
+## reinforcements (a tribal canoe beach, island three, which is the gentlest
+## possible version of that lesson), met a second defender (tier 3), and can
+## afford a Brig.
+##
+## Sliding it rather than deleting the tier-3 entry, because deleting it just
+## moved the wall: `[0, 0, 0, 2, 3]` took island five from a 25% median to 79%
+## and then handed tier 4 its first *two* batteries at once, which is the same
+## mistake one island further out. A ramp is the sequence of steps, not the
+## height of any one of them.
+##
+## What the measurement actually showed is worth keeping, because it is not what
+## the paragraph above assumed. A battery is roughly four damage a second and a
+## Crown Navy Sloop is eight, so on paper the ships are the fight. In play the
+## single battery was doing 110 of the ~145 damage a tier-3 island cost, because
+## a gun that never dies and never stops firing is priced by *how long the player
+## is inside its reach* — the whole approach, the whole fight, and the sail to
+## the mooring afterwards. Two warships are priced by how long they survive. Any
+## future look at fort numbers should start from exposure time, not from dps.
+const FORTS_BY_TIER: Array[int] = [0, 0, 0, 1, 2]
 const MAX_PLACEMENT_ATTEMPTS: int = 60
 
 var defs: Array[IslandDef] = []
@@ -340,16 +393,19 @@ func _generate_defs(seed_value: int) -> Array[IslandDef]:
 			and tier >= faction.shipyard_from_tier
 			and not is_final
 		)
-		# Batteries start at tier 3 for the same reason. The tier-2 island is the
-		# player's first real duel, and it should be a duel rather than a duel
-		# fought inside somebody else's field of fire.
+		# Batteries: see [constant FORTS_BY_TIER] for which tier gets its first and
+		# why that is tier 4 rather than tier 3.
 		# The castle rings itself with batteries rather than having none at all.
 		# It used to be authored with `0 if is_final`, which made the objective of
 		# the entire voyage the least defended island on the map — strictly easier
 		# than the tier-4 islands on the way to it, which field two batteries, a
 		# slipway and a bomb ketch. The ring is also what the keep's armour is
 		# keyed to, so it is the first half of the boss fight.
-		def.fort_cannons = CASTLE_FORT_CANNONS if is_final else clampi(tier - 2, 0, 3)
+		def.fort_cannons = (
+			CASTLE_FORT_CANNONS
+			if is_final
+			else FORTS_BY_TIER[clampi(tier, 1, FORTS_BY_TIER.size()) - 1]
+		)
 		# One defender through tier 2, then one more per tier. The count is only
 		# half of it — [method SpawnDirector._hull_for_tier] decides *what* they
 		# are, and tier 2's single hull is a Navy Sloop rather than a skiff, so the

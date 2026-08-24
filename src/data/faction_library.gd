@@ -171,8 +171,20 @@ static func _fallback(id: StringName) -> Faction:
 			# Bone on black. The only flag that is not a nation's.
 			f.flag_field = Color("15161a")
 			f.flag_charge = Color("ded8c4")
+			# Sloop, fireship, skiff is the garrison the player meets, and it is
+			# their signature — a gun duel, a bomb and a knife all at once.
+			#
+			# The Brig is *last*, and that placement is the whole difference
+			# between a hard island and an unwinnable one. Positions 3 and 4 are
+			# the first reinforcement wave, and with the Brig there the wave that
+			# arrived immediately after that three-hull fight was a Brethren Brig —
+			# 32 damage a second against a player who has just spent their whole
+			# hull and cannot repair until the island is theirs. Both full-chain
+			# ladder runs died exactly there. Two more cheap hulls instead is still
+			# relentless, which is the point of them, and the Brig turns up on the
+			# wave after that for a player who is taking too long.
 			f.hulls = [
-				&"enemy_sloop", &"fireship", &"skiff", &"enemy_brig", &"skiff", &"fireship",
+				&"enemy_sloop", &"fireship", &"skiff", &"skiff", &"fireship", &"enemy_brig",
 			]
 			# Thin timber, fast hulls, guns worked by people with nothing to lose.
 			# No range bonus: everything about the Brethren is about being close.
