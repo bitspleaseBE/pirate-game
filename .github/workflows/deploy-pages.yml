@@ -142,6 +142,22 @@ jobs:
             exit 1
           fi
 
+      # The one control the game has, on the devices it is played on. Tap-to-sail
+      # was dead on every touchscreen for as long as the SubViewport has existed —
+      # Godot's emulated mouse arrives alongside every real touch and the router
+      # counted the pair as two fingers — and nothing here could see it, because
+      # every other gate drives the event bus directly, downstream of the whole
+      # pointer path. This one synthesises the events at the engine's own door.
+      - name: Touch test (tap, drag and pinch reach the helm)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --touch 2>&1 | tee /tmp/touch.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/touch.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       - name: Export web build
         run: |
           set -euo pipefail

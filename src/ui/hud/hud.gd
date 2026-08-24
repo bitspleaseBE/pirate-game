@@ -48,13 +48,46 @@ const AMMO_TAGS: Dictionary = {
 	&"grape": "GRAPE",
 }
 
-## Height of the bottom-right column in `hud.tscn`, and the clearance anything
-## floating above it needs. Duplicated from the scene because a Control cannot ask
-## a sibling how tall it is before either has been laid out, and the BOARD prompt
-## has to know — see [method _build_board_button].
+## Fallback height of the bottom-right column, used only until the column has
+## been laid out once and can be measured. Anything floating above it needs the
+## real number — see [method _build_board_button].
 const BOTTOM_COLUMN_HEIGHT: float = 232.0
-const BOTTOM_COLUMN_GAP: float = 10.0
+## Clearance between two pieces of the HUD that must not touch.
+const CONTROL_GAP: float = 10.0
 const BOARD_BUTTON_HEIGHT: float = 72.0
+## Width the bottom-right column wants, and the width of the BOARD prompt over it.
+## Both give way to the screen when there is less of it than this.
+const BOTTOM_COLUMN_WIDTH: float = 328.0
+const BOARD_BUTTON_WIDTH: float = 204.0
+
+## What the minimap may grow to, and what it may not shrink below, in UI units.
+##
+## It is sized from the *smaller* of a fraction of the width and a fraction of the
+## height, because it has to share the bottom of the screen with the shot rack on
+## a wide window and with the whole rest of the HUD on a narrow one. A phone in
+## landscape has 390 units of height for everything, and the authored 196 was half
+## of it.
+const MINIMAP_MAX: float = 196.0
+const MINIMAP_MIN: float = 108.0
+const MINIMAP_WIDTH_SHARE: float = 0.16
+const MINIMAP_HEIGHT_SHARE: float = 0.27
+
+## Margin from the edge of the glass. Tighter on a phone, where every unit of
+## width is contested, than on a desktop window where it is only styling.
+const EDGE_MARGIN: float = 16.0
+const EDGE_MARGIN_COMPACT: float = 12.0
+
+## The compass rose, square, in the top-right corner.
+const WIND_SIZE: float = 92.0
+
+## Width of the counter bar. Content-sized in practice — this is the ceiling it
+## is given, and it gives way to a narrow screen like everything else here.
+const TOP_BAR_WIDTH: float = 284.0
+
+## Width the toast is allowed. It is a centred line of prose over the sea, so on
+## a wide screen it is capped rather than stretched — a headline the width of a
+## desktop monitor is not read, it is scanned past.
+const TOAST_MAX_WIDTH: float = 680.0
 
 ## Breathing room inside the Hideout card, matching the title screen's buttons —
 ## a card that draws its own label needs the padding a StyleBoxFlat leaves to the
@@ -74,6 +107,9 @@ const ICON_WHEEL: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
 @onready var _toast: Label = %Toast
 @onready var minimap: Minimap = %Minimap
 @onready var _root: Control = $Root
+@onready var _top_bar: PanelContainer = $Root/TopBar
+@onready var _minimap_panel: PanelContainer = $Root/MinimapPanel
+@onready var _bottom: VBoxContainer = $Root/BottomRight
 
 var _toast_left: float = 0.0
 var _hideout_left: float = 0.0
@@ -124,6 +160,12 @@ func _ready() -> void:
 	_refresh_all()
 	_toast.modulate.a = 0.0
 
+	# The Root control is anchored to the whole viewport, so it resizes whenever
+	# the window does, whenever the phone is turned over, and whenever the UI
+	# scale changes underneath it. One signal covers all three.
+	_root.resized.connect(_relayout)
+	_relayout()
+
 
 ## Called by the voyage scene once the world exists.
 func bind(fleet: FleetController, archipelago: Archipelago) -> void:
@@ -160,15 +202,118 @@ func _process(delta: float) -> void:
 		_refresh_board()
 
 
+## Re-fits the HUD to the shape of screen it finds itself on.
+##
+## `hud.tscn` is authored for a landscape desktop window, and on a phone held
+## upright that is not a layout but a collision: the minimap wants the bottom-left
+## corner and the shot rack column wants the bottom-right, and at 390 units of
+## width the authored offsets put the two on top of each other with 166 units of
+## overlap — the map underneath the shot rack, both unreadable. Scaling the
+## interface up for a phone (see [Wave1UI]) is what brings the two corners into
+## contact, so the layout has to answer for it rather than being authored once at
+## 1280x720 and hoped for.
+##
+## Two arrangements, chosen by width alone:
+##
+## - **wide** — the authored one. Counters top-left, wind top-right, map
+##   bottom-left, the column bottom-right, and the middle third left clear because
+##   that is where the player taps to sail.
+## - **compact** — the column takes the full width at the bottom, where a thumb
+##   already is, and the map moves up to sit directly on top of it. Nothing else
+##   moves: a phone in portrait has height to spare and it is width that is scarce.
+##
+## Everything else is clamped rather than switched: the map is sized off both
+## edges of the screen so a phone in landscape does not spend half its height on
+## it, and the toast and the column give up width when there is not enough.
+func _relayout() -> void:
+	var view: Vector2 = _root.size
+	if view.x < 1.0 or view.y < 1.0:
+		return
+
+	var compact: bool = view.x < Wave1UI.COMPACT_WIDTH
+	var margin: float = EDGE_MARGIN_COMPACT if compact else EDGE_MARGIN
+
+	# The column first: everything at the bottom of the screen is placed against
+	# it, and it is the one piece whose height is content-driven rather than
+	# chosen — five shot slots, a label, a badge and a card.
+	var column_width: float = minf(BOTTOM_COLUMN_WIDTH, view.x - margin * 2.0)
+	var column_height: float = maxf(
+		_bottom.get_combined_minimum_size().y, BOTTOM_COLUMN_HEIGHT
+	)
+	_bottom.offset_left = -(column_width + margin)
+	_bottom.offset_right = -margin
+	_bottom.offset_bottom = -margin
+	_bottom.offset_top = -(column_height + margin)
+
+	var map: float = clampf(
+		minf(view.x * MINIMAP_WIDTH_SHARE, view.y * MINIMAP_HEIGHT_SHARE),
+		MINIMAP_MIN,
+		MINIMAP_MAX
+	)
+	minimap.custom_minimum_size = Vector2(map, map)
+	_minimap_panel.offset_left = margin
+	_minimap_panel.offset_right = margin + map + _map_chrome()
+	# On a narrow screen the column owns the bottom edge, so the map stands on it.
+	var map_bottom: float = -margin
+	if compact:
+		map_bottom = -(margin + column_height + CONTROL_GAP)
+	_minimap_panel.offset_bottom = map_bottom
+	_minimap_panel.offset_top = map_bottom - map - _map_chrome()
+
+	if _wind_indicator != null:
+		_wind_indicator.offset_right = -margin
+		_wind_indicator.offset_left = -(margin + WIND_SIZE)
+		_wind_indicator.offset_top = margin
+		_wind_indicator.offset_bottom = margin + WIND_SIZE
+
+	# The counters give way to the compass rather than sliding under it. On a
+	# 390-unit phone the authored bar ran 284 units from the left margin and the
+	# compass 108 in from the right, and the two overlapped by fourteen.
+	_top_bar.offset_left = margin
+	_top_bar.offset_right = minf(
+		margin + TOP_BAR_WIDTH, view.x - margin - WIND_SIZE - CONTROL_GAP
+	)
+
+	var toast_width: float = minf(TOAST_MAX_WIDTH, view.x - margin * 2.0)
+	_toast.offset_left = -toast_width * 0.5
+	_toast.offset_right = toast_width * 0.5
+
+	_place_board_button(column_height, margin, view)
+
+
+## The panel's own border and padding, which the minimap Control sits inside — so
+## the panel is that much larger than the map it frames.
+func _map_chrome() -> float:
+	var style: StyleBox = _minimap_panel.get_theme_stylebox("panel")
+	if style == null:
+		return 0.0
+	return style.get_margin(SIDE_LEFT) + style.get_margin(SIDE_RIGHT)
+
+
+## Puts the BOARD prompt directly above the column, in the same right-hand reach.
+##
+## Its offsets used to be constants that silently depended on the column's height,
+## and were already wrong once: pinned at -232 while the column was 194 tall, then
+## sitting exactly on top of the Hideout card when the shot rack made the column
+## 232. Now that the column's height and width are both decided at runtime, there
+## is nothing left to pin them to but the column itself.
+func _place_board_button(column_height: float, margin: float, view: Vector2) -> void:
+	if _board_button == null:
+		return
+	var width: float = minf(BOARD_BUTTON_WIDTH, view.x - margin * 2.0)
+	_board_button.offset_right = -margin
+	_board_button.offset_left = -(width + margin)
+	_board_button.offset_bottom = -(column_height + margin + CONTROL_GAP)
+	_board_button.offset_top = _board_button.offset_bottom - BOARD_BUTTON_HEIGHT
+
+
 func _build_wind_indicator() -> void:
 	_wind_indicator = WindIndicator.new()
 	_wind_indicator.name = "WindIndicator"
-	# Top-right, clear of the counters and out of the thumb's way.
+	# Top-right, clear of the counters and out of the thumb's way. Placed by
+	# [method _relayout], which is also what keeps the counters from running into
+	# it on a narrow screen.
 	_wind_indicator.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_wind_indicator.offset_left = -108.0
-	_wind_indicator.offset_top = 14.0
-	_wind_indicator.offset_right = -16.0
-	_wind_indicator.offset_bottom = 106.0
 	_root.add_child(_wind_indicator)
 
 
@@ -186,22 +331,14 @@ func _build_wind_indicator() -> void:
 ## left nothing louder for the one prompt that is genuinely urgent and genuinely
 ## brief. This is the action that is not a choice between options.
 ##
-## Its offsets are set against the column's own top edge rather than picked by
-## eye: it used to be pinned at -232, which was clear of the column when that
-## column was 194 tall and directly on top of the Hideout card once the shot rack
-## made it 232. A floating control positioned by a constant that silently depends
-## on another control's height is a collision waiting for the next layout change,
-## so the constant is shared now.
+## Where it sits is [method _place_board_button]'s problem, because it depends on
+## how tall the column under it came out on this screen.
 func _build_board_button() -> void:
 	_board_button = Button.new()
 	_board_button.name = "BoardButton"
 	_board_button.visible = false
 	_board_button.focus_mode = Control.FOCUS_NONE
 	_board_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_board_button.offset_left = -228.0
-	_board_button.offset_bottom = -(BOTTOM_COLUMN_HEIGHT + BOTTOM_COLUMN_GAP)
-	_board_button.offset_top = _board_button.offset_bottom - BOARD_BUTTON_HEIGHT
-	_board_button.offset_right = -24.0
 	_board_button.pressed.connect(_on_board_pressed)
 	_root.add_child(_board_button)
 	Wave1UI.apply_brass(_board_button)

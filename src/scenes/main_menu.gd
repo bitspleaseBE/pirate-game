@@ -35,11 +35,17 @@ extends Control
 @onready var _quality_button: Button = %QualityButton
 @onready var _version_label: Label = %VersionLabel
 @onready var _stats_label: Label = %StatsLabel
+@onready var _centre: VBoxContainer = $Centre
 
 
 ## Padding inside a menu button, matching the solid primary's own margin so the
 ## two treatments sit at the same internal rhythm.
 const BUTTON_PADDING: float = 10.0
+
+## Width the title column asks for. On anything narrower it takes what there is,
+## which is the difference between three buttons and three buttons with their
+## labels running off both edges of a phone.
+const COLUMN_WIDTH: float = 440.0
 
 
 func _ready() -> void:
@@ -84,6 +90,9 @@ func _ready() -> void:
 	_refresh_quality()
 	_refresh_stats()
 
+	resized.connect(_fit)
+	_fit()
+
 	# Automation hooks. Running `voyage.tscn` directly skips boot, the save load
 	# and this menu — which is exactly where entry-path bugs live, so the harness
 	# needs a way in through the real front door.
@@ -94,6 +103,13 @@ func _ready() -> void:
 		call_deferred("_on_continue")
 	elif "--shot-menu" in args:
 		_capture_menu()
+
+
+## Keeps the column inside the glass on a phone-shaped window.
+func _fit() -> void:
+	var width: float = Wave1UI.modal_width(self, COLUMN_WIDTH)
+	_centre.offset_left = -width * 0.5
+	_centre.offset_right = width * 0.5
 
 
 ## Frames the title screen and writes it to `user://shots/`.

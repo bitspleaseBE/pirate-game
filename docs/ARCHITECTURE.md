@@ -229,6 +229,30 @@ emit `intent_move(pos)`, `intent_target(entity)`, `intent_select(ship)`, `intent
 Nothing else in the game reads raw input. That is what makes it possible to add a virtual
 joystick, gamepad support or a replay system later without touching gameplay code.
 
+**Emulated mouse events are dropped there, and that is not optional.** Godot's
+`emulate_mouse_from_touch` is on by default and has to stay on — `BaseButton` answers
+`InputEventMouseButton` and `ui_accept` and nothing else, so with it off no button in the
+game would answer a finger — which means one tap arrives at the router twice: an emulated
+click carrying `InputEvent.DEVICE_ID_EMULATION`, then the real touch. Two pointers is the
+router's definition of a pinch, so until this was fixed every tap on a touchscreen was
+filed as a two-finger zoom and tap-to-sail did nothing at all on a phone. `--touch` is the
+gate that now says so.
+
+### UI scale
+
+`ScreenFit` sets the root window's `content_scale_factor` from `Wave1UI.ui_scale()`, which
+makes one UI unit one **CSS pixel** on any screen smaller than the 1280x720 the interface
+is authored against, and leaves anything larger exactly as it was. That is what makes
+`Wave1UI.TOUCH_TARGET` a real physical measurement rather than a fraction of an unknown
+viewport: without it a 1280-unit-wide HUD on a 390 pt phone drew its shot rack fifteen
+points tall.
+
+It also divides the canvas the world's `SubViewport` is sized from, which is why
+`Voyage._render_shrink()` stands the LOW tier's halving down when the scale is above one:
+both at once is a quarter of the pixels and a smeared sea. The scaling has already banked a
+larger fill-rate saving than the shrink ever did — a portrait phone goes from a 1280x2770
+canvas to 390x844.
+
 ## 12. Web deployment
 
 Deployed to GitHub Pages from `.github/workflows/deploy-pages.yml`.

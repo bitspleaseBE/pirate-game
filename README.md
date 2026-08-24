@@ -139,6 +139,21 @@ stripped for cargo when not — through the same prompt the player presses:
 godot --headless src/scenes/voyage.tscn -- --board
 ```
 
+Tap the sea with a synthesised finger and assert the helm answers. Tap-to-sail is the only
+control the game has and it was **dead on every touchscreen** while working perfectly under
+a mouse: Godot's `emulate_mouse_from_touch` delivers an emulated click alongside every real
+touch, two pointers at once is this router's definition of a pinch, and so every tap on a
+phone was filed as a two-finger zoom of zero magnitude. Nothing in the harness could see
+it, because every other run drives `EventBus` directly — downstream of the entire pointer
+path — and a screenshot of a ship that was never ordered anywhere looks exactly like a
+screenshot of one that was. This drives a tap, a click, a drag and a pinch in through
+`Input.parse_input_event`, so the engine's own emulation is part of what is under test:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --touch
+godot --resolution 390x844 src/scenes/voyage.tscn -- --touch   # and on a phone-shaped one
+```
+
 Capture gameplay frames to `user://shots/` — the only reliable way to check art, scale
 and z-order:
 
@@ -185,6 +200,25 @@ play costs a diamond and most of a voyage, so the harness builds one:
 
 ```bash
 godot src/scenes/voyage.tscn -- --shot-fleet
+```
+
+Frame the HUD and every modal at real phone viewports, in both orientations and on a
+tablet. The game is played on a phone and developed in a 1280x720 desktop window, and every
+other capture runs at the latter — so the layout that most needed looking at was the one
+nothing had ever photographed. The window is resized between passes, because the point is
+to compare the same four screens across three shapes:
+
+```bash
+godot src/scenes/voyage.tscn -- --shot-mobile
+```
+
+The sizes are CSS pixels, which is what the interface is laid out in — a phone reporting a
+3x device pixel ratio has three times as many real ones, and the UI scale cancels that out,
+so `390x844` here is a 1170x2532 iPhone. Any screen can be framed directly with Godot's own
+flag, which is how the title screen gets the same treatment:
+
+```bash
+godot --resolution 390x844 src/scenes/main_menu.tscn -- --shot-menu
 ```
 
 Sail the fleet home from offshore and assert the hideout actually opens when it arrives.
