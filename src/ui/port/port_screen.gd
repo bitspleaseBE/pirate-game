@@ -19,7 +19,17 @@ extends Control
 ## read closely was in the wide geometric display face that was retired for being
 ## unreadable at small sizes. See the note at the top of hud.gd.
 const FONT: String = "res://assets/fonts/Alegreya.ttf"
+## What the panel asks for. It gives way to a narrower screen — see
+## [method Wave1UI.modal_width].
 const PANEL_WIDTH: float = 620.0
+## What the shop list asks for, and the least it will accept.
+##
+## Both matter on a phone in landscape, where there are 390 units of height for a
+## panel whose head and foot alone take about two hundred. Asking for a flat 330
+## put SET SAIL below the bottom of the glass with no way to reach it — the shop
+## has no other way out, so that was a modal the player could not leave.
+const LIST_HEIGHT: float = 330.0
+const LIST_HEIGHT_MIN: float = 120.0
 const AMMO_RESTOCK_COST: int = 45
 ## Rounds of each limited shot type a restock buys.
 ##
@@ -55,6 +65,15 @@ const DIM: Color = Color("8a97a3")
 ## The colours and the state ramp now live in [Wave1UI], because the title screen
 ## uses the same two treatments and one definition cannot drift from itself.
 const CARD_HEIGHT: float = 88.0
+## What a card needs on a phone held upright, where the same two lines of prose
+## wrap to four or five.
+##
+## A card's contents are anchored over the [Button] rather than parented into a
+## container — a Button is not one, and the whole row has to be the tap target —
+## so nothing about the text can push the card taller on its own. Height is
+## reserved instead, and the icon tile stands down at this width: it costs 66
+## units of a 318-unit line, which on a phone is a fifth of the sentence.
+const CARD_HEIGHT_COMPACT: float = 116.0
 
 const ICON_GOLD: Texture2D = preload("res://assets/wave1/icons/icon_gold.png")
 const ICON_DIAMOND: Texture2D = preload("res://assets/wave1/icons/icon_diamond.png")
@@ -68,7 +87,12 @@ const ICON_MAP: Texture2D = preload("res://assets/wave1/icons/icon_map.png")
 signal closed()
 
 var _island_name: String = "Port"
+var _panel: PanelContainer
+var _column: VBoxContainer
+var _scroll: ScrollContainer
 var _rows: VBoxContainer
+## Which of the two card shapes the current rows were built for.
+var _rows_are_compact: bool = false
 var _gold_value: Label
 var _diamond_value: Label
 var _ship_label: Label
@@ -91,16 +115,14 @@ func present(island_name: String) -> void:
 	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(centre)
 
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
-	panel.add_theme_stylebox_override("panel", _panel_style())
-	centre.add_child(panel)
+	_panel = PanelContainer.new()
+	_panel.add_theme_stylebox_override("panel", _panel_style())
+	centre.add_child(_panel)
 
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
-	panel.add_child(column)
+	_column = VBoxContainer.new()
+	_panel.add_child(_column)
 
-	column.add_child(
+	_column.add_child(
 		_label("PORT OF %s" % _island_name.to_upper(), 21, GOLD, HORIZONTAL_ALIGNMENT_CENTER)
 	)
 
@@ -110,39 +132,38 @@ func present(island_name: String) -> void:
 	var purse := HBoxContainer.new()
 	purse.alignment = BoxContainer.ALIGNMENT_CENTER
 	purse.add_theme_constant_override("separation", 10)
-	column.add_child(purse)
+	_column.add_child(purse)
 	_gold_value = _label("", 19, GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER)
 	purse.add_child(_purse_pill(_gold_value, ICON_GOLD))
 	_diamond_value = _label("", 19, Color("bfe4ec"), HORIZONTAL_ALIGNMENT_CENTER)
 	purse.add_child(_purse_pill(_diamond_value, ICON_DIAMOND))
 
 	_ship_label = _label("", 13, DIM, HORIZONTAL_ALIGNMENT_CENTER)
-	column.add_child(_ship_label)
+	_column.add_child(_ship_label)
 
 	# What the fleet consists of, right under what the flagship consists of. The
 	# shop sells two things that both begin "a ship" — a bigger hull for the one
 	# you have, and a second hull alongside it — and buying either used to change
 	# nothing on screen but a price. This line is where the difference shows up.
 	_fleet_label = _label("", 12, DIM, HORIZONTAL_ALIGNMENT_CENTER)
-	column.add_child(_fleet_label)
+	_column.add_child(_fleet_label)
 
 	var rule := ColorRect.new()
 	rule.color = Color(0.55, 0.44, 0.26, 0.45)
 	rule.custom_minimum_size = Vector2(0, 1)
-	column.add_child(rule)
+	_column.add_child(rule)
 
 	# The list can outgrow a phone screen once several upgrades are maxed, so it
 	# scrolls rather than pushing the "set sail" button off the bottom.
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 330)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_style_scrollbar(scroll.get_v_scroll_bar())
-	column.add_child(scroll)
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_style_scrollbar(_scroll.get_v_scroll_bar())
+	_column.add_child(_scroll)
 
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 9)
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_rows)
+	_scroll.add_child(_rows)
 
 	var sail := Button.new()
 	sail.text = "SET SAIL"
@@ -154,12 +175,34 @@ func present(island_name: String) -> void:
 	sail.expand_icon = true
 	sail.add_theme_constant_override("icon_max_width", 30)
 	sail.pressed.connect(_close)
-	column.add_child(sail)
+	_column.add_child(sail)
+
+	# Re-fitted on every resize, not just on the way in: a phone turned over
+	# between one purchase and the next changes both numbers.
+	resized.connect(_fit)
+	_fit()
 
 	await get_tree().process_frame
 	get_tree().paused = true
 	_refresh()
 	sail.grab_focus()
+	# Again once the rows exist. The list's own content is what the scroll bar is
+	# measured against, and until `_refresh` has run there is nothing in it.
+	_fit()
+
+
+## Sizes the panel to the screen it is on.
+func _fit() -> void:
+	if _panel == null or _scroll == null:
+		return
+	_panel.custom_minimum_size.x = Wave1UI.modal_width(self, PANEL_WIDTH)
+	_column.add_theme_constant_override("separation", Wave1UI.modal_separation(self))
+	Wave1UI.fit_list(_panel, _scroll, LIST_HEIGHT, LIST_HEIGHT_MIN)
+	# The rows are built for one shape of screen or the other, so turning the
+	# phone over while standing in the shop has to rebuild them.
+	if _rows != null and not _rows.get_children().is_empty():
+		if Wave1UI.is_compact(self) != _rows_are_compact:
+			_refresh()
 
 
 func _refresh() -> void:
@@ -180,6 +223,7 @@ func _refresh() -> void:
 
 	for child: Node in _rows.get_children():
 		child.queue_free()
+	_rows_are_compact = Wave1UI.is_compact(self)
 
 	# A new hull first: it is the biggest jump available and the thing worth saving
 	# for, so it should be the first thing seen rather than buried under upgrades.
@@ -305,8 +349,9 @@ func _add_row(
 	)
 	var dead: bool = maxed or short
 
+	var compact: bool = Wave1UI.is_compact(self)
 	var card := Button.new()
-	card.custom_minimum_size = Vector2(0, CARD_HEIGHT)
+	card.custom_minimum_size = Vector2(0, CARD_HEIGHT_COMPACT if compact else CARD_HEIGHT)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.disabled = dead
 	Wave1UI.apply_card(card, featured)
@@ -326,7 +371,7 @@ func _add_row(
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pad.add_child(row)
 
-	if icon != null:
+	if icon != null and not compact:
 		row.add_child(_icon_tile(icon, dead, featured))
 
 	var text_column := VBoxContainer.new()

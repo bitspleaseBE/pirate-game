@@ -20,12 +20,17 @@ extends Control
 ## thing still set in Kenney Future, the wide all-caps display face the HUD was
 ## moved off for being unreadable at body sizes. See the note at the top of hud.gd.
 const FONT: String = "res://assets/fonts/Alegreya.ttf"
+## What the panel asks for; it gives way to a narrower screen — see
+## [method Wave1UI.modal_width]. Asking for 560 on a 390-unit phone left the
+## three lines of the only text a new player is asked to read running off both
+## edges of the glass.
 const PANEL_WIDTH: float = 560.0
 
 signal dismissed()
 
 var _column: VBoxContainer
 var _button: Button
+var _panel: PanelContainer
 
 
 func _ready() -> void:
@@ -47,14 +52,23 @@ func _ready() -> void:
 	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(centre)
 
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
-	panel.add_theme_stylebox_override("panel", _panel_style())
-	centre.add_child(panel)
+	_panel = PanelContainer.new()
+	_panel.add_theme_stylebox_override("panel", _panel_style())
+	centre.add_child(_panel)
 
 	_column = VBoxContainer.new()
-	_column.add_theme_constant_override("separation", 12)
-	panel.add_child(_column)
+	_panel.add_child(_column)
+
+	resized.connect(_fit)
+	_fit()
+
+
+## Sizes the panel to the screen it is on.
+func _fit() -> void:
+	if _panel == null:
+		return
+	_panel.custom_minimum_size.x = Wave1UI.modal_width(self, PANEL_WIDTH)
+	_column.add_theme_constant_override("separation", Wave1UI.modal_separation(self))
 
 
 ## Fills in and shows the panel. Pauses the tree until dismissed.

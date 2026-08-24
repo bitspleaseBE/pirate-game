@@ -36,6 +36,7 @@ GameState="*res://src/autoload/game_state.gd"
 SaveSystem="*res://src/autoload/save_system.gd"
 Router="*res://src/autoload/scene_router.gd"
 DebugOverlay="*res://src/core/debug/debug_overlay.gd"
+ScreenFit="*res://src/autoload/screen_fit.gd"
 
 [debug]
 

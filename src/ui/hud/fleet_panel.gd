@@ -19,7 +19,14 @@ extends Control
 
 ## Alegreya, matching the HUD and the port. See the note at the top of hud.gd.
 const FONT: String = "res://assets/fonts/Alegreya.ttf"
+## What the panel asks for; it gives way to a narrower screen — see
+## [method Wave1UI.modal_width].
 const PANEL_WIDTH: float = 620.0
+## What the roster asks for, and the least it will accept. A phone in landscape
+## has less height than the cards alone want, and the way out of this modal is the
+## button underneath them.
+const LIST_HEIGHT: float = 340.0
+const LIST_HEIGHT_MIN: float = 120.0
 
 const GOLD: Color = Color("d9a12c")
 const GOLD_BRIGHT: Color = Color("f0c04a")
@@ -44,6 +51,9 @@ const ICON_WHEEL: Texture2D = preload("res://assets/wave1/icons/icon_wheel.png")
 signal closed()
 
 var _fleet: FleetController = null
+var _panel: PanelContainer
+var _column: VBoxContainer
+var _scroll: ScrollContainer
 
 
 ## Fills in and shows the panel. Pauses the tree until closed.
@@ -63,39 +73,36 @@ func present(fleet: FleetController) -> void:
 	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(centre)
 
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(PANEL_WIDTH, 0)
-	panel.add_theme_stylebox_override("panel", _panel_style())
-	centre.add_child(panel)
+	_panel = PanelContainer.new()
+	_panel.add_theme_stylebox_override("panel", _panel_style())
+	centre.add_child(_panel)
 
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
-	panel.add_child(column)
+	_column = VBoxContainer.new()
+	_panel.add_child(_column)
 
-	column.add_child(_label("YOUR FLEET", 21, GOLD, HORIZONTAL_ALIGNMENT_CENTER))
-	column.add_child(
+	_column.add_child(_label("YOUR FLEET", 21, GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+	_column.add_child(
 		_label(_fleet_summary(), 13, DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	)
 
 	# The hold, once, at the top. Unbanked gold belongs to the fleet rather than to
 	# any one hull — it is all lost the moment a hull goes down — so putting a copy
 	# of the number on every card would be three answers to a question with one.
-	column.add_child(_hold_row())
+	_column.add_child(_hold_row())
 
 	var rule := ColorRect.new()
 	rule.color = Color(0.55, 0.44, 0.26, 0.45)
 	rule.custom_minimum_size = Vector2(0, 1)
-	column.add_child(rule)
+	_column.add_child(rule)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 340)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	column.add_child(scroll)
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_column.add_child(_scroll)
 
 	var cards := VBoxContainer.new()
 	cards.add_theme_constant_override("separation", 9)
 	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(cards)
+	_scroll.add_child(cards)
 
 	for slot: int in GameState.fleet.size():
 		cards.add_child(_ship_card(slot))
@@ -107,12 +114,25 @@ func present(fleet: FleetController) -> void:
 	_apply_font(close)
 	Wave1UI.apply_brass(close)
 	close.pressed.connect(_close)
-	column.add_child(close)
+	_column.add_child(close)
+
+	resized.connect(_fit)
+	_fit()
 
 	# A frame before pausing, so the world behind the panel is laid out and drawn.
 	await get_tree().process_frame
 	get_tree().paused = true
 	close.grab_focus()
+	_fit()
+
+
+## Sizes the panel to the screen it is on.
+func _fit() -> void:
+	if _panel == null or _scroll == null:
+		return
+	_panel.custom_minimum_size.x = Wave1UI.modal_width(self, PANEL_WIDTH)
+	_column.add_theme_constant_override("separation", Wave1UI.modal_separation(self))
+	Wave1UI.fit_list(_panel, _scroll, LIST_HEIGHT, LIST_HEIGHT_MIN)
 
 
 func force_close() -> void:

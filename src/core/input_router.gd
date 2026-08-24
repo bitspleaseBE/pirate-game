@@ -11,6 +11,21 @@ extends Node
 ## the world lives inside a SubViewport, so depending on it makes desktop and
 ## device behaviour diverge in ways that are painful to debug.
 ##
+## The traffic in the *other* direction cannot be turned off, and used to break
+## the game outright on every touchscreen. `emulate_mouse_from_touch` is on by
+## default and has to stay on: Godot's own [BaseButton] only reacts to
+## [InputEventMouseButton] and `ui_accept`, so with it off not one button in the
+## HUD, the port or the title screen would answer a finger. The cost is that a
+## single tap arrives here **twice** — an emulated [InputEventMouseButton]
+## carrying [constant InputEvent.DEVICE_ID_EMULATION], immediately followed by the
+## real [InputEventScreenTouch]. Two pointers down at once is this router's
+## definition of a pinch, so every tap on a phone was classified as a two-finger
+## zoom of zero magnitude and [method _tap] was never reached: taps did nothing
+## at all on a device, while the identical code path worked under a mouse. The
+## emulated events are dropped below, and a real touch going down evicts any
+## mouse pointer as a second line of defence for platforms that synthesise
+## compatibility mouse events without marking them (browsers do this).
+##
 ## Gesture rules, in priority order:
 ##   two pointers      → pinch zoom
 ##   one pointer moved → pan the camera (snaps back on release)
@@ -20,8 +35,18 @@ extends Node
 ## enemy is slightly closer. Selecting is recoverable; firing at the wrong thing
 ## is not.
 
-## A press that moves further than this becomes a pan, not a tap.
-const TAP_MAX_MOVE: float = 20.0
+## How far a press may travel and still count as a tap, as a fraction of the
+## shorter edge of the viewport it is measured in.
+##
+## Deliberately not a pixel count. These coordinates are SubViewport pixels, and
+## that viewport is the window divided by the render shrink, so one constant
+## meant three different distances: ~20 px on the 720p desktop the value was
+## picked on, half that at LOW quality where the SubViewport is half size, and
+## about 6 px of a phone's own pixels once a 1280-wide canvas is squeezed onto a
+## 390 pt screen — under two millimetres of travel, which no thumb holds still
+## inside. 2.5% reproduces the original 18 px at 720p and is ~2.5 mm of finger on
+## a phone, which is the number accessibility guidance uses for touch slop.
+const TAP_SLOP_FRACTION: float = 0.025
 ## A press held longer than this is not a tap either.
 const TAP_MAX_TIME: float = 0.4
 ## Pick radii in world units — generous, because fingers are imprecise.
@@ -67,6 +92,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if _is_emulated(button):
+			return
 		match button.button_index:
 			MOUSE_BUTTON_LEFT:
 				if button.pressed:
@@ -82,6 +109,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
+		if _is_emulated(motion):
+			return
 		if _pointers.has(MOUSE_INDEX):
 			_pointer_move(MOUSE_INDEX, motion.position, motion.relative)
 
@@ -93,7 +122,31 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # --- Normalised pointer model ----------------------------------------------
 
+## True for the mouse events Godot manufactures from a touch.
+##
+## They are indistinguishable from a real click except for the device id, which
+## the engine stamps with [constant InputEvent.DEVICE_ID_EMULATION] precisely so
+## that code which already understands touch can ignore them. Everything that is
+## a [Control] wants them and gets them; this router is the one place that must
+## not double-count.
+func _is_emulated(event: InputEvent) -> bool:
+	return event.device == InputEvent.DEVICE_ID_EMULATION
+
+
+## Tap slop in the units this router's events arrive in — see
+## [constant TAP_SLOP_FRACTION].
+func _tap_slop() -> float:
+	var size: Vector2 = get_viewport().get_visible_rect().size
+	return minf(size.x, size.y) * TAP_SLOP_FRACTION
+
+
 func _pointer_down(index: int, pos: Vector2) -> void:
+	if index != MOUSE_INDEX:
+		# A finger is on the glass, so any mouse pointer we are holding is a
+		# compatibility event from that same finger and not a second contact.
+		# Without this, a platform that emulates the mouse without marking the
+		# events would make every tap read as a pinch.
+		_pointers.erase(MOUSE_INDEX)
 	_pointers[index] = {"start": pos, "current": pos, "time": 0.0}
 	if _pointers.size() == 2:
 		_gesture_is_pinch = true
@@ -116,7 +169,7 @@ func _pointer_move(index: int, pos: Vector2, relative: Vector2) -> void:
 
 	if not _gesture_is_pan:
 		# Stay a candidate tap until the pointer has clearly travelled.
-		if _pointers[index]["start"].distance_to(pos) <= TAP_MAX_MOVE:
+		if _pointers[index]["start"].distance_to(pos) <= _tap_slop():
 			return
 		_gesture_is_pan = true
 	camera.apply_pan(relative)
@@ -131,7 +184,7 @@ func _pointer_up(index: int, pos: Vector2) -> void:
 	# a pinch from registering as a tap when it lifts.
 	if not record.is_empty() and not _gesture_is_pan and not _gesture_is_pinch:
 		var moved: float = record["start"].distance_to(record["current"])
-		if moved <= TAP_MAX_MOVE and float(record["time"]) <= TAP_MAX_TIME:
+		if moved <= _tap_slop() and float(record["time"]) <= TAP_MAX_TIME:
 			_tap(pos)
 
 	if _pointers.is_empty():

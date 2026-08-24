@@ -84,6 +84,9 @@ func _ready() -> void:
 
 	_apply_render_scale()
 	Quality.tier_changed.connect(_on_quality_tier_changed)
+	# A phone turned over changes the UI scale, and the UI scale is half of what
+	# decides the render shrink.
+	get_window().size_changed.connect(_apply_render_scale)
 
 	archipelago.generate(GameState.voyage_seed)
 	# The sea is drawn before the land exists and knows nothing about it, so the
@@ -146,6 +149,8 @@ func _ready() -> void:
 		or "--audio" in harness_args
 		or "--rig" in harness_args
 		or "--ladder" in harness_args
+		or "--touch" in harness_args
+		or "--shot-mobile" in harness_args
 	)
 
 	_update_wind_availability()
@@ -216,6 +221,10 @@ func _ready() -> void:
 		_run_rig_test()
 	elif "--ladder" in args:
 		_run_ladder_test()
+	elif "--touch" in args:
+		_run_touch_test()
+	elif "--shot-mobile" in args:
+		_capture_mobile()
 
 
 ## Drives the entire game-over path and asserts the player can still play.
@@ -2598,7 +2607,26 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _apply_render_scale() -> void:
 	_viewport_container.stretch = true
-	_viewport_container.stretch_shrink = Quality.render_shrink
+	_viewport_container.stretch_shrink = _render_shrink()
+
+
+## The shrink the world is actually rendered at.
+##
+## [member Quality.render_shrink] halves the world's resolution on the LOW
+## tier, which is exactly the tier a phone lands on — and on a phone the canvas
+## has *already* been divided, by the UI scale that makes the HUD legible (see
+## [ScreenFit]). Both at once is a quarter of the pixels: a 1170-wide phone screen
+## drawing a 195-wide world, six times upscaled, which is not a quality tier but a
+## smear.
+##
+## The saving the shrink exists for has already been banked by then, and by more
+## than the shrink ever delivered: fitting the canvas to CSS pixels takes a
+## portrait phone from 1280x2770 to 390x844, which is a 2.7x cut in fill on its
+## own. So when the interface has been scaled, the shrink stands down.
+func _render_shrink() -> int:
+	if Wave1UI.ui_scale(get_window()) > 1.0:
+		return 1
+	return Quality.render_shrink
 
 
 func _on_quality_tier_changed(_tier: int) -> void:
@@ -3280,3 +3308,407 @@ func _toast(text: String) -> void:
 	if hud.has_method(&"show_toast"):
 		hud.call(&"show_toast", text)
 	Log.info(text, "Voyage")
+
+
+## Frames the HUD and every modal at real phone viewports, in both orientations.
+##
+##   xvfb-run -a godot src/scenes/voyage.tscn -- --shot-mobile
+##
+## The game is played on a phone and developed on a 1280x720 desktop window, and
+## every other screenshot harness runs at the latter — so the layout that most
+## needed looking at was the one nothing had ever photographed. The window is
+## resized between passes rather than taking one size per run, because the point
+## is to compare the same four screens across three shapes and the interesting
+## failures (a panel wider than the screen, two corners of the HUD colliding) only
+## exist in one of them.
+##
+## The sizes are CSS pixels, which is what the layout reasons in — see
+## [method Wave1UI.ui_scale]. A phone reporting a 3x device pixel ratio has three
+## times these numbers of real pixels, and the scale maths cancels that out, so
+## 390x844 here is a 1170x2532 iPhone.
+func _capture_mobile() -> void:
+	const VIEWPORTS: Array[Vector2i] = [
+		Vector2i(390, 844),  # iPhone-class portrait, the tightest width that matters
+		Vector2i(844, 390),  # the same phone turned over
+		Vector2i(820, 1180),  # a tablet, where the UI must stop growing
+	]
+	var dir: String = "user://shots"
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(0.6).timeout
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+
+	# A purse that can afford some of the shop and not the rest, so the port frame
+	# shows both treatments — the same reason `--shot-port` sets one.
+	GameState.banked_gold = maxi(GameState.banked_gold, 182)
+	GameState.add_gold(210)
+	GameState.fleet[0] = {"stats_id": &"sloop", "upgrades": {&"plating": 1}}
+	fleet.refit()
+	await get_tree().process_frame
+
+	var port: Island = archipelago.home
+	for island: Island in archipelago.islands:
+		if island.is_captured:
+			port = island
+			break
+
+	for size: Vector2i in VIEWPORTS:
+		var tag: String = "%dx%d" % [size.x, size.y]
+		# `Window.size`, not [method DisplayServer.window_set_size]: the latter
+		# resizes the OS window without the SceneTree's window node noticing, so
+		# the stretch and the UI scale go on being computed for the old shape and
+		# every frame after the first comes out identical to the first.
+		get_window().size = size
+		# One frame for the resize to land, then a beat for the relayout and the
+		# render scale it triggers.
+		await get_tree().process_frame
+		await get_tree().create_timer(0.4).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/mobile_%s_hud.png" % [dir, tag])
+
+		EventBus.intent_open_port.emit(port)
+		await get_tree().create_timer(0.4).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/mobile_%s_port.png" % [dir, tag])
+		if hud.has_method(&"dismiss_port"):
+			hud.call(&"dismiss_port")
+		await get_tree().create_timer(0.3).timeout
+
+		var badge: Button = hud.find_child("FleetButton", true, false) as Button
+		if badge != null:
+			badge.pressed.emit()
+			await get_tree().create_timer(0.4).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(
+				"%s/mobile_%s_fleet.png" % [dir, tag]
+			)
+			if hud.has_method(&"dismiss_fleet"):
+				hud.call(&"dismiss_fleet")
+			await get_tree().create_timer(0.3).timeout
+
+		if hud.has_method(&"show_briefing"):
+			hud.call(
+				&"show_briefing",
+				"THE WIND",
+				PackedStringArray([
+					"Your sails only pull with the wind behind or abeam.",
+					"The ring around your ship shows where it is coming from.",
+					"Beating straight upwind is slow — tack across it instead.",
+				]),
+				"GOT IT"
+			)
+			await get_tree().create_timer(0.4).timeout
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png(
+				"%s/mobile_%s_briefing.png" % [dir, tag]
+			)
+			if hud.has_method(&"dismiss_briefing"):
+				hud.call(&"dismiss_briefing")
+			await get_tree().create_timer(0.3).timeout
+
+	print("MOBILE SHOTS: %s" % ProjectSettings.globalize_path(dir))
+	await _quit_cleanly(0)
+
+
+## Taps the sea with a synthesised finger and asserts the helm answers.
+##
+##   godot --headless src/scenes/voyage.tscn -- --touch
+##
+## This gate exists because tap-to-sail — the only control the game has — was
+## dead on every touchscreen while working perfectly under a mouse, and nothing
+## in the harness could see it. The screenshot runs could not: a still frame of a
+## ship that was never ordered anywhere looks exactly like a still frame of a ship
+## that was. Every other run drives [EventBus] directly, which starts downstream
+## of the entire pointer path.
+##
+## Events go in through [method Input.parse_input_event] rather than being pushed
+## at a viewport, and that distinction is the whole test. The failure lived in
+## what the *engine* adds on the way in — `emulate_mouse_from_touch` turns one tap
+## into an emulated mouse click followed by the real touch — and pushing straight
+## at the viewport skips the emulation, and the bug with it. A version of this
+## harness that used `Viewport.push_input` passed against the broken build.
+func _run_touch_test() -> void:
+	## Everything the router resolves a tap against — hulls, islands, the enemy
+	## pick radius — is in world units, so the assertions are too. Generous
+	## enough to absorb the camera drifting a little between the frame the point
+	## is computed on and the frame the event lands on.
+	const COURSE_TOLERANCE: float = 90.0
+
+	await get_tree().create_timer(0.5).timeout
+	if hud.has_method(&"dismiss_briefing"):
+		hud.call(&"dismiss_briefing")
+	await get_tree().process_frame
+
+	var ship: Ship = fleet.selected
+	if ship == null or not is_instance_valid(ship):
+		push_error("TOUCH FAIL: no ship at the helm to steer")
+		await _quit_cleanly(1)
+		return
+
+	var water: Vector2 = _open_water_near(ship)
+	if water == Vector2.INF:
+		push_error("TOUCH FAIL: no clear water in sight to tap")
+		await _quit_cleanly(1)
+		return
+
+	var taps: Dictionary = {"move": 0}
+	EventBus.intent_move.connect(func(_p: Vector2) -> void:
+		taps["move"] += 1
+	)
+
+	# 1. The mouse, first, so a regression here is distinguishable from one in the
+	# touch path rather than both failing together with one message.
+	ship.stop()
+	_send_click(true, _device_point(water))
+	await _settle_input()
+	_send_click(false, _device_point(water))
+	await _settle_input()
+	if taps["move"] != 1:
+		push_error("TOUCH FAIL: a mouse click on open water raised %d move orders, not 1"
+			% taps["move"])
+		await _quit_cleanly(1)
+		return
+	if not ship.has_nav_target or ship.nav_target.distance_to(water) > COURSE_TOLERANCE:
+		push_error("TOUCH FAIL: mouse click set no usable course (%s for a tap at %s)"
+			% [ship.nav_target, water])
+		await _quit_cleanly(1)
+		return
+
+	# 2. The same tap with a finger. One order, not zero and not two: zero was the
+	# shipped bug, and two would mean the emulated mouse event is being counted as
+	# a second tap rather than dropped.
+	ship.stop()
+	water = _open_water_near(ship)
+	_send_touch(0, true, _device_point(water))
+	await _settle_input()
+	_send_touch(0, false, _device_point(water))
+	await _settle_input()
+	if taps["move"] != 2:
+		push_error(
+			"TOUCH FAIL: a finger tap on open water raised %d move orders in total, expected 2"
+			% taps["move"]
+		)
+		await _quit_cleanly(1)
+		return
+	if not ship.has_nav_target or ship.nav_target.distance_to(water) > COURSE_TOLERANCE:
+		push_error("TOUCH FAIL: finger tap set no usable course (%s for a tap at %s)"
+			% [ship.nav_target, water])
+		await _quit_cleanly(1)
+		return
+	if not ship.manual_helm:
+		push_error("TOUCH FAIL: finger tap did not take the helm off the engagement solver")
+		await _quit_cleanly(1)
+		return
+
+	# 3. A finger that travels pans the camera and orders nothing. The two
+	# gestures share a press, so the only thing keeping them apart is the slop
+	# threshold, and that threshold is now resolution-relative.
+	ship.stop()
+	camera.recenter()
+	await get_tree().process_frame
+	var pan_from: Vector2 = camera.pan_offset
+	var drag_start: Vector2 = _device_point(water)
+	## Comfortably past the tap slop, which is a fraction of the viewport rather
+	## than a fixed distance — so this has to be expressed the same way.
+	var drag_step: Vector2 = _device_offset(Vector2(_touch_slop() * 2.0, 0.0))
+	_send_touch(1, true, drag_start)
+	await _settle_input()
+	for step: int in 6:
+		_send_drag(1, drag_start + drag_step * float(step + 1), drag_step)
+		await _settle_input()
+	_send_touch(1, false, drag_start + drag_step * 6.0)
+	await _settle_input()
+	if taps["move"] != 2:
+		push_error("TOUCH FAIL: dragging the sea issued a move order — a pan read as a tap")
+		await _quit_cleanly(1)
+		return
+	if camera.pan_offset.distance_to(pan_from) < 1.0:
+		push_error("TOUCH FAIL: dragging with one finger did not pan the camera")
+		await _quit_cleanly(1)
+		return
+
+	# 4. Two fingers still zoom. The pinch branch is what a lone tap was being
+	# misfiled into, so tightening the pointer bookkeeping has to leave the real
+	# gesture intact.
+	## Where the two fingers land, as a fraction of the way down the glass. The
+	## upper half, because the HUD lives along the bottom edge — the shot rack on
+	## one side, the map on the other — and a finger that comes down on a Control
+	## belongs to that Control, not to the world.
+	const PINCH_LINE: float = 0.35
+
+	var zoom_from: float = camera.target_zoom
+	# Straddling the middle of the screen rather than the water that was tapped: a
+	# pinch is about the screen, not about anything in the sea under it. Both
+	# fingers have to *land* inside the container — an event outside it is never
+	# forwarded into the world at all — so the spread gives way to a narrow screen.
+	var glass: Vector2 = input_router.get_viewport().get_visible_rect().size
+	var spread: Vector2 = _device_offset(Vector2(minf(200.0, glass.x * 0.2), 0))
+	var line: Vector2 = _device_from_glass(Vector2(glass.x * 0.5, glass.y * PINCH_LINE))
+	var pinch_a: Vector2 = line - spread
+	var pinch_b: Vector2 = line + spread
+	_send_touch(0, true, pinch_a)
+	_send_touch(1, true, pinch_b)
+	await _settle_input()
+	for step: int in 5:
+		_send_drag(1, pinch_b + spread * (0.3 * float(step + 1)), spread * 0.3)
+		await _settle_input()
+	_send_touch(0, false, pinch_a)
+	_send_touch(1, false, pinch_b + spread * 1.5)
+	await _settle_input()
+	if is_equal_approx(camera.target_zoom, zoom_from):
+		push_error("TOUCH FAIL: a two-finger pinch changed nothing")
+		await _quit_cleanly(1)
+		return
+
+	print("TOUCH PASS")
+	await _quit_cleanly(0)
+
+
+## A world point a tap on which can only mean "sail here": clear of every hull,
+## off every island, and outside the router's own enemy pick radius, so the
+## assertion is about the pointer path and not about what happened to be moored
+## nearby.
+func _open_water_near(ship: Ship) -> Vector2:
+	## How far out to tap, as a fraction of the smaller half of what is on screen.
+	## Measured off the camera rather than fixed, because how much sea a screen
+	## holds is exactly what changes between a desktop window and a phone: a flat
+	## 300 units was comfortably inside a 1280-wide view and comfortably *outside*
+	## a portrait phone's 391, where every synthesised tap landed off the glass and
+	## was dropped before it reached the world.
+	const PROBE_SHARE: float = 0.55
+	## Never closer than this, or the tap is a ship selection rather than a course,
+	## and never further than the range the desktop case has always used.
+	var probe_range: float = clampf(
+		minf(_visible_world().x, _visible_world().y) * 0.5 * PROBE_SHARE,
+		InputRouter.PICK_RADIUS_SHIP * 1.3,
+		300.0
+	)
+	## Clearance from any coastline. Wide enough that the router's navigable
+	## clamp leaves the point where it is, so the course can be compared against
+	## the point that was tapped.
+	const COAST_CLEARANCE: float = 200.0
+
+	for step: int in 16:
+		var probe: Vector2 = ship.global_position + Vector2.RIGHT.rotated(
+			TAU * float(step) / 16.0
+		) * probe_range
+		if Grid.query_nearest(
+			probe,
+			InputRouter.PICK_RADIUS_ENEMY,
+			SpatialGrid.KIND_ENEMY_SHIP | SpatialGrid.KIND_STRUCTURE
+		) != null:
+			continue
+		if Grid.query_nearest(
+			probe, InputRouter.PICK_RADIUS_SHIP, SpatialGrid.KIND_PLAYER_SHIP
+		) != null:
+			continue
+		# And somewhere the player could actually reach. The HUD is a Control layer
+		# over the world: a tap that lands on the shot rack is answered by the shot
+		# rack, which on a phone in landscape is a third of the right-hand side of
+		# the screen and was where this harness kept aiming.
+		if _hud_blocks(_canvas_point(probe)):
+			continue
+		var clear: bool = true
+		for island: Island in archipelago.islands:
+			if island.distance_to_coast(probe) < COAST_CLEARANCE:
+				clear = false
+				break
+		if clear:
+			return probe
+	return Vector2.INF
+
+
+## True when some part of the HUD would take a tap at this point on the canvas.
+func _hud_blocks(canvas_point: Vector2) -> bool:
+	for node: Node in hud.find_children("*", "Control", true, false):
+		var control := node as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		if control.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+			continue
+		if control.get_global_rect().has_point(canvas_point):
+			return true
+	return false
+
+
+## Where a world position lands on the glass, in the coordinates a device
+## delivers events in.
+##
+## Two transforms, because there are two viewports. The camera's canvas transform
+## puts the world into SubViewport pixels; the container scales those up by the
+## render shrink to fill the window; and the root viewport's final transform is
+## the project's `canvas_items` stretch, which the engine applies in reverse to
+## everything arriving from the platform. Headless runs a 64px window against a
+## 1280px canvas, so that last step is a factor of twenty and skipping it puts
+## every synthesised tap far outside the screen — where it is silently dropped
+## and the harness passes having tested nothing.
+func _device_point(world_pos: Vector2) -> Vector2:
+	return get_viewport().get_final_transform() * _canvas_point(world_pos)
+
+
+## Where a world position lands on the HUD's canvas — the coordinates every
+## Control in the game is laid out in, one transform short of a device event.
+func _canvas_point(world_pos: Vector2) -> Vector2:
+	var in_sub: Vector2 = camera.get_canvas_transform() * world_pos
+	return in_sub * float(_viewport_container.stretch_shrink)
+
+
+## How much sea is on screen, in world units.
+func _visible_world() -> Vector2:
+	return camera.get_viewport_rect().size / camera.zoom
+
+
+## A point given in SubViewport pixels, in the coordinates a device delivers
+## events in.
+func _device_from_glass(point: Vector2) -> Vector2:
+	return get_viewport().get_final_transform() * (
+		point * float(_viewport_container.stretch_shrink)
+	)
+
+
+## A screen distance, expressed in SubViewport pixels, in the coordinates a
+## device delivers events in. The same two transforms [method _device_point]
+## applies, minus the origin.
+func _device_offset(in_sub: Vector2) -> Vector2:
+	return get_viewport().get_final_transform().basis_xform(
+		in_sub * float(_viewport_container.stretch_shrink)
+	)
+
+
+## The router's own tap slop, so the harness drags past it by construction rather
+## than by a number that has to be kept in step with it by hand.
+func _touch_slop() -> float:
+	var size: Vector2 = input_router.get_viewport().get_visible_rect().size
+	return minf(size.x, size.y) * InputRouter.TAP_SLOP_FRACTION
+
+
+func _send_touch(index: int, pressed: bool, at: Vector2) -> void:
+	var event := InputEventScreenTouch.new()
+	event.index = index
+	event.pressed = pressed
+	event.position = at
+	Input.parse_input_event(event)
+
+
+func _send_drag(index: int, at: Vector2, relative: Vector2) -> void:
+	var event := InputEventScreenDrag.new()
+	event.index = index
+	event.position = at
+	event.relative = relative
+	Input.parse_input_event(event)
+
+
+func _send_click(pressed: bool, at: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = at
+	event.global_position = at
+	Input.parse_input_event(event)
+
+
+## Parsed input is dispatched on the engine's next flush, and the router ages its
+## own pointers in `_process`, so an event needs a frame to become a gesture.
+func _settle_input() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
