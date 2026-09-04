@@ -108,6 +108,17 @@ you know where the wind is:
 godot --headless src/scenes/voyage.tscn -- --sailing
 ```
 
+Measure what tapping the water actually gets you: how far past the mark she coasts, how
+long from a course order to being on it, how long the player's order survives before the
+engagement assist takes the helm back, and whether a course to an island's harbour gets
+there. Every other gate asks whether a system *works* — `--smoke` proves a ship reaches an
+island and `--touch` proves the tap reaches the router, and between them the helm could be
+arriving three ship-lengths past your finger and both would pass:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --helm
+```
+
 Assert every sound cue has a file behind it and the music actually reacts to the game.
 Audio is the one subsystem whose entire failure mode is silence — a missing file is
 skipped at boot with one warning and then plays nothing, forever, with no error at any

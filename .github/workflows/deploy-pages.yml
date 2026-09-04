@@ -172,6 +172,21 @@ jobs:
             exit 1
           fi
 
+      # The one control the game has, measured rather than asserted. This is a
+      # feel gate: overshoot, response, who holds the helm, and whether a course
+      # to a harbour arrives. It has already caught the helm driving at full
+      # speed into the mark and the assist seizing control half a second after a
+      # player's order completed.
+      - name: Helm test (taps land where you put them)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --helm 2>&1 | tee /tmp/helm.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/helm.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       - name: Export web build
         run: |
           set -euo pipefail

@@ -149,6 +149,7 @@ func _ready() -> void:
 		or "--audio" in harness_args
 		or "--rig" in harness_args
 		or "--sailing" in harness_args
+		or "--helm" in harness_args
 		or "--ladder" in harness_args
 		or "--touch" in harness_args
 		or "--shot-mobile" in harness_args
@@ -218,6 +219,8 @@ func _ready() -> void:
 		_run_rout_test()
 	elif "--audio" in args:
 		_run_audio_test()
+	elif "--helm" in args:
+		_run_helm_test()
 	elif "--sailing" in args:
 		_run_sailing_test()
 	elif "--rig" in args:
@@ -726,6 +729,274 @@ func _run_rig_test() -> void:
 	else:
 		for line: String in failures:
 			push_error("RIG FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## What tapping the water actually gets you.
+##
+##   godot --headless src/scenes/voyage.tscn -- --helm
+##
+## Every other harness here asks whether a system *works*. This one asks whether
+## the one control the game has feels like anything, which nothing had ever
+## measured — `--smoke` proves a ship reaches an island and `--touch` proves the
+## tap arrives at the router, and between them a helm could be arriving three
+## ship-lengths past the point you tapped and both would pass.
+##
+## Four numbers, one per complaint, all of them things a player feels within a
+## minute and none of them visible in a screenshot:
+##
+##   * **overshoot** — how far past the tapped point she ends up;
+##   * **response** — how long from a course order to actually being on it;
+##   * **handover** — how long a manual course is honoured before the engagement
+##     assist takes the helm back;
+##   * **rounding** — whether a course to the far side of an island gets there.
+##
+## Every order here goes through [method Ship.steer_by_hand] rather than
+## [method Ship.set_course], and the difference is the whole point of the
+## handover measurement. `set_course` is what the engagement assist uses; only
+## `steer_by_hand` marks the order as the player's. The first draft of this file
+## used `set_course` throughout and duly reported that the assist seized the helm
+## 0.2 seconds after a manual course completed — which it does not, because there
+## had never been a manual course. A harness that drives the game through the
+## wrong entry point measures a game nobody is playing.
+func _run_helm_test() -> void:
+	const TIME_SCALE: float = 3.0
+	## A tap should land you within about a ship's length of the point. Past that
+	## the boat is visibly ignoring where you put your finger.
+	const MAX_OVERSHOOT_RADII: float = 2.5
+	## Seconds from a course order to being within 20 degrees of it, from rest.
+	const MAX_RESPONSE_SEC: float = 5.0
+	## Seconds a manual course must be honoured after arrival before the assist
+	## may take over. Zero means the two fight each other.
+	const MIN_HANDOVER_SEC: float = 2.0
+	const ROUNDING_BUDGET_SEC: float = 60.0
+
+	## Game time in one physics tick. Every clock below counts in *game* seconds,
+	## which is what a player experiences, and the harness runs the world at
+	## TIME_SCALE — so a raw 1/60 per frame would measure real seconds and report
+	## every duration at a third of its true value. It did, for one round of this:
+	## a 2.5-second helm grace period came back as 0.9.
+	var TICK: float = (1.0 / 60.0) * TIME_SCALE
+
+	director.set_process(false)
+	var failures: PackedStringArray = []
+
+	GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	_update_wind_availability()
+
+	var ship: Ship = fleet.selected
+	if ship == null:
+		push_error("HELM FAIL: no player hull")
+		await _quit_cleanly(1)
+		return
+
+	var open: Vector2 = archipelago.world_bounds.end + Vector2(7000.0, 7000.0)
+	camera.set_world_bounds(Rect2(open - Vector2(9000.0, 9000.0), Vector2(18000.0, 18000.0)))
+	camera.snap_to(open)
+	Engine.time_scale = TIME_SCALE
+
+	# --- Overshoot -----------------------------------------------------------
+	#
+	# Sailed from a standing start to a point well inside the hull's own coasting
+	# distance, which is the case a player generates constantly: tap somewhere
+	# close, expect to stop there.
+	var overshoot_radii: float = 0.0
+	for run: int in 2:
+		ship.global_position = open
+		ship.rotation = 0.0
+		ship.stop()
+		ship.set_target(null)
+		await get_tree().physics_frame
+		var mark: Vector2 = open + Vector2(0.0, -1200.0)
+		ship.steer_by_hand(mark)
+		var elapsed: float = 0.0
+		var closest: float = INF
+		var furthest_after: float = 0.0
+		var reached: bool = false
+		while elapsed < 30.0:
+			await get_tree().physics_frame
+			elapsed += TICK
+			var d: float = ship.global_position.distance_to(mark)
+			closest = minf(closest, d)
+			if not ship.has_nav_target:
+				reached = true
+			if reached:
+				furthest_after = maxf(furthest_after, d)
+				if ship.velocity.length() < 4.0:
+					break
+		overshoot_radii = maxf(overshoot_radii, furthest_after / maxf(1.0, ship.stats.hull_radius))
+
+	if overshoot_radii > MAX_OVERSHOOT_RADII:
+		failures.append(
+			"she coasts %.1f hull radii past the tapped point (limit %.1f) — the helm"
+			% [overshoot_radii, MAX_OVERSHOOT_RADII]
+			+ " drives at full speed right up to the mark and only then lets go"
+		)
+
+	# --- Response ------------------------------------------------------------
+	#
+	# From rest, ordered to reverse course. The worst case and the one that reads
+	# as the boat ignoring you: stopped hulls have almost no rudder authority.
+	ship.global_position = open
+	ship.rotation = 0.0
+	ship.stop()
+	ship.set_target(null)
+	await get_tree().physics_frame
+	var astern: Vector2 = open + Vector2(0.0, 2400.0)
+	ship.steer_by_hand(astern)
+	var response: float = 0.0
+	while response < 20.0:
+		await get_tree().physics_frame
+		response += TICK
+		var want: Vector2 = (astern - ship.global_position).normalized()
+		if absf(ship.forward().angle_to(want)) < deg_to_rad(20.0):
+			break
+	if response >= MAX_RESPONSE_SEC:
+		failures.append(
+			"%.1fs from a course order to being on it from rest (limit %.0f) — a"
+			% [response, MAX_RESPONSE_SEC]
+			+ " stopped hull has almost no rudder and cannot build way while turning"
+		)
+
+	# --- Handover ------------------------------------------------------------
+	#
+	# The player's order has to outlive its own arrival. Otherwise steering out of
+	# a bad position and having the assist immediately sail you back into it is
+	# the whole experience of trying to fight and steer at once.
+	var handover: float = -1.0
+	var mark_ship: EnemyShip = SpawnDirector.ENEMY_SCENE.instantiate() as EnemyShip
+	mark_ship.faction = FactionLibrary.get_faction(&"navy_crown")
+	mark_ship.stats = mark_ship.faction.build(&"enemy_sloop")
+	mark_ship.global_position = open + Vector2(900.0, 0.0)
+	ships_parent.add_child(mark_ship)
+	mark_ship.stop()
+	mark_ship.set_physics_process(false)
+	await get_tree().physics_frame
+
+	ship.global_position = open
+	ship.stop()
+	# Spike both batteries, the way `--ram` does and for the same reason. This
+	# measures who has the helm, not who wins — and with the guns live the marked
+	# hull simply sank partway through, which took the target away and left the
+	# measurement reading as "the assist never moved her".
+	ship.cannons_hp = 0.0
+	mark_ship.cannons_hp = 0.0
+	ship.set_target(mark_ship)
+	var held: Vector2 = open + Vector2(-260.0, 0.0)
+	ship.steer_by_hand(held)
+	var settle: float = 0.0
+	while settle < 25.0 and ship.has_nav_target:
+		await get_tree().physics_frame
+		settle += TICK
+	# Arrived under the player's own order. How long before the assist issues one
+	# of its own?
+	#
+	# Detected by a new course appearing, not by the hull moving. She is still
+	# carrying way at the moment she arrives, and "has she travelled sixty units"
+	# — which is what this asked first — cannot tell coasting apart from being
+	# steered, so it reported the assist seizing the helm while the assist was
+	# still waiting its turn.
+	var free: float = 0.0
+	while free < 8.0:
+		await get_tree().physics_frame
+		free += TICK
+		if ship.has_nav_target:
+			break
+	handover = free
+	if handover < MIN_HANDOVER_SEC:
+		failures.append(
+			"the engagement assist takes the helm back %.1fs after a manual course"
+			% handover
+			+ " completes (needs %.1f) — steering and fighting fight each other"
+			% MIN_HANDOVER_SEC
+		)
+	if is_instance_valid(mark_ship):
+		mark_ship.queue_free()
+
+	# --- Rounding ------------------------------------------------------------
+	#
+	# A course to the far side of an island. The one navigation task the game asks
+	# for constantly — every harbour is on the other side of something — and the
+	# one the avoidance field can fail at silently by orbiting forever.
+	# The biggest, raggedest island in the voyage, and the destination is its
+	# harbour rather than a point in open water. That is the navigation task the
+	# game actually asks for over and over — every quay is round the far side of
+	# something, tucked into the most sheltered bay on the coast — and it is a
+	# far harder one than clearing a headland: the anchor sits *inside* the
+	# standoff band, so the avoidance field has to let go of the hull at exactly
+	# the point it is pushing hardest.
+	var island: Island = null
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw) or raw == archipelago.home:
+			continue
+		var candidate: Island = raw
+		if island == null or candidate.def.radius > island.def.radius:
+			island = candidate
+	var rounded: bool = true
+	var rounding: float = 0.0
+	if island != null:
+		# Back inside the real world. The tests above pushed the camera bounds out
+		# to a box round the open-water station, and leaving them there put the
+		# island thousands of units outside them — the camera could not follow, the
+		# hull culled to dormant, and `--helm` reported a ship that "could not round
+		# the island" when what it had actually done was stop being simulated.
+		camera.set_world_bounds(archipelago.world_bounds)
+		# Start diametrically opposite the harbour, so the whole island is in the
+		# way whichever direction she breaks.
+		var far_side: Vector2 = island.anchor_point
+		var from_harbour: Vector2 = (far_side - island.global_position).normalized()
+		var reach: float = island.def.radius + 700.0
+		ship.global_position = island.global_position - from_harbour * reach
+		ship.rotation = 0.0
+		ship.stop()
+		ship.set_target(null)
+		await get_tree().physics_frame
+		camera.snap_to(ship.global_position)
+		Cull.force_tick()
+		ship.steer_by_hand(far_side)
+		rounded = false
+		# How far round the island she actually gets, and how close she comes to
+		# the beach doing it. "Did not arrive" is not a diagnosis: crawling round
+		# at half speed, orbiting at a fixed bearing and grinding along the sand
+		# all fail identically and want completely different fixes.
+		var swept: float = 0.0
+		var last_bearing: float = (ship.global_position - island.global_position).angle()
+		var nearest_coast: float = INF
+		while rounding < ROUNDING_BUDGET_SEC:
+			await get_tree().physics_frame
+			rounding += TICK
+			var bearing: float = (ship.global_position - island.global_position).angle()
+			swept += absf(angle_difference(last_bearing, bearing))
+			last_bearing = bearing
+			nearest_coast = minf(nearest_coast, island.distance_to_coast(ship.global_position))
+			if ship.global_position.distance_to(far_side) < ship.stats.hull_radius * 3.0:
+				rounded = true
+				break
+			# Re-issue, the way a player would when the boat is visibly not going
+			# where it was sent. If even that cannot get her round, it is stuck.
+			if not ship.has_nav_target:
+				ship.steer_by_hand(far_side)
+		if not rounded:
+			failures.append(
+				"she could not round a %.0f-unit island in %.0fs — got %.0f deg round it,"
+				% [island.def.radius, ROUNDING_BUDGET_SEC, rad_to_deg(swept)]
+				+ " closest approach %.0f units of coast" % nearest_coast
+			)
+
+	Engine.time_scale = 1.0
+	print(
+		"HELM: overshoot %.1f radii, response %.1fs, handover %.1fs, rounding %s (%.0fs)"
+		% [overshoot_radii, response, handover, "yes" if rounded else "NO", rounding]
+	)
+
+	if failures.is_empty():
+		print("HELM PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("HELM FAIL: %s" % line)
 		await _quit_cleanly(1)
 
 

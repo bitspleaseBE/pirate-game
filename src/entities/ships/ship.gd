@@ -35,6 +35,17 @@ const ARRIVAL_RELEASE_RADII: float = 1.8
 ## Weights for the two halves of the avoidance vector: straight out from the coast,
 ## and along it. The tangential part is what makes a ship skirt a headland instead
 ## of stalling nose-on to it.
+##
+## These were briefly changed — slide raised above push, and the side chosen by
+## where the ship is going rather than where it is pointing — to fix a `--helm`
+## failure that turned out to be a bug in the harness rather than in the game.
+## Measured properly, the original weights round the largest island in the voyage
+## and reach its harbour in fifteen seconds, and the "fix" made no difference at
+## all. It is recorded here because the reasoning behind it still sounds good and
+## somebody will have it again: choosing the side off the hull's own facing *is*
+## circular, since the facing is what this function steers. It simply is not
+## costing anything measurable, and a ship that navigates is not worth destabilising
+## for an argument.
 const COAST_PUSH_WEIGHT: float = 1.5
 const COAST_SLIDE_WEIGHT: float = 1.1
 ## Seconds a ship keeps returning fire after being hit by someone it cannot see.
@@ -47,6 +58,11 @@ const RETALIATE_MEMORY: float = 6.0
 const MIN_STEERAGE: float = 0.18
 ## Speed lost while turning at the maximum rate. You cannot corner and keep way.
 const TURN_SPEED_PENALTY: float = 0.28
+## How hard a hull sheds way with nothing driving it, as a fraction of its own
+## acceleration. Also what the arrival braking in [method _steer] solves against,
+## so the run-in and the coast-down are the same deceleration rather than two
+## unrelated guesses.
+const COAST_BRAKE_MUL: float = 0.6
 ## Where the hull pivots, as a fraction of hull radius forward of amidships.
 ## Real ships turn about a point roughly a third back from the bow, which throws
 ## the stern wide — the most recognisable thing a turning hull does.
@@ -96,6 +112,20 @@ const ORBIT_OFFSET_RAD: float = 0.78
 ## Engagement steering re-evaluates at this rate. It is a course correction, not
 ## a per-frame servo, and running it at 60 Hz just produces a twitchy helm.
 const ENGAGE_HZ: float = 5.0
+## Seconds the helm stays with the player after a course they ordered runs out.
+##
+## Without this the assist took it back within about half a second of arrival —
+## measured, by `--helm` — and that half second is the whole of what "steering and
+## fighting fight each other" means. You tap somewhere to break off, get shot at,
+## tap again to open the range; she arrives, and before you have looked up she is
+## already sailing back to the station the solver picked. The player's order has
+## to outlive its own completion or it is not an order, it is a suggestion.
+##
+## Long enough to issue the next one without racing the boat, short enough that a
+## player who has genuinely stopped steering gets the assist back before the fight
+## has moved on. Tapping an enemy clears it immediately — that *is* an instruction
+## to go and engage, and see [method set_target].
+const HELM_HOLD_SEC: float = 2.5
 
 # --- Raking fire -----------------------------------------------------------
 #
@@ -332,6 +362,9 @@ var _brace: float = 0.0
 ## How far over she is lying, eased toward [method beam_wind]. Signed the same
 ## way: positive is heeled to starboard.
 var _heel: float = 0.0
+## Seconds left of the player's grip on the helm after a hand-steered course ran
+## out. See [constant HELM_HOLD_SEC].
+var _helm_hold: float = 0.0
 ## Everything the swell moves. Held as one node so heave and roll never fight the
 ## hull's own scale or the ship's heading.
 var _visual: Node2D = null
@@ -452,12 +485,20 @@ func _physics_process(delta: float) -> void:
 func _tick_engagement(delta: float) -> void:
 	if suppress_engage_steering:
 		return
+	# Runs whether or not anything is marked, so the grace period is real time
+	# rather than time-spent-with-a-target.
+	_helm_hold = maxf(0.0, _helm_hold - delta)
+
 	if manual_helm:
 		if has_nav_target:
 			return
 		# Arrived. The helm comes back to the solver rather than leaving a ship
-		# sitting still with an enemy marked and nothing happening.
+		# sitting still with an enemy marked and nothing happening — but not this
+		# instant. See [constant HELM_HOLD_SEC].
 		manual_helm = false
+		_helm_hold = HELM_HOLD_SEC
+	if _helm_hold > 0.0:
+		return
 	if target == null or not is_instance_valid(target) or not _is_alive_target(target):
 		return
 
@@ -510,9 +551,11 @@ func _choose_orbit_dir(shoot_at: Node2D) -> void:
 func _steer(delta: float) -> void:
 	var speed_cap: float = current_speed_cap()
 
+	var arrive: float = stats.hull_radius * ARRIVE_RADIUS_MUL
+
 	if has_nav_target:
 		var to_target: Vector2 = nav_target - global_position
-		if to_target.length() <= stats.hull_radius * ARRIVE_RADIUS_MUL:
+		if to_target.length() <= arrive:
 			has_nav_target = false
 		else:
 			var desired: Vector2 = to_target.normalized() + _coast_avoidance()
@@ -527,11 +570,32 @@ func _steer(delta: float) -> void:
 			# Hard helm scrubs way. Cornering has to cost something or the fastest
 			# line through a fight is always a series of right angles.
 			var scrub: float = 1.0 - TURN_SPEED_PENALTY * (turn_used / maxf(1e-5, max_turn))
-			_speed = move_toward(_speed, speed_cap * scrub, stats.acceleration * delta)
+			var want: float = speed_cap * scrub
+
+			# Take the way off in time to stop *on* the mark, for a course the
+			# player ordered.
+			#
+			# `v = sqrt(2ad)` against the same deceleration coasting uses below, so
+			# the two halves of stopping agree with each other rather than being two
+			# guesses. Before this the helm drove at the full cap right up to the
+			# arrival circle and only then let go, and a Sloop carried nearly four
+			# hull radii past the tapped point — which reads, correctly, as the boat
+			# ignoring where you put your finger.
+			#
+			# Only for player orders. The engagement assist steers to a station it
+			# wants to be *moving through*, and a hull that decelerates into every
+			# firing position is a hull with no steerage way in a fight, which is
+			# the one thing MIN_STEERAGE exists to punish.
+			if manual_helm:
+				var remaining: float = to_target.length() - arrive
+				var brake: float = stats.acceleration * COAST_BRAKE_MUL
+				want = minf(want, sqrt(maxf(0.0, 2.0 * brake * remaining)))
+
+			_speed = move_toward(_speed, want, stats.acceleration * delta)
 	else:
 		# Ships do not stop on a coin. Coasting to a halt is most of what makes
 		# them feel heavy.
-		_speed = move_toward(_speed, 0.0, stats.acceleration * 0.6 * delta)
+		_speed = move_toward(_speed, 0.0, stats.acceleration * COAST_BRAKE_MUL * delta)
 
 	# Velocity lags heading, so the hull skids through a turn before it bites.
 	# Without this a ship changes direction the instant it changes facing, which
@@ -672,6 +736,7 @@ func _coast_avoidance() -> Vector2:
 
 		var away: Vector2 = out.normalized()
 		var strength: float = clampf(1.0 - hull_clearance / maxf(1.0, coast_standoff), 0.0, 3.0)
+
 		# Slide along the coast in whichever direction we are already heading.
 		var tangent: Vector2 = away.orthogonal()
 		if tangent.dot(forward()) < 0.0:
@@ -1371,8 +1436,10 @@ func set_target(node: Node2D) -> void:
 		_engage_accum = 1.0 / ENGAGE_HZ
 		# Tapping an enemy is an order to go and fight it, so it hands the helm
 		# back to the solver — otherwise a ship still running out an old waypoint
-		# would acknowledge the order and sail away from it.
+		# would acknowledge the order and sail away from it. That includes cutting
+		# short any grace period left over from a course order: this tap is newer.
 		manual_helm = false
+		_helm_hold = 0.0
 	target = node
 
 
