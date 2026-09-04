@@ -148,6 +148,7 @@ func _ready() -> void:
 		or "--rout" in harness_args
 		or "--audio" in harness_args
 		or "--rig" in harness_args
+		or "--sailing" in harness_args
 		or "--ladder" in harness_args
 		or "--touch" in harness_args
 		or "--shot-mobile" in harness_args
@@ -217,6 +218,8 @@ func _ready() -> void:
 		_run_rout_test()
 	elif "--audio" in args:
 		_run_audio_test()
+	elif "--sailing" in args:
+		_run_sailing_test()
 	elif "--rig" in args:
 		_run_rig_test()
 	elif "--ladder" in args:
@@ -723,6 +726,148 @@ func _run_rig_test() -> void:
 	else:
 		for line: String in failures:
 			push_error("RIG FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## A ship under canvas has to sail, not drive.
+##
+##   godot --headless src/scenes/voyage.tscn -- --sailing
+##
+## Leeway is the reason this exists. A hull whose track lies a few degrees to
+## *windward* of her heading looks very nearly identical to one crabbing the
+## correct way — she is still visibly not going where she points, the wake still
+## streams off a quarter, and every screenshot of it is convincing. It is only
+## wrong if you know where the wind is. That is precisely the class of bug the rig
+## harness was written for when the canvas could belly to windward, and it is the
+## same fix: assert the sign against the wind vector, because no amount of looking
+## will catch it.
+##
+## The magnitudes are checked loosely and the *shape* strictly. What must hold is
+## that leeway exists on a reach, vanishes dead before the wind, and never once
+## points the wrong way.
+func _run_sailing_test() -> void:
+	## Long enough for the hull to reach its speed cap and for the velocity lerp
+	## to settle onto the new track — hull_grip is 3.2, so this is several time
+	## constants.
+	const SETTLE_SEC: float = 4.0
+	## A beam reach must produce at least this much crab, in degrees, or the effect
+	## is present in the arithmetic and invisible on screen.
+	const MIN_REACH_LEEWAY_DEG: float = 3.0
+	## And running dead downwind must produce almost none.
+	const MAX_RUNNING_LEEWAY_DEG: float = 1.0
+
+	director.set_process(false)
+	var failures: PackedStringArray = []
+
+	GameState.fleet = [{"stats_id": &"sloop", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	_update_wind_availability()
+
+	var ship: Ship = fleet.selected
+	if ship == null or WindSystem.instance == null or not WindSystem.instance.active:
+		push_error("SAILING FAIL: no sailed hull, or the wind never woke up")
+		await _quit_cleanly(1)
+		return
+
+	# Open water well outside the archipelago, so nothing here is coast avoidance
+	# steering the ship off her heading.
+	var open: Vector2 = archipelago.world_bounds.end + Vector2(6000.0, 6000.0)
+	camera.set_world_bounds(Rect2(open - Vector2(9000.0, 9000.0), Vector2(18000.0, 18000.0)))
+	camera.snap_to(open)
+
+	var readings: Dictionary = {}
+	for row: Array in [
+		["running", 0.0], ["reach_to_port", PI * 0.5],
+		["reach_to_starboard", -PI * 0.5], ["close_hauled", PI * 0.75],
+	]:
+		var label: String = row[0]
+		# `turn` is the heading relative to running dead before the wind.
+		var heading: Vector2 = WindSystem.instance.direction.rotated(float(row[1]))
+		ship.global_position = open
+		ship.rotation = heading.angle() + PI * 0.5
+		ship.stop()
+		ship.set_target(null)
+		Cull.force_tick()
+		# Sailed rather than forced: a course far enough off that she spends the
+		# whole reading making way toward it, which is the code path the game runs.
+		ship.set_course(open + heading * 9000.0)
+
+		var settle: float = 0.0
+		while settle < SETTLE_SEC:
+			await get_tree().physics_frame
+			settle += 1.0 / 60.0
+
+		readings[label] = {
+			# Signed angle from where she points to where she is actually going.
+			"leeway": rad_to_deg(ship.forward().angle_to(ship.velocity)),
+			"beam": ship.beam_wind(),
+			"speed": ship.velocity.length(),
+		}
+
+	for label: String in readings:
+		var r: Dictionary = readings[label]
+		var leeway: float = float(r["leeway"])
+		var beam: float = float(r["beam"])
+		if float(r["speed"]) < 10.0:
+			failures.append("%s: the hull never got under way (%.1f px/s)" % [label, r["speed"]])
+			continue
+		# The sign check, and the whole reason for the file.
+		if absf(beam) > 0.15 and signf(leeway) != signf(beam):
+			failures.append(
+				"%s: she makes leeway to *windward* (%.1f deg of crab against %.2f of beam wind)"
+				% [label, leeway, beam]
+			)
+
+	var to_port: float = float(readings["reach_to_port"]["leeway"])
+	var to_starboard: float = float(readings["reach_to_starboard"]["leeway"])
+	if signf(to_port) == signf(to_starboard):
+		failures.append(
+			"she crabs the same way on both tacks (%.1f, %.1f deg) — the leeway is not"
+			% [to_port, to_starboard]
+			+ " reading the wind at all"
+		)
+	var reach: float = maxf(absf(to_port), absf(to_starboard))
+	if reach < MIN_REACH_LEEWAY_DEG:
+		failures.append(
+			"only %.1f deg of leeway on a beam reach — it is in the arithmetic and not"
+			% reach
+			+ " on the screen (floor is %.0f)" % MIN_REACH_LEEWAY_DEG
+		)
+	var running: float = absf(float(readings["running"]["leeway"]))
+	if running > MAX_RUNNING_LEEWAY_DEG:
+		failures.append(
+			"%.1f deg of leeway running dead before the wind — there is no side force"
+			% running
+			+ " on that point of sail"
+		)
+
+	# And an oared hull is not a sailing one. This is the stat the whole
+	# distinction hangs off, and the player's first sail is supposed to change how
+	# the boat *moves*, not only how fast it goes.
+	GameState.fleet = [{"stats_id": &"dinghy", "upgrades": {}}]
+	fleet.refit()
+	await get_tree().process_frame
+	var rowed: Ship = fleet.selected
+	if rowed != null:
+		rowed.global_position = open
+		rowed.rotation = WindSystem.instance.direction.rotated(PI * 0.5).angle() + PI * 0.5
+		await get_tree().physics_frame
+		if not is_zero_approx(rowed.beam_wind()) or rowed.leeway_drift() != Vector2.ZERO:
+			failures.append("an oared hull is making leeway — rowers pull a boat where it points")
+
+	print("SAILING: " + ", ".join(PackedStringArray([
+		"running %.1f" % float(readings["running"]["leeway"]),
+		"reach %.1f / %.1f" % [to_port, to_starboard],
+		"close-hauled %.1f deg" % float(readings["close_hauled"]["leeway"]),
+	])))
+
+	if failures.is_empty():
+		print("SAILING PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("SAILING FAIL: %s" % line)
 		await _quit_cleanly(1)
 
 

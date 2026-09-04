@@ -131,6 +131,58 @@ const RAKE_ALIGN_NONE: float = 0.57
 # sail, not noticed as an animation, and anything larger turns a ship of the line
 # into a cork.
 
+# --- Sailing, as distinct from driving --------------------------------------
+#
+# Three things separate a ship under canvas from a boat with an engine in it, and
+# none of them were here. All three are about the hull and the wind disagreeing.
+#
+#   * **Leeway.** A sailing vessel does not go where it points. The sails make
+#     their drive at an angle to the hull, and the part of that force which is
+#     not forward pushes the whole ship sideways, so her track lies to leeward of
+#     her heading by a few degrees. This is the single most recognisable thing a
+#     sailing ship does from directly overhead — she visibly crabs, and her wake
+#     streams off the quarter rather than dead astern.
+#   * **Heel.** The same side force lays her over, hardest with the wind on the
+#     beam, and it flips when she tacks.
+#   * **Pitch.** The bow climbing a swell and dropping into the trough behind it.
+#
+# Oared hulls get none of it. A skiff's rowers pull the boat where it is pointed,
+# which is exactly the difference the propulsion stat exists to express — and it
+# means the player's first sail is a change in how the boat *moves*, not only in
+# how fast.
+
+## Leeway at full beam wind, as a fraction of the hull's speed applied
+## athwartships. Small angles make this near enough the tangent, so 0.15 is about
+## eight and a half degrees — the upper end of what a square-rigger really makes
+## close-hauled, chosen because this has to read at a glance on a small screen
+## rather than satisfy a naval architect.
+const LEEWAY_FRACTION: float = 0.15
+
+## How much narrower a heeled hull looks from overhead, and how far the masts
+## lean out over the water, at full beam wind.
+##
+## Heel is a rotation about the fore-and-aft axis, so from directly above it is
+## not a rotation at all: it is the beam foreshortening while everything with any
+## height to it — the masts, and the canvas on them — swings out to leeward. Those
+## two are the whole cue, and they are honest in this projection, which the
+## in-plane fudge used for swell roll below is not.
+## The lean is deliberately the smaller of the two. The canvas already bellies to
+## leeward under [SailCanvas], so the two compound, and at 0.20 the sail's foot
+## came off the deck entirely and read as the rig sliding off the ship rather than
+## as the ship lying over.
+const HEEL_BEAM_SQUASH: float = 0.11
+const HEEL_MAST_LEAN: float = 0.12
+## Seconds-ish of easing on the heel. A hull does not snap upright the instant the
+## wind draws aft; she comes up over a second or two, and on a tack that slow roll
+## through upright and over onto the other side is the most expensive-looking
+## thing in the game for four lines of code.
+const HEEL_SETTLE_RATE: float = 1.6
+
+## How much the hull foreshortens fore-and-aft at the steepest part of a swell.
+## Bow up or bow down both shorten her, so this is driven by the magnitude of the
+## slope along her own length.
+const PITCH_FORE_SQUASH: float = 0.05
+
 ## Extra scale on the hull at the top of a crest — the deck lifting towards the
 ## camera. Past about 5% it stops reading as height and starts reading as the
 ## sprite changing size.
@@ -277,6 +329,9 @@ var _ensign: Ensign = null
 ## Yard angle, eased toward its target so the crew appear to haul rather than the
 ## sail snapping to the wind vector.
 var _brace: float = 0.0
+## How far over she is lying, eased toward [method beam_wind]. Signed the same
+## way: positive is heeled to starboard.
+var _heel: float = 0.0
 ## Everything the swell moves. Held as one node so heave and roll never fight the
 ## hull's own scale or the ship's heading.
 var _visual: Node2D = null
@@ -358,7 +413,7 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.lerp(Vector2.ZERO, 1.0 - exp(-2.5 * delta))
 		move_and_slide()
 		Grid.update(self)
-		_ride_swell()
+		_ride_swell(delta)
 		return
 	_tick_engagement(delta)
 	_steer(delta)
@@ -371,7 +426,7 @@ func _physics_process(delta: float) -> void:
 	global_position = clamp_out_of_land(global_position)
 	Grid.update(self)
 	_tick_guns(delta)
-	_ride_swell()
+	_ride_swell(delta)
 	_trim_sail(delta)
 	_update_ship_art_visibility()
 	if _retaliate_left > 0.0:
@@ -481,7 +536,50 @@ func _steer(delta: float) -> void:
 	# Velocity lags heading, so the hull skids through a turn before it bites.
 	# Without this a ship changes direction the instant it changes facing, which
 	# is how a car behaves, not a few hundred tons of timber.
-	velocity = velocity.lerp(forward() * _speed, 1.0 - exp(-stats.hull_grip * delta))
+	#
+	# The target it lags toward is the heading *plus the leeway* — the ship's real
+	# track through the water, not the way her bow happens to be pointing.
+	velocity = velocity.lerp(
+		forward() * _speed + leeway_drift(), 1.0 - exp(-stats.hull_grip * delta)
+	)
+
+
+## How hard the wind is pressing on this hull's beam, from -1 (hard on the
+## starboard side, laying her over to port) through 0 (dead ahead or dead astern)
+## to +1 (hard to port, laying her over to starboard).
+##
+## One number drives both the leeway and the heel, because in the real thing they
+## are two consequences of one force. Zero dead downwind is right — running before
+## it, a ship makes no leeway and sails upright — and zero dead upwind is a
+## simplification: a hull pinching that close really does make her worst leeway of
+## all, but she is also in irons and going nowhere, so there is nothing to push
+## sideways.
+func beam_wind() -> float:
+	if stats.is_oared():
+		return 0.0
+	var wind: WindSystem = WindSystem.instance
+	if wind == null or not wind.active:
+		return 0.0
+	return clampf(wind.direction.dot(starboard()) * wind.strength, -1.0, 1.0)
+
+
+## The sideways slip, in world units per second.
+##
+## Proportional to speed, so the leeway *angle* stays roughly constant — which is
+## how a sailor describes it ("she makes five degrees of leeway") and what keeps
+## the crab looking the same whether she is running down a chase or ghosting along.
+##
+## It also means a hull lying stopped makes none, and that is a deliberate
+## omission rather than an oversight: a real ship with no way on still drifts down
+## on a lee shore, and modelling that would set every anchored hull, every parked
+## garrison and every harness that expects a ship to stay where it was put quietly
+## sliding downwind. The honest version of that is worth having one day, on
+## purpose, with the mooring code taught to hold station.
+func leeway_drift() -> Vector2:
+	var across: float = beam_wind()
+	if is_zero_approx(across):
+		return Vector2.ZERO
+	return starboard() * across * _speed * LEEWAY_FRACTION
 
 
 ## One-line helm state, for the debug overlay and the smoke test.
@@ -632,22 +730,50 @@ func clamp_to_navigable(world_pos: Vector2) -> Vector2:
 	return out_pos
 
 
-## Lifts and leans the hull on the swell it is actually sitting on.
+## Lifts and leans the hull on the swell it is sitting on, and lays her over
+## under the press of her own canvas.
 ##
 ## Presentation only — it moves nothing the simulation reads, so a ship's guns,
-## collision and steering are all unaffected by which part of a wave it is on.
-func _ride_swell() -> void:
+## collision and steering are all unaffected by which part of a wave she is on or
+## how far she is heeled. The leeway that shares [method beam_wind] with the heel
+## here is the one part of this that is real; see [method leeway_drift].
+func _ride_swell(delta: float) -> void:
 	if _visual == null:
 		return
 
 	var swell: Vector3 = Ocean.sample(global_position)
-	_visual.scale = Vector2.ONE * (1.0 + swell.x * SWELL_HEAVE)
+	var slope := Vector2(swell.y, swell.z)
+
+	# Heel eases rather than tracking the wind exactly, so coming about rolls her
+	# through upright and over onto the new tack instead of flipping.
+	_heel = lerpf(_heel, beam_wind(), 1.0 - exp(-HEEL_SETTLE_RATE * delta))
+
+	# Pitch is the part of the surface slope running along her own length. Bow up
+	# and bow down both foreshorten her from above, so only the magnitude matters —
+	# which is also why this is the one part of riding a sea that a top-down view
+	# can state honestly rather than fake.
+	var pitch: float = absf(clampf(slope.dot(forward()) / SWELL_SLOPE_REF, -1.0, 1.0))
+
+	var heave: float = 1.0 + swell.x * SWELL_HEAVE
+	_visual.scale = Vector2(
+		heave * (1.0 - absf(_heel) * HEEL_BEAM_SQUASH),
+		heave * (1.0 - pitch * PITCH_FORE_SQUASH)
+	)
 
 	# Roll is the athwartships part of the surface slope, not its magnitude: a hull
 	# lying along a crest leans hard, the same hull pointing straight up the face
-	# of it stays level and pitches instead — which top-down we cannot show anyway.
-	var lean: float = Vector2(swell.y, swell.z).dot(starboard())
+	# of it stays level and pitches instead. In-plane rotation is a fudge — a real
+	# roll would foreshorten the beam, the way the heel above does — but it is a
+	# fudge that reads as rocking, and stacking a second beam squash on top of the
+	# heel's would only make the hull flicker narrower.
+	var lean: float = slope.dot(starboard())
 	_visual.rotation = clampf(lean / SWELL_SLOPE_REF, -1.0, 1.0) * SWELL_ROLL
+
+	# The masts and everything on them swing out over the water to leeward. This is
+	# the cue that says *heel* rather than *the sprite got thinner*, because it is
+	# the only one that has a direction.
+	if _sail != null:
+		_sail.position.x = _heel * HEEL_MAST_LEAN * stats.hull_radius
 
 	if _ship_shadow != null:
 		_ship_shadow.position = SHADOW_OFFSET * (1.0 + swell.x * SWELL_SHADOW_LIFT)

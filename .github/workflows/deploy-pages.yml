@@ -158,6 +158,20 @@ jobs:
             exit 1
           fi
 
+      # Leeway has a sign, and the wrong one is invisible. A hull crabbing to
+      # windward is still visibly not going where it points and photographs
+      # perfectly; the only way to catch it is to assert the direction against the
+      # wind vector, which is the same reason the rig check exists a layer up.
+      - name: Sailing test (leeway lies to leeward, and only under canvas)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --sailing 2>&1 | tee /tmp/sailing.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/sailing.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       - name: Export web build
         run: |
           set -euo pipefail

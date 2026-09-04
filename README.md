@@ -97,6 +97,17 @@ into the wind renders perfectly happily and still looks like a sail:
 godot --headless src/scenes/voyage.tscn -- --rig
 ```
 
+Assert a ship under canvas sails rather than drives — that her track lies to *leeward* of
+her heading, that the crab vanishes running dead before the wind and flips when she comes
+about, and that an oared hull makes none of it. Same reasoning as the rig check, one layer
+down: a hull crabbing the wrong way is still visibly not going where it points, the wake
+still streams off a quarter, and every screenshot of it is convincing. It is only wrong if
+you know where the wind is:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --sailing
+```
+
 Assert every sound cue has a file behind it and the music actually reacts to the game.
 Audio is the one subsystem whose entire failure mode is silence — a missing file is
 skipped at boot with one warning and then plays nothing, forever, with no error at any
