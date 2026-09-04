@@ -83,12 +83,33 @@ const WALE_COLOR: Color = Color(0.128, 0.086, 0.055)
 const DECK_COLOR: Color = Color(0.482, 0.376, 0.243)
 const CABIN_COLOR: Color = Color(0.298, 0.184, 0.106)
 const TRIM_COLOR: Color = Color(0.545, 0.404, 0.157)
-const CANVAS_COLOR: Color = Color(0.855, 0.812, 0.706)
+## Sailcloth, not paper. The first pass was near-white and blew out to a flat
+## silhouette in sunlight — real canvas is oiled flax, closer to old bone, and it
+## needs to sit below the foam on the water or the sea looks dirty by comparison.
+const CANVAS_COLOR: Color = Color(0.706, 0.663, 0.573)
 
 ## Which strake carries the wale — the heavy rubbing band along the topsides. A
 ## real one is structural; here it is the single line that stops the side of the
 ## hull being one flat field of brown.
 const WALE_RING: int = 6
+## The strake the gunports are cut through, one above the wale.
+const GUNPORT_RING: int = 7
+## Fore and aft limits of the gun deck, as a fraction of the length. Nothing
+## forward of the cathead and nothing through the transom.
+const GUNPORT_FROM: float = 0.22
+const GUNPORT_TO: float = 0.80
+
+## Below the waterline a hull is not the colour of her topsides — she is payed
+## with tallow and pitch against weed and worm. It is the single cheapest thing
+## that stops a generated hull reading as one extruded lump of brown, because it
+## puts a hard horizontal line exactly where the eye expects the waterline.
+const ANTIFOUL: Color = Color(0.180, 0.196, 0.157)
+const GUNPORT_COLOR: Color = Color(0.055, 0.043, 0.035)
+const LANTERN_COLOR: Color = Color(1.0, 0.83, 0.45)
+
+## A hull this long or longer steps two masts. Below it she is a single-master,
+## which is the difference between the Sloop and the Brig in the game's roster.
+const TWO_MAST_LENGTH: float = 170.0
 
 
 ## Builds one ship.
@@ -114,12 +135,41 @@ static func build(
 	timber.roughness = 0.82
 	timber.specular = 0.2
 
+	var spar := StandardMaterial3D.new()
+	spar.albedo_color = PLANK_DARK.lightened(0.12)
+	spar.roughness = 0.9
+
 	root.add_child(_hull(length, beam, draft, freeboard, timber, damage))
 	root.add_child(_deck(length, beam, freeboard, timber))
 	root.add_child(_cabin(length, beam, freeboard, timber))
-	root.add_child(_rig(length, beam, freeboard, damage))
+	root.add_child(_fittings(length, beam, freeboard, timber, spar))
+	root.add_child(_bowsprit(length, beam, draft, freeboard, spar))
+	root.add_child(_rig(length, beam, draft, freeboard, spar, damage))
 	root.add_child(_ensign(length, freeboard, flag_field, flag_charge))
 	return root
+
+
+## A point on the finished hull surface, in ship space.
+##
+## Shared, so anything bolted to the outside of her — gunports, the ends of the
+## shrouds, the cathead — lands *on* the planking rather than near it. Guessing
+## those positions from the same numbers a second time is how a shroud ends up
+## hanging in mid-air a foot outboard of the rail, and it is invisible until you
+## look from exactly the wrong angle.
+static func hull_point(
+	t: float, s: float, length: float, beam: float, draft: float, freeboard: float
+) -> Vector3:
+	var half_beam: float = beam * 0.5 * _curve(BEAM_CURVE, t)
+	var depth: float = draft * _curve(DRAFT_CURVE, t)
+	var rail: float = freeboard * _curve(SHEER_CURVE, t)
+	var rake: float = 0.0
+	if t < 0.12:
+		rake = -(0.12 - t) * length * 0.40
+	elif t > 0.9:
+		rake = (t - 0.9) * length * 0.30
+	var p: Vector3 = _section_point(s, half_beam, depth, rail)
+	var lean: float = clampf(p.y / maxf(rail, 0.001), 0.0, 1.0)
+	return Vector3(p.x, p.y, lerpf(-length * 0.5, length * 0.5, t) + rake * lean)
 
 
 # --- Curves -----------------------------------------------------------------
@@ -189,26 +239,11 @@ static func _hull(
 	var rows: Array = []
 	for i: int in STATIONS:
 		var t: float = float(i) / float(STATIONS - 1)
-		var half_beam: float = beam * 0.5 * _curve(BEAM_CURVE, t)
-		var depth: float = draft * _curve(DRAFT_CURVE, t)
-		var rail: float = freeboard * _curve(SHEER_CURVE, t)
-		# Stem and transom rake: the ends lean outward at the top, which is the
-		# silhouette difference between a ship and a barge.
-		var rake: float = 0.0
-		if t < 0.12:
-			rake = -(0.12 - t) * length * 0.40
-		elif t > 0.9:
-			rake = (t - 0.9) * length * 0.30
-		var z: float = lerpf(-length * 0.5, length * 0.5, t)
-
 		var row: Array[Vector3] = []
 		for j: int in RING * 2 + 1:
-			var s: float = float(j) / float(RING) - 1.0
-			var p: Vector3 = _section_point(s, half_beam, depth, rail)
-			# The rake leans the *upper* part of the section only, hinged at the
-			# waterline, so the keel line stays straight.
-			var lean: float = clampf(p.y / maxf(rail, 0.001), 0.0, 1.0)
-			row.append(Vector3(p.x, p.y, z + rake * lean))
+			row.append(hull_point(
+				t, float(j) / float(RING) - 1.0, length, beam, draft, freeboard
+			))
 		rows.append(row)
 
 	var rng := RandomNumberGenerator.new()
@@ -221,9 +256,17 @@ static func _hull(
 			# colours a plank apart is all it takes for a lofted surface to read
 			# as planked rather than as moulded.
 			var strake: int = absi(j - RING)
+			var t_station: float = float(i) / float(STATIONS - 1)
 			var colour: Color = PLANK_LIGHT if strake % 2 == 0 else PLANK_DARK
 			if strake == WALE_RING:
 				colour = WALE_COLOR
+			elif (
+				strake == GUNPORT_RING + 1
+				and t_station > GUNPORT_FROM and t_station < GUNPORT_TO
+			):
+				# The lintel over the ports. Without a lighter band above them the
+				# holes have no edge and read as a stain on the planking.
+				colour = TRIM_COLOR.darkened(0.30)
 			# Weathering, so no two strakes are quite the same age.
 			var wear: float = rng.randf_range(-0.035, 0.035)
 			colour = Color(
@@ -236,6 +279,33 @@ static func _hull(
 			var p1: Vector3 = a[j + 1]
 			var p2: Vector3 = b[j + 1]
 			var p3: Vector3 = b[j]
+
+			# Everything under water is payed against weed and worm — and *under
+			# water* means below y = 0, not below some strake number. Keying it to
+			# the strake index put the boot-top wherever the planking happened to
+			# be, so at the bow, where she is shallowest, the dark paint climbed
+			# clear of the sea and left a black wedge above the waterline. The
+			# waterline is a property of the water.
+			if (p0.y + p1.y + p2.y + p3.y) * 0.25 < 0.0:
+				colour = ANTIFOUL if strake % 2 == 0 else ANTIFOUL.darkened(0.10)
+
+			# Gunports, cut straight into the planking rather than modelled on top
+			# of it. A port is a hole in a strake, so the cheapest correct way to
+			# have one is to recolour that strake's quad and push it inboard — it
+			# is guaranteed to sit flush on a curved surface, which a separate box
+			# laid against the topsides never quite is.
+			if (
+				strake == GUNPORT_RING
+				and t_station > GUNPORT_FROM and t_station < GUNPORT_TO
+				and i % 2 == 0
+			):
+				colour = GUNPORT_COLOR
+				var inboard: float = beam * 0.045
+				var shove := Vector3(-signf(p0.x) * inboard, 0.0, 0.0)
+				p0 += shove
+				p1 += shove
+				p2 += shove
+				p3 += shove
 
 			# Damage springs planks off the topsides. Only above the waterline and
 			# only outboard — a hull with its bottom hanging open would have sunk,
@@ -358,41 +428,197 @@ static func _cabin(
 	return root
 
 
-## Mast, yard, and canvas that tears as the rigging goes.
-static func _rig(length: float, beam: float, freeboard: float, damage: float) -> Node3D:
+## Masts, yards, standing rigging and canvas.
+##
+## Two masts on anything big enough to carry them. The single biggest thing that
+## separates a ship from a boat in silhouette is not the hull at all — it is how
+## much of her is above the rail, and how much of *that* is thin. Shrouds and
+## stays cost four cylinders each and do more for the read at a distance than any
+## amount of planking, because they break the sky.
+static func _rig(
+	length: float, beam: float, draft: float, freeboard: float,
+	spar: StandardMaterial3D, damage: float
+) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Rig"
 
-	var spar := StandardMaterial3D.new()
-	spar.albedo_color = PLANK_DARK.lightened(0.1)
-	spar.roughness = 0.9
+	var deck_y: float = freeboard * 0.55
+	var two: bool = length >= TWO_MAST_LENGTH
 
-	var mast_height: float = length * 0.72
+	# Main is a little aft of amidships and the taller of the two; fore is well
+	# forward and shorter. Both stepped on the centreline.
+	_step_mast(root, length, beam, draft, freeboard, spar, damage,
+		length * 0.04, length * 0.78, beam * 1.55, true)
+	if two:
+		_step_mast(root, length, beam, draft, freeboard, spar, damage,
+			-length * 0.26, length * 0.62, beam * 1.25, false)
+
+	# Forestay: masthead down to the end of the bowsprit. The one line that most
+	# reads as rigging, because it is the longest unbroken diagonal on the ship.
+	var stem: Vector3 = hull_point(0.0, 1.0, length, beam, draft, freeboard)
+	var bow_tip := Vector3(0.0, stem.y + length * 0.05, stem.z - length * 0.17)
+	var fore_head := Vector3(
+		0.0, deck_y + length * (0.62 if two else 0.78) * 0.94,
+		(-length * 0.26) if two else (length * 0.04)
+	)
+	root.add_child(_spar_between(fore_head, bow_tip, length * 0.0022, spar))
+	return root
+
+
+## One mast, its yards, its shrouds and its canvas.
+static func _step_mast(
+	root: Node3D, length: float, beam: float, draft: float, freeboard: float,
+	spar: StandardMaterial3D, damage: float,
+	z: float, height: float, sail_width: float, is_main: bool
+) -> void:
+	var deck_y: float = freeboard * 0.55
+	var foot := Vector3(0.0, deck_y, z)
+	var head := Vector3(0.0, deck_y + height, z)
+
 	var mast := MeshInstance3D.new()
 	var pole := CylinderMesh.new()
-	pole.top_radius = length * 0.006
-	pole.bottom_radius = length * 0.012
-	pole.height = mast_height
+	pole.top_radius = length * 0.0045
+	pole.bottom_radius = length * 0.0095
+	pole.height = height
 	pole.radial_segments = 8
 	mast.mesh = pole
 	mast.material_override = spar
-	mast.position = Vector3(0.0, freeboard * 0.55 + mast_height * 0.5, -length * 0.06)
+	mast.position = (foot + head) * 0.5
 	root.add_child(mast)
+
+	# Shrouds: three a side, from high on the mast down to the rail abreast of it,
+	# fanning aft. They are what a mast is actually held up by, and the fan is the
+	# shape the eye recognises.
+	var t_mast: float = clampf((z + length * 0.5) / length, 0.05, 0.95)
+	for side: int in 2:
+		var s: float = 1.0 if side == 0 else -1.0
+		for k: int in 3:
+			var t_foot: float = clampf(t_mast + 0.06 + float(k) * 0.055, 0.05, 0.95)
+			var anchor: Vector3 = hull_point(t_foot, s, length, beam, draft, freeboard)
+			var top: Vector3 = head.lerp(foot, 0.16 + float(k) * 0.035)
+			root.add_child(_spar_between(top, anchor, length * 0.0016, spar))
+
+	# Course, and a topsail above it on the mainmast. A single square sail on a
+	# bare pole reads as a raft; two stacked reads as a ship.
+	_hang_sail(root, spar, damage, head, foot, z, sail_width, 0.74, 0.30, length)
+	if is_main:
+		_hang_sail(root, spar, damage, head, foot, z, sail_width * 0.72, 0.96, 0.18, length)
+
+
+## A yard with canvas on it, at `at_height` up the mast.
+static func _hang_sail(
+	root: Node3D, spar: StandardMaterial3D, damage: float,
+	head: Vector3, foot: Vector3, z: float, width: float,
+	at_height: float, drop_ratio: float, length: float
+) -> void:
+	var y: float = lerpf(foot.y, head.y, at_height)
 
 	var yard := MeshInstance3D.new()
 	var bar := CylinderMesh.new()
-	bar.top_radius = length * 0.005
-	bar.bottom_radius = length * 0.005
-	bar.height = beam * 1.5
+	bar.top_radius = length * 0.0026
+	bar.bottom_radius = length * 0.0034
+	bar.height = width * 1.06
 	bar.radial_segments = 6
 	yard.mesh = bar
 	yard.material_override = spar
 	yard.rotation_degrees = Vector3(0.0, 0.0, 90.0)
-	yard.position = Vector3(0.0, freeboard * 0.55 + mast_height * 0.78, -length * 0.06)
+	yard.position = Vector3(0.0, y, z)
 	root.add_child(yard)
 
-	root.add_child(_sail(length, beam, freeboard * 0.55 + mast_height * 0.78, damage))
+	var canvas: MeshInstance3D = _sail(length, width, y, length * drop_ratio, damage)
+	canvas.position = Vector3(0.0, 0.0, z)
+	root.add_child(canvas)
+
+
+## The bowsprit, and the beakhead it grows out of.
+##
+## Pure silhouette. A ship without one is a hull with sticks in it; a ship with
+## one has a *direction*, because the longest line on her points where she is
+## going.
+static func _bowsprit(
+	length: float, beam: float, draft: float, freeboard: float,
+	spar: StandardMaterial3D
+) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Bowsprit"
+	var stem: Vector3 = hull_point(0.02, 1.0, length, beam, draft, freeboard)
+	var butt := Vector3(0.0, stem.y * 0.9, stem.z + length * 0.04)
+	var tip := Vector3(0.0, stem.y + length * 0.05, stem.z - length * 0.17)
+	root.add_child(_spar_between(butt, tip, length * 0.0075, spar))
 	return root
+
+
+## Hatch, capstan and a stern lantern. Small things, but a deck with nothing on
+## it reads as a lid rather than as somewhere people work.
+static func _fittings(
+	length: float, beam: float, freeboard: float,
+	timber: StandardMaterial3D, spar: StandardMaterial3D
+) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Fittings"
+	var deck_y: float = freeboard * 0.55
+
+	var grating := MeshInstance3D.new()
+	var hatch := BoxMesh.new()
+	hatch.size = Vector3(beam * 0.30, freeboard * 0.16, length * 0.11)
+	grating.mesh = hatch
+	grating.material_override = spar
+	grating.position = Vector3(0.0, deck_y + freeboard * 0.08, length * 0.10)
+	root.add_child(grating)
+
+	var capstan := MeshInstance3D.new()
+	var drum := CylinderMesh.new()
+	drum.top_radius = beam * 0.055
+	drum.bottom_radius = beam * 0.075
+	drum.height = freeboard * 0.42
+	drum.radial_segments = 8
+	capstan.mesh = drum
+	capstan.material_override = spar
+	capstan.position = Vector3(0.0, deck_y + freeboard * 0.21, -length * 0.13)
+	root.add_child(capstan)
+
+	# The stern lantern. One warm point of light on a ship that is otherwise all
+	# timber and canvas, and the thing that will read first at dusk.
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = LANTERN_COLOR
+	glow.emission_enabled = true
+	glow.emission = LANTERN_COLOR
+	glow.emission_energy_multiplier = 0.45
+	var lantern := MeshInstance3D.new()
+	var globe := SphereMesh.new()
+	globe.radius = freeboard * 0.10
+	globe.height = freeboard * 0.24
+	globe.radial_segments = 8
+	globe.rings = 5
+	lantern.mesh = globe
+	lantern.material_override = glow
+	lantern.position = Vector3(0.0, deck_y + freeboard * 1.75, length * 0.455)
+	root.add_child(lantern)
+	return root
+
+
+## A cylinder running between two points. Godot's CylinderMesh stands on its own
+## +Y, so the basis has to be built rather than a rotation guessed.
+static func _spar_between(
+	a: Vector3, b: Vector3, radius: float, material: Material
+) -> MeshInstance3D:
+	var mesh := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = radius
+	cyl.bottom_radius = radius
+	cyl.height = maxf(a.distance_to(b), 0.001)
+	cyl.radial_segments = 5
+	mesh.mesh = cyl
+	mesh.material_override = material
+
+	var along: Vector3 = (b - a).normalized()
+	var reference: Vector3 = Vector3.UP
+	if absf(along.dot(reference)) > 0.99:
+		reference = Vector3.FORWARD
+	var right: Vector3 = reference.cross(along).normalized()
+	var out: Vector3 = along.cross(right).normalized()
+	mesh.transform = Transform3D(Basis(right, along, out), (a + b) * 0.5)
+	return mesh
 
 
 ## The canvas, with a foot that goes to ribbons as the rigging is shot away.
@@ -400,16 +626,17 @@ static func _rig(length: float, beam: float, freeboard: float, damage: float) ->
 ## Built as a grid so it can belly and tear rather than being one quad. The
 ## tearing is the same idea [SailCanvas] uses in the 2D game — a sail that only
 ## faded out never read as *damaged*, it read as being turned off.
-static func _sail(length: float, beam: float, head_height: float, damage: float) -> MeshInstance3D:
+static func _sail(
+	length: float, width: float, head_height: float, drop: float, damage: float
+) -> MeshInstance3D:
 	const COLS: int = 26
 	const ROWS: int = 18
-	var width: float = beam * 1.6
-	var drop: float = length * 0.40
 
 	var canvas := StandardMaterial3D.new()
 	canvas.vertex_color_use_as_albedo = true
 	canvas.cull_mode = BaseMaterial3D.CULL_DISABLED
-	canvas.roughness = 0.95
+	canvas.roughness = 1.0
+	canvas.specular = 0.05
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 0xCA5
