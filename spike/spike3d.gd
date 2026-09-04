@@ -35,9 +35,12 @@ const SEA_SUBDIVIDE: int = 240
 ## Same units the 2D game uses — one unit is one pixel there — so the wave table
 ## transfers without rescaling and a hull radius is still 46.
 const HULL_RADIUS: float = 46.0
-const HULL_LENGTH: float = 150.0
-const HULL_BEAM: float = 52.0
-const HULL_DRAFT: float = 26.0
+const HULL_LENGTH: float = 195.0
+const HULL_BEAM: float = 54.0
+const HULL_DRAFT: float = 24.0
+## How far the rail stands above the waterline. Small next to the length, which is
+## what stops a ship looking like a bathtub.
+const HULL_FREEBOARD: float = 21.0
 
 ## Peak-to-trough of the whole wave field.
 const WAVE_HEIGHT: float = 30.0
@@ -50,13 +53,13 @@ const SAMPLE_BEAM: float = HULL_BEAM * 0.45
 
 ## Camera angles the screenshot pass walks through, in degrees below horizontal.
 ## 90 is the game's present view, straight down; the rest are what tilting buys.
-const SHOT_PITCHES: Array[float] = [90.0, 62.0, 40.0, 24.0]
+const SHOT_PITCHES: Array[float] = [62.0, 34.0, 18.0]
 ## Far enough back that several wavelengths are in frame. The dominant swell is
 ## about 1100 units long, and the first attempt at 620 put the camera inside a
 ## single flank of it — the sea rendered as one smooth hill and the spike looked
 ## worse than the 2D game it was meant to be tested against. This is also roughly
 ## the width of world the 2D camera shows, so the two are comparable.
-const CAMERA_DISTANCE: float = 2100.0
+const CAMERA_DISTANCE: float = 430.0
 
 var _sea: MeshInstance3D
 var _sea_material: ShaderMaterial
@@ -67,9 +70,24 @@ var _wind_angle: float = 0.6
 ## Where the hull is on the water, and which way it is pointing. Driven on a slow
 ## circle so a screenshot catches it on a different point of sail each time.
 var _sail_angle: float = 0.0
+## Which flag she flies, and how badly she has been knocked about. Both settable
+## from the command line so the spike can show a sound ship and a wreck without
+## a rebuild: `-- --shot --damage=0.7 --flag=brethren`.
+var _flag: StringName = &"navy_crown"
+var _damage: float = 0.0
+## How far off the camera sits. Overridable because judging hull detail and
+## judging the sea want completely different framings, and the spike is for both.
+var _distance: float = CAMERA_DISTANCE
 
 
 func _ready() -> void:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--damage="):
+			_damage = clampf(float(arg.trim_prefix("--damage=")), 0.0, 1.0)
+		elif arg.begins_with("--flag="):
+			_flag = StringName(arg.trim_prefix("--flag="))
+		elif arg.begins_with("--dist="):
+			_distance = maxf(60.0, float(arg.trim_prefix("--dist=")))
 	_build_environment()
 	_build_sea()
 	_build_hull()
@@ -152,56 +170,23 @@ func _build_sea() -> void:
 	add_child(_sea)
 
 
-## A box with a bow on it. Deliberately crude — see the class comment.
+## The ship. No longer a box — see `spike/ship3d.gd`, which lofts a hull from
+## transverse sections and hangs a cabin, a rig and an ensign on it.
+##
+## Built at a damage level so the spike shows what the argument for generating
+## these actually is: sprung planks and a sail in ribbons are a *function of
+## state*, and a bought model cannot take an argument.
 func _build_hull() -> void:
 	_hull = Node3D.new()
 	_hull.name = "Hull"
 	add_child(_hull)
 
-	var timber := StandardMaterial3D.new()
-	timber.albedo_color = Color(0.42, 0.29, 0.18)
-	timber.roughness = 0.85
-
-	var body := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(HULL_BEAM, HULL_DRAFT, HULL_LENGTH * 0.72)
-	body.mesh = box
-	body.material_override = timber
-	_hull.add_child(body)
-
-	# A wedge forward, so the box has a heading you can read at a glance. Enough
-	# to tell pitch from roll in a still frame, which is the whole job.
-	var bow := MeshInstance3D.new()
-	var prism := PrismMesh.new()
-	prism.size = Vector3(HULL_BEAM, HULL_DRAFT, HULL_LENGTH * 0.28)
-	bow.mesh = prism
-	bow.material_override = timber
-	bow.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
-	bow.position = Vector3(0.0, 0.0, -HULL_LENGTH * 0.5)
-	_hull.add_child(bow)
-
-	var canvas := StandardMaterial3D.new()
-	canvas.albedo_color = Color(0.88, 0.84, 0.74)
-	canvas.cull_mode = BaseMaterial3D.CULL_DISABLED
-	canvas.roughness = 0.9
-
-	var mast := MeshInstance3D.new()
-	var pole := CylinderMesh.new()
-	pole.top_radius = 2.4
-	pole.bottom_radius = 3.2
-	pole.height = 150.0
-	mast.mesh = pole
-	mast.material_override = timber
-	mast.position = Vector3(0.0, 75.0, -8.0)
-	_hull.add_child(mast)
-
-	var sail := MeshInstance3D.new()
-	var cloth := QuadMesh.new()
-	cloth.size = Vector2(96.0, 92.0)
-	sail.mesh = cloth
-	sail.material_override = canvas
-	sail.position = Vector3(0.0, 88.0, 6.0)
-	_hull.add_child(sail)
+	var faction: Faction = FactionLibrary.get_faction(_flag)
+	var ship: Node3D = Spike3DShip.build(
+		HULL_LENGTH, HULL_BEAM, HULL_DRAFT, HULL_FREEBOARD,
+		faction.flag_field, faction.flag_charge, _damage
+	)
+	_hull.add_child(ship)
 
 
 func _build_camera() -> void:
@@ -297,7 +282,7 @@ func _place_camera(pitch_deg: float) -> void:
 	var bearing: float = _sail_angle + PI * 0.35
 	var offset := Vector3(
 		cos(bearing) * cos(pitch), sin(pitch), sin(bearing) * cos(pitch)
-	) * CAMERA_DISTANCE
+	) * _distance
 	_camera.position = focus + offset
 	# Straight down is the one angle where the view direction is colinear with
 	# world up, which leaves the roll undefined. Hand it the hull's own heading to
