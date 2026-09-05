@@ -187,6 +187,20 @@ jobs:
             exit 1
           fi
 
+      # A reprisal is the only thing in this game that happens where the player
+      # is not, which is exactly why it needs a gate: an off-screen raid that
+      # silently never completes is invisible in play. It already caught one —
+      # the raiders were going DORMANT and freezing at their spawn.
+      - name: Reprisal test (they can take an island back)
+        run: |
+          set -euo pipefail
+          godot --headless src/scenes/voyage.tscn -- --reprisal 2>&1 | tee /tmp/reprisal.log
+          test "${PIPESTATUS[0]}" -eq 0
+          if grep -qE 'leaked at exit|resources still in use at exit' /tmp/reprisal.log; then
+            echo "::error::Objects or resources leaked at exit."
+            exit 1
+          fi
+
       - name: Export web build
         run: |
           set -euo pipefail

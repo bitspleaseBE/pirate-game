@@ -246,6 +246,22 @@ func _grant_unlocks(previous_captures: int) -> void:
 		EventBus.unlock_granted.emit(entry["kind"], entry["id"])
 
 
+## The island is somebody else's again. See [RaidDirector].
+##
+## The capture *count* is deliberately not decremented. It is the progression
+## counter every unlock is keyed to ([UnlockTable]), and taking a shot type away
+## from a player because a squadron arrived somewhere they were not is a
+## punishment out of all proportion to the mistake — and unlocking it a second
+## time would fire the same toast again. What is lost is the island: its port,
+## and having to fight for it twice.
+func release_island(id: StringName) -> void:
+	var entry: Dictionary = island_progress.get(id, {})
+	if entry.is_empty() or not bool(entry.get("captured", false)):
+		return
+	entry["captured"] = false
+	island_progress[id] = entry
+
+
 func is_island_captured(id: StringName) -> bool:
 	return bool(island_progress.get(id, {}).get("captured", false))
 

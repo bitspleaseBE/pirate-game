@@ -52,6 +52,15 @@ signal prize_taken(hull_name: String, kept: bool)
 signal island_discovered(island: Node2D)
 signal island_alerted(island: Node2D)
 signal island_captured(island: Node2D)
+## A faction is coming back for an island the player took off it. See
+## [RaidDirector] — `seconds` is how long before the raiders arrive, and it is
+## deliberately longer than the longest leg takes to sail, so being told is
+## always an invitation to turn back rather than a notification of a loss.
+signal island_threatened(island: Node2D, faction_name: String, seconds: float)
+signal raid_arrived(island: Node2D, faction_name: String, ships: int)
+signal raid_repelled(island: Node2D)
+## The island changed hands. The player can take it again.
+signal island_lost(island: Node2D, faction_name: String)
 ## An island's slipway has been burned: no more reinforcements from it. Worth its
 ## own signal because it is a thing the player *chose* to do, and the game should
 ## say so out loud — see [Shipyard].

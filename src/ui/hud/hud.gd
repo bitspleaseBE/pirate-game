@@ -139,6 +139,10 @@ func _ready() -> void:
 
 	EventBus.ammo_changed.connect(_on_ammo_changed)
 	EventBus.unlock_granted.connect(_on_unlock_granted)
+	EventBus.island_threatened.connect(_on_island_threatened)
+	EventBus.raid_arrived.connect(_on_raid_arrived)
+	EventBus.raid_repelled.connect(_on_raid_repelled)
+	EventBus.island_lost.connect(_on_island_lost)
 	_build_ammo_rack()
 	_hideout_button.pressed.connect(_on_hideout_pressed)
 	# The card vocabulary, matching the shot rack under it and the fleet badge
@@ -431,6 +435,40 @@ func _on_unlock_granted(kind: StringName, id: StringName) -> void:
 			"The yards will fit %s now — %s"
 			% [UpgradeLibrary.display_name(id), UpgradeLibrary.blurb(id).to_lower()]
 		)
+
+
+## Somebody is coming back for an island the player took.
+##
+## Four toasts rather than one, because a reprisal is the only thing in the game
+## that happens somewhere the player is not, and each stage is a different
+## decision. The warning is an invitation to turn back and says how long there is
+## to do it; the arrival says the choice is now live; and the two endings have to
+## be distinguishable at a glance from the other side of the archipelago.
+func _on_island_threatened(island: Node2D, faction_name: String, seconds: float) -> void:
+	show_toast(
+		"%s are standing in for %s — about %d seconds out."
+		% [faction_name, (island as Island).def.display_name, roundi(seconds)]
+	)
+
+
+func _on_raid_arrived(island: Node2D, faction_name: String, ships: int) -> void:
+	var hulls: String = "one sail" if ships == 1 else "%d sail" % ships
+	show_toast(
+		"%s off %s — %s. Drive them off or lose the harbour."
+		% [faction_name, (island as Island).def.display_name, hulls]
+	)
+
+
+func _on_raid_repelled(island: Node2D) -> void:
+	show_toast("%s holds. They will try again." % (island as Island).def.display_name)
+
+
+func _on_island_lost(island: Node2D, faction_name: String) -> void:
+	show_toast(
+		"%s has fallen to the %s. The harbour is theirs."
+		% [(island as Island).def.display_name, faction_name]
+	)
+	minimap.queue_redraw()
 
 
 ## Shows a briefing modal and returns it, so the caller can await `dismissed`.

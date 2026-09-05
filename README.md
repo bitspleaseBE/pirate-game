@@ -119,6 +119,16 @@ arriving three ship-lengths past your finger and both would pass:
 godot --headless src/scenes/voyage.tscn -- --helm
 ```
 
+Assert that a captured island can be taken back. Three design rules rather than three
+correctness ones: an ignored reprisal costs the island, a fought one saves it, and the
+jungle tribes never campaign — which is what keeps the opening islands safe to leave. The
+middle one is the one that would rot quietly, because a raid that *cannot* be beaten looks
+exactly like one that has not been beaten yet:
+
+```bash
+godot --headless src/scenes/voyage.tscn -- --reprisal
+```
+
 Assert every sound cue has a file behind it and the music actually reacts to the game.
 Audio is the one subsystem whose entire failure mode is silence — a missing file is
 skipped at boot with one warning and then plays nothing, forever, with no error at any

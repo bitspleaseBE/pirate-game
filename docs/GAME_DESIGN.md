@@ -398,7 +398,21 @@ cutting on the beat, which puts a seam in every time a skiff appears.
 
 ## 11. Out of scope for v1
 
-Multiplayer · weather simulation · crew management sim · dialogue trees · 3D · IAP
+Multiplayer · crew management sim · dialogue trees · IAP
+
+**Superseded.** This list also carried *weather simulation* and *3D*, and §3 above still
+describes a top-down orthographic 2D camera. Both have since been asked for directly. The
+3D work is a spike rather than a commitment — `spike/spike3d.tscn` builds the same ocean as
+displaced geometry and generates a rigged ship from the hull tables — and it produced one
+finding worth recording here rather than in a commit message:
+
+> Rendered straight down, at the angle this game actually uses, 3D looks no better than 2D.
+> There is nothing to occlude, no parallax and no horizon, so every trick the flat shader
+> plays it plays convincingly. Every advantage arrives with **camera tilt** — which is a
+> gameplay decision before it is a rendering one, because the broadside arcs, tap-to-sail
+> and the minimap are all built on a plan view.
+
+So the open question is not "2D or 3D". It is whether §3 changes.
 
 ## 12. Open questions
 
@@ -406,4 +420,9 @@ Multiplayer · weather simulation · crew management sim · dialogue trees · 3D
    currency?
 2. Is fog-of-war per-voyage or persistent across voyages?
 3. How much of the landing-party sequence is interactive vs. a 4-second cutscene?
-4. Does the player ever *lose* a captured island (counter-attack), or is capture permanent?
+4. ~~Does the player ever *lose* a captured island (counter-attack), or is capture
+   permanent?~~ **Answered: yes.** A faction comes back for an island the player took off
+   it — see `src/world/raid_director.gd`. Announced with more warning than the longest leg
+   takes to sail, so it is always an invitation to turn back; ignorable at the price of the
+   harbour; and never mounted by the jungle tribes, which is what keeps the opening islands
+   safe to leave.

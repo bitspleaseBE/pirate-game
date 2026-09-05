@@ -296,6 +296,27 @@ func _wave_size(island: Island) -> int:
 ## let them run and take the island now, or chain them, run them down and take the
 ## prize money too. That decision costs a shot type, which is the entire point of
 ## having shot types.
+## Hands an island a garrison that already exists on the water.
+##
+## Used when a reprisal succeeds: whoever is still afloat becomes what the player
+## has to beat to take the place back. Despawning them and rolling a fresh
+## garrison would be simpler and would quietly heal the squadron the player had
+## already shot half to pieces.
+func install_garrison(island: Island, ships: Array[EnemyShip]) -> void:
+	var kept: Array[EnemyShip] = []
+	for ship: EnemyShip in ships:
+		if is_instance_valid(ship) and ship.alive:
+			ship.home_position = island.global_position
+			ship.patrol_radius = island.def.radius * 1.3
+			kept.append(ship)
+	_garrisons[island] = kept
+	_spawned_total[island] = int(_spawned_total.get(island, 0)) + kept.size()
+	# The slipway is gone for good — see [method Island.lose_to_reprisal] — so a
+	# retaken island cannot reinforce, and the fight to win it back is finite.
+	_reinforce_left[island] = INF
+	_waves_sent[island] = MAX_REINFORCEMENT_WAVES
+
+
 func _prune_garrison(island: Island) -> void:
 	## How far past the alert radius a beaten ship has to get before it counts as
 	## gone rather than merely running.

@@ -89,6 +89,22 @@ extends Resource
 ## should reward.
 @export var bounty_mul: float = 1.0
 
+@export_group("Reprisal")
+## How hard this faction comes back for an island the player has taken off it.
+## Zero means never, and that is a characterisation as much as a difficulty
+## setting: a people defending their own reef do not mount campaigns, while the
+## Brethren consider a thing yours only for as long as you are standing on it.
+##
+## It is also the safety catch on the whole mechanic. The opening three islands
+## are the tribes' and the tribes do not raid, so a new captain cannot lose
+## ground they have taken before they have learned to hold any.
+@export var raid_pressure: float = 0.0
+
+
+## Whether this faction ever tries to take an island back.
+func raids() -> bool:
+	return raid_pressure > 0.0
+
 
 ## The hull id this faction launches as its `index`-th defender, or an empty
 ## StringName if it has no roster of its own and the caller should fall back to

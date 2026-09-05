@@ -35,6 +35,10 @@ static var _wipe_harness_ran: bool = false
 @onready var ships_parent: Node2D = %Ships
 @onready var wind: WindSystem = %WindSystem
 @onready var tutorial: TutorialDirector = %Tutorial
+## Reprisals. Built in code rather than authored in the scene because it owns no
+## nodes of its own — it only reads the archipelago and hands ships to the spawn
+## director. See [RaidDirector].
+var raids: RaidDirector = null
 
 ## Built once the world exists — see the note where it is created.
 var music: MusicDirector = null
@@ -103,6 +107,14 @@ func _ready() -> void:
 	director.archipelago = archipelago
 	director.ships_parent = ships_parent
 
+	raids = RaidDirector.new()
+	raids.name = "RaidDirector"
+	raids.fleet = fleet
+	raids.archipelago = archipelago
+	raids.director = director
+	raids.ships_parent = ships_parent
+	add_child(raids)
+
 	# Riding at anchor just outside Port Royal's mooring buoy, rather than on top
 	# of it. Sitting exactly on the buoy hides the one piece of harbour furniture
 	# the opening is trying to teach the player to recognise.
@@ -150,10 +162,16 @@ func _ready() -> void:
 		or "--rig" in harness_args
 		or "--sailing" in harness_args
 		or "--helm" in harness_args
+		or "--reprisal" in harness_args
 		or "--ladder" in harness_args
 		or "--touch" in harness_args
 		or "--shot-mobile" in harness_args
 	)
+
+	# Reprisals are off for every automated run but their own. They are rare,
+	# they happen where the player is not, and every other gate measures something
+	# that a squadron arriving in the middle of would quietly corrupt.
+	raids.enabled = harness_args.is_empty() or "--reprisal" in harness_args
 
 	_update_wind_availability()
 	EventBus.fleet_changed.connect(_update_wind_availability)
@@ -219,6 +237,8 @@ func _ready() -> void:
 		_run_rout_test()
 	elif "--audio" in args:
 		_run_audio_test()
+	elif "--reprisal" in args:
+		_run_reprisal_test()
 	elif "--helm" in args:
 		_run_helm_test()
 	elif "--sailing" in args:
@@ -729,6 +749,146 @@ func _run_rig_test() -> void:
 	else:
 		for line: String in failures:
 			push_error("RIG FAIL: %s" % line)
+		await _quit_cleanly(1)
+
+
+## They have to be able to take it back.
+##
+##   godot --headless src/scenes/voyage.tscn -- --reprisal
+##
+## Three properties, and all three are design rules rather than correctness ones,
+## which is why they are asserted rather than eyeballed:
+##
+##   * an ignored reprisal **takes the island** — otherwise the warning is theatre
+##     and the player learns to sail on;
+##   * a fought reprisal **saves it** — otherwise it is a tax, not a decision;
+##   * the tribes **never** raid, so the opening islands stay safe to leave.
+##
+## The middle one is the one that would rot quietly. A raid that cannot be beaten
+## looks identical to one that has not been beaten *yet*, and the difference only
+## shows up as players slowly deciding the mechanic is unfair.
+func _run_reprisal_test() -> void:
+	const TIME_SCALE: float = 8.0
+	var TICK: float = (1.0 / 60.0) * TIME_SCALE
+
+	director.set_process(false)
+	tutorial.enabled = false
+	var failures: PackedStringArray = []
+
+	# A held island belonging to somebody who wants it back.
+	var target: Island = null
+	var tribal: Island = null
+	for raw: Variant in archipelago.islands:
+		if not is_instance_valid(raw) or raw == archipelago.home:
+			continue
+		var island: Island = raw
+		var owner: Faction = FactionLibrary.get_faction(island.def.faction)
+		if tribal == null and island.def.faction == &"tribes":
+			tribal = island
+		if target == null and owner.raids() and not island.def.has_castle:
+			target = island
+	if target == null or tribal == null:
+		push_error("REPRISAL FAIL: voyage has no raiding-faction island, or no tribal one")
+		await _quit_cleanly(1)
+		return
+
+	# The tribes never come back. Asserted before anything else, because it is the
+	# rule that protects a brand new player and the one most likely to be broken
+	# by somebody tuning raid pressure without reading why it is zero.
+	tribal.capture()
+	await get_tree().physics_frame
+	if raids.force_raid(tribal):
+		failures.append(
+			"a reprisal was launched on %s, which is the tribes' — they do not"
+			% tribal.def.display_name
+			+ " campaign, and the opening islands have to be safe to leave"
+		)
+
+	Engine.time_scale = TIME_SCALE
+
+	# --- Ignored: the island falls -------------------------------------------
+	target.capture()
+	await get_tree().physics_frame
+	# Well out of the way, so the reprisal is genuinely unopposed. PLAYER_PRESENCE
+	# would otherwise hold the island for free.
+	var away: Vector2 = target.global_position + Vector2(9000.0, 9000.0)
+	camera.set_world_bounds(Rect2(away - Vector2(9000.0, 9000.0), Vector2(24000.0, 24000.0)))
+	for ship: Ship in fleet.living_ships():
+		ship.global_position = away
+		ship.stop()
+	camera.snap_to(away)
+	Cull.force_tick()
+
+	var warned: Dictionary = {"seen": false}
+	EventBus.island_threatened.connect(func(_i: Node2D, _f: String, _s: float) -> void:
+		warned["seen"] = true
+	)
+	if not raids.force_raid(target):
+		failures.append("no reprisal could be launched on %s" % target.def.display_name)
+	await get_tree().physics_frame
+	if not bool(warned["seen"]):
+		failures.append("the reprisal was never announced — the player got no warning")
+
+	var elapsed: float = 0.0
+	while elapsed < 140.0 and target.is_captured:
+		await get_tree().physics_frame
+		elapsed += TICK
+	if target.is_captured:
+		failures.append(
+			"%s was still held after %.0fs of unopposed reprisal — an ignored raid"
+			% [target.def.display_name, elapsed]
+			+ " has to actually cost the island or the warning is theatre"
+		)
+	else:
+		# And the raiders that took it are the garrison. Nothing was despawned.
+		var standing: int = director.active_enemy_count()
+		if standing == 0:
+			failures.append(
+				"%s fell but left no garrison — the squadron that took it should be"
+				% target.def.display_name
+				+ " what the player has to beat to take it back"
+			)
+
+	# --- Fought: the island holds --------------------------------------------
+	target.capture()
+	await get_tree().physics_frame
+	if not raids.force_raid(target):
+		failures.append("a second reprisal could not be launched")
+	# Let it arrive, then sink it.
+	var waited: float = 0.0
+	while waited < 60.0 and raids.raid_target() != null and director.active_enemy_count() == 0:
+		await get_tree().physics_frame
+		waited += TICK
+	var sunk: int = 0
+	for raw: Variant in ships_parent.get_children():
+		var enemy: EnemyShip = raw as EnemyShip
+		if enemy != null and enemy.alive:
+			enemy.apply_damage(enemy.stats.max_hull * 4.0, AmmoType.Bar.HULL, fleet.selected)
+			sunk += 1
+	if sunk == 0:
+		failures.append("the reprisal never put a hull on the water to fight")
+	var settle: float = 0.0
+	while settle < 20.0 and raids.raid_target() != null:
+		await get_tree().physics_frame
+		settle += TICK
+	if not target.is_captured:
+		failures.append(
+			"%s was lost even though every raider was sunk — beating a reprisal"
+			% target.def.display_name
+			+ " has to save the island or it is a tax rather than a decision"
+		)
+
+	Engine.time_scale = 1.0
+	print("REPRISAL: warned=%s fell=%s sank=%d held_after=%s" % [
+		bool(warned["seen"]), not target.is_captured == false, sunk, target.is_captured
+	])
+
+	if failures.is_empty():
+		print("REPRISAL PASS")
+		await _quit_cleanly(0)
+	else:
+		for line: String in failures:
+			push_error("REPRISAL FAIL: %s" % line)
 		await _quit_cleanly(1)
 
 

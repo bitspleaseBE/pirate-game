@@ -107,6 +107,9 @@ static func _fallback(id: StringName) -> Faction:
 			f.speed_mul = 1.0
 			f.range_mul = 1.0
 			f.bounty_mul = 1.0
+			# They defend the reef they live on. They do not campaign for one they
+			# have lost — and that is what keeps the opening islands safe to leave.
+			f.raid_pressure = 0.0
 		&"navy_crown":
 			f.display_name = "Crown Navy"
 			f.briefing = (
@@ -132,6 +135,8 @@ static func _fallback(id: StringName) -> Faction:
 			f.speed_mul = 0.96
 			f.range_mul = 1.15
 			f.bounty_mul = 1.1
+			# Methodical. A squadron is detached, it arrives, it does the job.
+			f.raid_pressure = 0.7
 		&"navy_armada":
 			f.display_name = "The Armada"
 			f.briefing = (
@@ -147,6 +152,8 @@ static func _fallback(id: StringName) -> Faction:
 			f.speed_mul = 0.86
 			f.range_mul = 1.05
 			f.bounty_mul = 1.35
+			# Slow to sail and slower to forgive. Fewer reprisals, heavier ones.
+			f.raid_pressure = 0.55
 		&"navy_marine":
 			f.display_name = "Marine Royale"
 			f.briefing = (
@@ -162,6 +169,9 @@ static func _fallback(id: StringName) -> Faction:
 			f.speed_mul = 1.14
 			f.range_mul = 1.0
 			f.bounty_mul = 1.2
+			# The fastest hulls in any navy, and they use them — the French come
+			# back soonest and most often.
+			f.raid_pressure = 0.95
 		&"brethren":
 			f.display_name = "Brethren of the Coast"
 			f.briefing = (
@@ -198,6 +208,10 @@ static func _fallback(id: StringName) -> Faction:
 			# sail round it, and sailing round the interesting fight is not a
 			# strategy this game should reward.
 			f.bounty_mul = 1.8
+			# They do not recognise the concept of a place being yours. Nothing in
+			# the game raids like this, and it is the main reason the back half of
+			# the chain stops being a checklist.
+			f.raid_pressure = 1.5
 		&"player":
 			# Your own colours. Not in [constant ORDER] — that is the list of people
 			# who shoot at you — and it fields no hulls and bends no stats, because

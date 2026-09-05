@@ -519,6 +519,28 @@ func capture() -> void:
 	captured.emit()
 
 
+## The island is taken back off the player by a reprisal. See [RaidDirector].
+##
+## The mirror of [method capture], with two deliberate asymmetries. The shipyard
+## and the keep do *not* come back: they were burned or stormed, and rebuilding
+## them off screen would undo work the player did rather than work they failed to
+## do. And treasure already dug stays dug — the island is lost, not rewound, and
+## a hole that refills itself is a farm.
+func lose_to_reprisal() -> void:
+	if not is_captured:
+		return
+	is_captured = false
+	def.captured = false
+	is_alerted = true
+	if _flag != null:
+		_flag.color = _flag_color()
+	if port != null:
+		port.refresh()
+	GameState.release_island(def.id)
+	Audio.play_at(&"island_captured", global_position)
+	EventBus.island_discovered.emit(self)
+
+
 ## Rolls this island's treasure and hands it to the player.
 func dig_treasure(rng: RandomNumberGenerator) -> Dictionary:
 	if not def.is_treasure_remaining():
